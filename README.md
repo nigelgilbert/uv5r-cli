@@ -66,7 +66,7 @@ Options:
 | `--channel N` | `tune`: channel to write, 0..127, required |
 | `--tone HZ` | TX CTCSS from the standard table (`82.5`), DCS (`D023`, `D023I`) or `none` |
 | `--rx-tone HZ` | RX tone, default `none` |
-| `--offset MHZ` | signed repeater offset; default simplex |
+| `--offset MHZ` | signed repeater offset in 10 Hz steps; default simplex |
 | `--narrow` | 12.5 kHz bandwidth |
 | `--low-power` | low power |
 | `--name TEXT` | channel name, 7 characters, default the frequency |
@@ -76,7 +76,10 @@ Options:
 | `--device NAME` | `listen`: avfoundation audio input by name or index, default `AIOC Audio`. List inputs with `ffmpeg -f avfoundation -list_devices true -i ""` |
 
 Frequencies take MHz (`154.680`), Hz (`154680000`) or exponent form (`154.68e6`) and lie
-in 136-174 or 400-520 MHz.
+in 136-174 or 400-520 MHz. Frequencies and offsets finer than 10 Hz exit 2.
+
+A verb given more positional arguments than it takes exits 2 before opening the port, so
+`dump radio.img` fails; use `dump --out radio.img`.
 
 CTCSS tones take the 50 standard tones from 67.0 to 254.1 Hz, the same table CHIRP uses.
 
@@ -93,7 +96,8 @@ display shows the channel the knob selected". Trust the display for the active c
 
 `tune` returns the written record plus `"appliesAfterSeconds": 3`. `read` returns the
 record, or `{"channel": N, "empty": true}`. `erase` writes 0xFF over the record and the
-name and returns `{"channel": N, "empty": true, "appliesAfterSeconds": 3}`.
+name and returns `{"channel": N, "empty": true, "appliesAfterSeconds": 3}`. `key` returns
+`{"keyed": true, "seconds": S}` with the measured hold time.
 
 `settings` with no arguments returns the eight fields. With `field value` pairs it writes
 and commits the block, waits for the reload, reads it back in a fresh session and returns
@@ -105,6 +109,7 @@ radio. `settings` restores only its eight fields; bring back a zeroed block in f
 `restore` from an image.
 
 `restore` verifies the settings block the same way and returns the fields it read back.
+An image shorter than 6152 bytes exits 2 before the port opens.
 
 `listen` runs `ffmpeg -f avfoundation -i ":AIOC Audio"` for `--seconds` at 48 kHz mono,
 removes DC with a 50 Hz high-pass and returns `rmsDbfs` per second, `meanRmsDbfs`,
@@ -118,7 +123,8 @@ If the handshake gets no ack, the CLI waits 3 s and retries it once. This covers
 session still closing from the previous verb.
 
 Exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport (no device), 4 timeout, 5
-device-state (radio refused, no handshake), 6 busy (port held by another process),
+device-state (no handshake, bad reply, refused write, failed verification or image
+ident mismatch), 6 busy (port held by another process),
 128+signal (key interrupted by SIGINT, SIGTERM or SIGHUP; PTT released).
 
 `BAOFENG_DEBUG=1` logs every serial byte to stderr.
@@ -141,7 +147,9 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
   commits the buffer to EEPROM. A lone write at `0x0E20`, `0x0E30`, a 32-byte write at
   `0x0E20` or a 64-byte write at `0x0E00` is acked and dropped. Writing one half and then
   `0x0E40` commits zeros over the other half. `restore` writes the page in order, so it
-  commits; `settings` writes both halves then `0x0E40` unchanged.
+  commits; `settings` writes both halves then `0x0E40` unchanged. `Session.writeBlock`
+  refuses a write at `0x0E40` until both halves were acked in the same session, and
+  takes one aligned 16-byte block per write.
 - Reads of `0x0E00..0x0E7F` during a session return the values the radio loaded at its
   last reload. A 16-byte read at `0x0E10`, `0x0E20`, `0x0E30` or `0x0E40` returns the
   `0x0E40` record. 64-byte reads at `0x0E00` and `0x0E40` avoid that alias and still return

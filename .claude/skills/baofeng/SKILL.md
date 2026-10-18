@@ -15,7 +15,11 @@ Run commands from the repo root. `baofeng` below means `node src/main.ts`.
 - Never open, `cat`, `screen` or `stty` the serial port.
 - Run one verb at a time.
 - Start every task with `baofeng status`.
-- Exit 3 means no device. Exit 5 means the radio did not answer. Ask the human to check
+- Exit 2 means bad input. Read `message` and fix the command.
+- Exit 3 means no device. Ask the human to check the cable is seated.
+- Exit 5 means the radio did not answer, gave a bad reply, refused a write, failed
+  verification, or holds a different ident than the image. Read `message` and the detail
+  fields first. Check the input, such as the image file, before asking the human to check
   the radio is on and the cable is seated.
 - Ask the human once per session to read the channel number off the radio display. Call it N.
 - Pass `--channel N` to every `tune`.
@@ -46,7 +50,9 @@ baofeng listen --seconds 5
 `status` reports `squelch`, `voice`, `beep` and `abr`. `voice off` or `beep off` mutes receive
 audio on this firmware: set them back with `settings`, then ask the human to power cycle
 the radio. `listen` reports dBFS from the AIOC. The bare AIOC floor at 1x gain reads about
--66; open-squelch static reads well above -30. Seconds of digital zero come back as `null`
+-66; open-squelch static reads well above -30. A floor reading with squelch 0 means the
+volume knob is down or the 2.5 mm plug is short of its contact. `peakDbfs` above 0 means
+the knob is too high and the input clips; aim for static around -20 to -12. Seconds of digital zero come back as `null`
 in `rmsDbfs` and count in `zeroSeconds`. Denied microphone permission for the terminal is
 one cause.
 
