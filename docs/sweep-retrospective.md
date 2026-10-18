@@ -68,3 +68,55 @@ Accept the `D606N` form that RepeaterBook and the plan file use.
 - Tell voice from noise by spectrum shape and envelope modulation. Transcription is
   unavailable from the terminal: the macOS Speech framework aborts any process without
   the speech-recognition usage entitlement, and whisper is not installed.
+
+## Decisions, 2026-10-18
+
+Resolved in a grill-me session after the code review. Commit f3596ed already covers two
+suggestions: `--rx-tone` exists and `parseTone` accepts `D606N`; `listen` pads the ffmpeg
+request by the 0.88 ratio and reports the requested seconds.
+
+### check
+
+- `check FREQ --channel N` writes FREQ into slot N, waits the 3 s settle, listens 5 s and
+  exits 0 when `activeSeconds` is above 0. Silence exits 5 with
+  `no audio on channel N: set MR mode and select N`.
+- Replaces the `probe` suggestion. No EEPROM read reports the live channel.
+
+### listen
+
+- A second is active when its RMS is above -50 dBFS. `--floor DBFS` overrides.
+- The result gains `activeSeconds` and `active`, a per-second true/false list. The first
+  second is dropped from both as the capture-start burst.
+- `--out FILE` writes a 48 kHz mono WAV. `--play` runs `afplay` on it after the capture
+  ends and needs `--out`.
+- The result gains `warnings: string[]`. One entry when more than 1 percent of samples sit
+  at full scale: `input clips: turn the volume knob down`. Low level is already visible as
+  `activeSeconds` 0 and `meanRmsDbfs`.
+
+### Plan file
+
+- Plan fields map one to one onto `tune` flags. The schema gains an optional `rxTone`
+  field that maps to `--rx-tone`. `tone` stays the transmit tone.
+- The channel-plan skill writes `rxTone` on a receive-only entry when the listing shows a
+  tone, and leaves `tone` off that entry.
+
+### load
+
+- `load channels.json` writes every entry in one clone session, reads each back and
+  returns the list of written records. Slots absent from the plan stay as they are.
+- A read-back mismatch exits 5 naming the channel.
+
+### sweep
+
+- `sweep channels.json --seconds S` dwells S seconds per entry, default 30.
+- `--scratch N` rewrites slot N for every entry. Slot 0 is the scratch convention. Scratch
+  mode requires `--check MHZ`, which runs `check` on N before the loop, or `--no-check`.
+- Without `--scratch`, sweep reads every plan slot up front in one session and compares it
+  with the plan. Any mismatch exits 5 with the channel and both records and names `load`
+  as the fix. The loop then prompts the human to turn the knob to each channel and waits
+  for Enter. Knob mode writes nothing to the radio.
+- `--out-dir DIR` keeps each capture as a WAV named by channel and time. `--play` plays
+  each active capture through `afplay` after its dwell.
+- stdout gets one object at the end: swept count, dwell seconds, an `active` list with
+  channel, name, rxMhz, activeSeconds and out file, and any warnings. `--verbose` adds one
+  line per channel to stderr as each dwell ends.
