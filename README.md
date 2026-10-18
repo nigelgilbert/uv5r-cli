@@ -26,10 +26,13 @@ seen at the same time traced to the volume knob and the seating of the 2.5 mm pl
 
 `tune` writes the memory channel the radio is parked on:
 
-1. Read the channel number off the radio display.
-2. Run `uv5r tune FREQ --channel N`. The CLI writes the channel record and name and
+1. Run `uv5r check 162.400 --channel 0` with a NOAA weather frequency that carries audio
+   at the location. Exit 0 shows the radio is in MR mode on slot 0; call it N.
+2. On exit 5, set MR mode with the VFO/MR key, read the channel number N off the display
+   and run `uv5r check 162.400 --channel N`.
+3. Run `uv5r tune FREQ --channel N`. The CLI writes the channel record and name and
    reads both back; a mismatch exits 5.
-3. The radio leaves clone mode after 2.5 s of silence and reloads from EEPROM. The new
+4. The radio leaves clone mode after 2.5 s of silence and reloads from EEPROM. The new
    frequency is live about 3 s after the command ends.
 
 `tune` reads the old record before it writes. Over an existing record it keeps BCL,
@@ -53,6 +56,7 @@ uv5r tune 154.680 --channel 5              # write 154.680 into channel 5
 uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
 uv5r tune 462.5625 --channel 5 --narrow --low-power
 uv5r tune 155.475 --channel 6 --rx-only    # receive only, TX inhibited
+uv5r check 162.400 --channel 0             # write 162.400 into channel 0, listen 5 s, exit 5 on silence
 uv5r load channels.json                    # write every plan entry to its slot, read each back
 uv5r read 5                                # read channel record 5
 uv5r erase 127                             # clear channel record 127 and its name
@@ -74,7 +78,7 @@ Options:
 | `--target PATH` | serial device, every verb except `listen`; default `UV5R_TARGET`, else the AIOC found by USB id 1209:7388 |
 | `--json` | JSON output |
 | `--text` | text output |
-| `--channel N` | `tune`: channel to write, 0..127, required |
+| `--channel N` | `tune`, `check`: channel to write, 0..127, required |
 | `--tone HZ` | TX CTCSS from the standard table (`82.5`), DCS (`D023`, `D023I`) or `none` |
 | `--rx-tone HZ` | RX tone, default `none` |
 | `--offset MHZ` | signed repeater offset in 10 Hz steps; default simplex |
@@ -115,6 +119,13 @@ written records in plan order, each with `"appliesAfterSeconds": 3`; see "Plan f
 `erase` writes 0xFF over the record and the name, reads both back and returns
 `{"channel": N, "empty": true, "appliesAfterSeconds": 3}`. `key` returns `{"keyed": true, "seconds": S}` with the measured hold time. A key cut short by a signal
 adds `"interrupted": "SIGINT"` and `"released": true`.
+
+`check FREQ --channel N` takes the `tune` flags plus `--device` and `--floor`, which work
+as for `listen`. It writes the record the way `tune` does, waits 3 s for the reload,
+listens 5 s and returns the `listen` fields plus `channel` and `rxMhz`. `--seconds S` sets
+another listen time. An active second exits 0. Silence exits 5 with `no audio on channel
+N: set MR mode and select N`, and the JSON error carries the same fields. Silence means
+the radio is in VFO mode, sits on another slot, or the frequency is quiet.
 
 `settings` with no arguments returns the eight fields. With `field value` pairs it writes
 and commits the block, waits for the reload, reads it back in a fresh session and returns
@@ -170,7 +181,7 @@ session still closing from the previous verb.
 
 Exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport (no device, serial or ffmpeg
 failure), 4 timeout (no ack, short read), 5 device-state (no handshake, bad reply, refused
-write, failed verification, image ident mismatch or a session idle past 2.2 s), 6 busy (port held by another process),
+write, failed verification, image ident mismatch, a silent `check` or a session idle past 2.2 s), 6 busy (port held by another process),
 128+signal (key interrupted by SIGINT, SIGTERM or SIGHUP; PTT released).
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.

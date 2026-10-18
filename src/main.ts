@@ -2,6 +2,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
+import { CHECK_SECONDS, checkChannel } from './check.ts';
 import {
   SETTING_NAMES,
   checkBand,
@@ -74,6 +75,12 @@ const MIN_IMAGE_BYTES = IMAGE_HEADER + Math.max(...RESTORE_RANGES.map(([, end]) 
 const verbs: Record<string, Verb> = {
   status: { summary: 'Print firmware, work mode, stored channel numbers, squelch, voice, beep, abr and the active record', usage: 'status', positionals: 0, run: statusVerb },
   tune: { summary: 'Write a frequency into the channel the radio shows', usage: 'tune 154.680 --channel 5 --tone 82.5', positionals: 1, run: tuneVerb },
+  check: {
+    summary: 'Write a live frequency into channel N, wait for the reload and listen; exit 5 on silence',
+    usage: 'check 162.400 --channel 0',
+    positionals: 1,
+    run: checkVerb,
+  },
   load: { summary: 'Write every channel of a plan file and read each back', usage: 'load channels.json', positionals: 1, run: loadVerb },
   read: { summary: 'Print one channel record', usage: 'read 5', positionals: 1, run: readVerb },
   erase: { summary: 'Clear one channel record and its name', usage: 'erase 127', positionals: 1, run: eraseVerb },
@@ -102,7 +109,7 @@ function helpText(): string {
     '  --json             print JSON (default when stdout is not a terminal)',
     '  --text             print text',
     '  --target PATH      serial device (default: UV5R_TARGET, else the AIOC found by USB id)',
-    '  --channel N        tune: channel to write, 0..127, as shown on the radio display (required)',
+    '  --channel N        tune, check: channel to write, 0..127, as shown on the radio display (required)',
     '  --offset MHZ       tune: repeater offset, signed: --offset -0.6',
     '  --tone HZ          tune: TX CTCSS in Hz (82.5), DCS (D023, D023I) or none',
     '  --rx-tone HZ       tune: RX tone; default none (carrier squelch)',
@@ -110,6 +117,7 @@ function helpText(): string {
     '  --low-power        tune: low TX power',
     '  --rx-only          tune: receive only, TX inhibited; conflicts with --offset',
     '  --name TEXT        tune: channel name, 7 chars (default the frequency)',
+    `  check              takes the tune flags, --device and --floor; --seconds S sets the listen time (default ${CHECK_SECONDS})`,
     `  --seconds S        key: hold time, 0 < S <= ${MAX_KEY_SECONDS}; listen: capture time, whole number 1..${MAX_LISTEN_SECONDS} (required)`,
     '  --out FILE         dump: output path (default uv5r-YYYY-MM-DDTHH-MM-SS.img); listen: write the capture as a 48 kHz mono WAV and report out',
     '  --force            restore: confirm a bulk write',
@@ -228,6 +236,32 @@ async function tuneVerb(args: Invocation): Promise<number> {
   const written = await withTransport(args, (t) => withSession(t, (s) => writeChannel(s, n, spec)));
   const result = { ...channelPayload(n, written), appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `${channelText(result)}\nwritten; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
+  return EXIT.ok;
+}
+
+async function checkVerb(args: Invocation): Promise<number> {
+  checkFlags('check', args.flags, [...COMMON, ...TUNE_FLAGS, 'seconds', 'device', 'floor']);
+  const freq = args.positionals[0];
+  if (!freq) throw new UsageError('check needs a frequency in MHz, as in: check 162.400 --channel 0');
+  if (!args.flags.has('channel')) throw new UsageError('check needs --channel N: read the channel number off the radio display, as in: check 162.400 --channel 0');
+  const n = numberFlag(args.flags, 'channel')!;
+  checkChannelNumber(n);
+  const spec = channelSpec(freq, args.flags);
+  const seconds = numberFlag(args.flags, 'seconds') ?? CHECK_SECONDS;
+  if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
+    throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
+  }
+  const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  const floorDbfs = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
+  const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device, seconds, floorDbfs }));
+  print(args, result, () =>
+    [
+      `ch ${result.channel}: rx ${result.rxMhz}`,
+      `active     ${result.activeSeconds} of ${result.active.length} s above ${floorDbfs} dBFS`,
+      `timeline   ${result.active.map((on) => (on ? '#' : '.')).join('')}`,
+      ...result.warnings.map((w) => `warning    ${w}`),
+    ].join('\n'),
+  );
   return EXIT.ok;
 }
 
