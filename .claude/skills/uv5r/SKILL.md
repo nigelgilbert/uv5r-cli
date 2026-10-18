@@ -1,6 +1,6 @@
 ---
 name: uv5r
-description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, loading a channel plan, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
+description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, MR or VFO mode, checking the live channel, loading a channel plan, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
 ---
 
 # uv5r
@@ -31,8 +31,11 @@ Run commands from the repo root. `uv5r` below means `node src/main.ts`.
   the radio is on and the cable is seated.
 - Exit 6 means the port is busy. Another process such as CHIRP or a terminal holds it. Ask
   the human to close it.
-- To change what the radio is parked on, ask the human once per session to read the
-  channel number off the display. Call it N and pass `--channel N`.
+- Before changing what the radio is parked on, run `uv5r check 162.400 --channel 0` once
+  per session with a NOAA weather frequency that carries audio at the location. Exit 0
+  means the radio is in MR mode on slot 0; call it N. On exit 5, ask the human to set MR
+  mode and read the channel number off the display. Call it N, run
+  `uv5r check 162.400 --channel N` and pass `--channel N` to `tune`.
 - Writing a plan or any other slot uses that slot's own number.
 - Write a plan file with one `uv5r load PLAN.json`. Exit 2 names the channel and field to
   fix in the plan. Exit 5 names the channel that did not take the write.
@@ -52,6 +55,7 @@ uv5r tune 154.680 --channel 5
 uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
 uv5r tune 462.5625 --channel 5 --narrow --low-power
 uv5r tune 154.695 --channel 7 --narrow --rx-only --name "SHERIFF"
+uv5r check 162.400 --channel 0
 uv5r load channels.json
 uv5r read 5
 uv5r erase 127
@@ -79,6 +83,11 @@ field. `active` lists one true or false per second, aligned with `rmsDbfs`, and
 `--floor DBFS` sets another threshold. `warnings` holds
 `input clips: turn the volume knob down` when more than 1 percent of samples sit at full
 scale. Ask the human to turn the knob down, then listen again.
+
+`check` writes the frequency into slot N like `tune`, waits 3 s for the reload, listens
+5 s and returns the `listen` fields plus `channel` and `rxMhz`. It takes the `tune` flags,
+`--device`, `--floor` and `--seconds`. Silence exits 5 with
+`no audio on channel N: set MR mode and select N`.
 
 Frequencies in MHz, 136-174 or 400-520. Tones: `82.5`, `D023`, `D023I`, `none`.
 `scenarios/big-sky-2026-10.json` holds the Big Sky channel list and sweep windows.
