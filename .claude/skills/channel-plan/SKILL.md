@@ -1,13 +1,14 @@
 ---
 name: channel-plan
-description: Build a UV-5R channel plan JSON for a location by researching RepeaterBook, NOAA Weather Radio, GMRS and public safety listings with a small set of subagents, then compiling the result in the shape of `channels.json`. Use when the user names a town, county, trailhead or region and asks for a channel plan, local repeaters, a channels.json, frequencies to program, or what to listen to there.
+description: Build a UV-5R channel plan JSON for a location by researching RepeaterBook, NOAA Weather Radio, GMRS and public safety listings with a small set of subagents, then writing the result to `channels.json` in the shape of `channels.example.json`. Use when the user names a town, county, trailhead or region and asks for a channel plan, local repeaters, a channels.json, frequencies to program, or what to listen to there.
 ---
 
 # channel-plan
 
-Takes a location and produces a channel plan file shaped like the reference `channels.json`
-at the repo root. The plan feeds `baofeng tune` one channel at a time through the `baofeng`
-skill.
+Takes a location and writes `channels.json` at the repo root, shaped like the reference
+`channels.example.json`. `channels.json` is ignored by git, so scripts read a fixed path and
+each run replaces the previous plan. The plan feeds `baofeng tune` one channel at a time
+through the `baofeng` skill.
 
 ## Steps
 
@@ -15,8 +16,8 @@ skill.
    Ask the human once if the name is ambiguous. Use today's date in the plan name.
 2. Launch the three subagents below in one message so they run together. Give each the
    resolved location, the radius, and the return format.
-3. Compile the plan from their reports. Write it to the path the human named, or to
-   `channels-<location-slug>.json` in the repo root.
+3. Compile the plan from their reports. Write it to `channels.json` in the repo root,
+   overwriting any existing file. Use another path only when the human names one.
 4. Report the file path, the channel list in one line each, and any entry the subagents
    flagged as unverified.
 
@@ -77,7 +78,7 @@ Brief:
 
 ## Compiling the plan
 
-Match the reference `channels.json`: a top-level `name`, a top-level `notes`, and a
+Match the reference `channels.example.json`: a top-level `name`, a top-level `notes`, and a
 `channels` array. Each entry carries `channel`, `name`, `rxMhz`, and `notes`, plus
 `offsetMhz`, `tone` and `narrow` when they apply. Drop `source` and `confidence` from the
 entries; put unverified items in the top-level `notes`.

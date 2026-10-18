@@ -182,12 +182,15 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
   differ in the aux area; see `docs/rx-audio-investigation.md`.
 - `scenarios/big-sky-2026-10.json`: the non-encrypted channels and sweep windows from the
   Big Sky SITREP. Phase 2 reads it to drive the tinySA sweeps and the tune queue.
-- `channels.json`: the channel plan written to the bench radio on 2026-10-13.
+- `channels.example.json`: the channel plan written to the bench radio on 2026-10-13, and
+  the reference shape for generated plans.
+- `channels.json`: the plan the `channel-plan` skill writes for the current location.
+  Ignored by git.
 - `docs/rx-audio-investigation.md`: the settings block wipe, its repair, the clone protocol
   rules measured on the bench, and the receive audio findings.
 - `.claude/skills/baofeng/SKILL.md`: the operating notes an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
-  channel plan for a new location in the shape of `channels.json`.
+  channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
 
 ## Development
 
