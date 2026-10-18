@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
@@ -43,6 +43,7 @@ import {
   type ChannelResult,
   type RadioStatus,
 } from './radio.ts';
+import { SWEEP_SECONDS, runSweep, scratchSlot, type SweepSummary } from './sweep.ts';
 import { SerialTransport, resolveTarget, type Transport } from './transport.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
@@ -61,7 +62,7 @@ interface Verb {
   run: (args: Invocation) => Promise<number>;
 }
 
-const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'rx-only', 'force', 'play']);
+const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'rx-only', 'force', 'play', 'no-check', 'verbose']);
 const COMMON = ['json', 'text', 'target'];
 const TUNE_FLAGS = ['channel', 'offset', 'tone', 'rx-tone', 'narrow', 'low-power', 'rx-only', 'name'];
 const MAX_KEY_SECONDS = 60;
@@ -94,6 +95,12 @@ const verbs: Record<string, Verb> = {
     positionals: 0,
     run: listenVerb,
   },
+  sweep: {
+    summary: 'Write each plan entry into scratch slot N, listen S seconds on each and report the active ones',
+    usage: 'sweep channels.json --scratch 0 --check 162.400 --seconds 30',
+    positionals: 1,
+    run: sweepVerb,
+  },
 };
 
 function helpText(): string {
@@ -124,11 +131,17 @@ function helpText(): string {
     `  --device NAME      listen: avfoundation audio device (default ${DEFAULT_AUDIO_DEVICE})`,
     `  --floor DBFS       listen: a second is active when its RMS is above DBFS (default ${DEFAULT_FLOOR_DBFS}); sets active and activeSeconds`,
     '  --play             listen: play the --out file through afplay after the capture; needs --out',
+    '  --scratch N        sweep: slot to write each plan entry into, 0..127 (required; knob mode is not available yet)',
+    '  --check MHZ        sweep: run check on the scratch slot with MHZ before the loop; silence exits 5',
+    '  --no-check         sweep: skip the check; one of --check and --no-check is required',
+    `  sweep              --seconds S sets the dwell per entry (default ${SWEEP_SECONDS}); takes --device, --floor and --play`,
+    '  --out-dir DIR      sweep: keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR; --play needs it',
+    '  --verbose          sweep: write one JSON line per entry to stderr as each dwell ends',
     '',
     'settings fields, set by radio menu index or by name:',
     ...SETTING_NAMES.map((name) => `  ${name.padEnd(8)} ${settingValues(name)}`),
     '',
-    'exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport, 4 timeout, 5 device-state, 6 busy, 128+signal key interrupted',
+    'exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport, 4 timeout, 5 device-state, 6 busy, 128+signal key or sweep interrupted',
   ].join('\n');
 }
 
@@ -424,6 +437,58 @@ async function listenVerb(args: Invocation): Promise<number> {
     ].join('\n'),
   );
   return EXIT.ok;
+}
+
+function sweepText(s: SweepSummary): string {
+  return [
+    `swept      ${s.swept} entries, ${s.seconds} s each${s.interrupted ? `; interrupted by ${s.interrupted}` : ''}`,
+    ...s.active.map((a) => `active     ch ${a.channel} ${a.name} rx ${a.rxMhz}: ${a.activeSeconds} s${a.out === undefined ? '' : ` ${a.out}`}`),
+    ...s.warnings.map((w) => `warning    ${w}`),
+  ].join('\n');
+}
+
+async function sweepVerb(args: Invocation): Promise<number> {
+  checkFlags('sweep', args.flags, [...COMMON, 'scratch', 'check', 'no-check', 'seconds', 'device', 'floor', 'out-dir', 'play', 'verbose']);
+  const file = args.positionals[0];
+  if (!file) throw new UsageError('sweep needs a plan file, as in: sweep channels.json --scratch 0 --check 162.400');
+  if (!args.flags.has('scratch')) {
+    throw new UsageError('knob mode is not available yet; pass --scratch N, as in: sweep channels.json --scratch 0 --check 162.400');
+  }
+  const n = numberFlag(args.flags, 'scratch')!;
+  checkChannelNumber(n);
+  const checkText = stringFlag(args.flags, 'check');
+  const noCheck = args.flags.get('no-check') === true;
+  if (checkText !== undefined && noCheck) throw new UsageError('--check and --no-check conflict; pass one');
+  if (checkText === undefined && !noCheck) {
+    throw new UsageError(`sweep --scratch needs --check MHZ to confirm the radio is on slot ${n}, or --no-check, as in: sweep ${file} --scratch ${n} --check 162.400`);
+  }
+  const checkSpec = checkText === undefined ? undefined : channelSpec(checkText, new Map([['rx-only', true]]));
+  const seconds = numberFlag(args.flags, 'seconds') ?? SWEEP_SECONDS;
+  if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
+    throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
+  }
+  const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  const floorDbfs = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
+  const outDir = stringFlag(args.flags, 'out-dir');
+  const play = args.flags.get('play') === true;
+  if (play && outDir === undefined) throw new UsageError('--play needs --out-dir DIR, as in: sweep channels.json --scratch 0 --check 162.400 --out-dir rx --play');
+  const verbose = args.flags.get('verbose') === true;
+  const plan = readPlan(file);
+  if (outDir !== undefined) {
+    try {
+      mkdirSync(outDir, { recursive: true });
+    } catch (err) {
+      throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
+    }
+  }
+  const summary = await withTransport(args, async (t) => {
+    if (checkSpec) await checkChannel(t, n, checkSpec, { device, seconds: CHECK_SECONDS, floorDbfs });
+    return runSweep(plan.entries, scratchSlot(t, n), { device, seconds, floorDbfs, outDir, play }, (record) => {
+      if (verbose) process.stderr.write(`${JSON.stringify(record)}\n`);
+    });
+  });
+  print(args, summary, () => sweepText(summary));
+  return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;
 }
 
 async function main(args: Invocation): Promise<number> {
