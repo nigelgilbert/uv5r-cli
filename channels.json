@@ -1,0 +1,20 @@
+{
+  "name": "New York City UV-5R channel plan, written 2026-10-17",
+  "notes": "Researched 2026-10-17 for Manhattan within 40 km. Channels 3 to 7 need an amateur license to transmit; channels 8 and 9 need a GMRS license. Channels 10 to 14 are receive only. Use channel 3 first to call for help, then channel 4. Unverified: NOAA HD reception inside Manhattan; BX550 frequency comes from the myGMRS listing name and its tone sits behind a login, so it stays receive only until the tone is confirmed; local repeaters on 462.675 may use a tone other than 141.3; the BEARS Skywarn net time; channel 14 comes from general knowledge.",
+  "channels": [
+    { "channel": 1, "name": "NOAA NY", "rxMhz": 162.550, "notes": "KWO35 New York City, Empire State Building, 4 km" },
+    { "channel": 2, "name": "NOAA HD", "rxMhz": 162.500, "notes": "KZZ31 Hardyston NJ, 62 km NW, fringe alternate" },
+    { "channel": 3, "name": "BEARS", "rxMhz": 147.270, "offsetMhz": 0.6, "tone": "141.3", "notes": "W2ABC Broadcast Employees ARS, Manhattan, NYC ARES affiliate, e-power, first choice for a call for help" },
+    { "channel": 4, "name": "NYCARES", "rxMhz": 441.100, "offsetMhz": 5.0, "tone": "136.5", "notes": "N2ROW system hub, Brooklyn, NYC-ARECS net Mon 8:30 PM" },
+    { "channel": 5, "name": "WECA", "rxMhz": 147.060, "offsetMhz": 0.6, "tone": "114.8", "notes": "WB2ZII Westchester Emergency Comm Assoc, Valhalla, wide area, net daily 9:30 PM" },
+    { "channel": 6, "name": "2M CALL", "rxMhz": 146.520, "notes": "National 2 m FM calling frequency, simplex fallback" },
+    { "channel": 7, "name": "70 CALL", "rxMhz": 446.000, "notes": "National 70 cm FM calling frequency, simplex fallback" },
+    { "channel": 8, "name": "GMRS 20", "rxMhz": 462.675, "tone": "141.3", "notes": "GMRS traveler assistance and emergency channel" },
+    { "channel": 9, "name": "BX550", "rxMhz": 462.550, "offsetMhz": 5.0, "notes": "BIG BRONX 550 GMRS repeater, open system, 12 km, tone unknown" },
+    { "channel": 10, "name": "FDNY MN", "rxMhz": 482.10625, "narrow": true, "notes": "FDNY Manhattan fire dispatch, receive only, PL 146.2" },
+    { "channel": 11, "name": "EMS MNC", "rxMhz": 482.98125, "narrow": true, "notes": "FDNY EMS Manhattan Central dispatch, receive only, PL 156.7" },
+    { "channel": 12, "name": "FD TAC1", "rxMhz": 486.1125, "narrow": true, "notes": "FDNY fireground TAC 1, receive only, active near working fires" },
+    { "channel": 13, "name": "HATZLH", "rxMhz": 160.280, "narrow": true, "notes": "Hatzalah EMS dispatch, receive only, PL 167.9" },
+    { "channel": 14, "name": "MAR 16", "rxMhz": 156.800, "notes": "VHF marine channel 16, USCG Sector New York distress and calling, receive only" }
+  ]
+}
