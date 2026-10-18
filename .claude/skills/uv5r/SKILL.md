@@ -23,6 +23,7 @@ Run commands from the repo root. `uv5r` below means `node src/main.ts`.
   - ffmpeg missing from PATH: run `brew install ffmpeg`.
   - ffmpeg failed or timed out: read `message` and check `--device`.
   - Short capture: retry `listen` once, then check the AIOC audio device is listed.
+  - afplay missing or failed: read `message`; the WAV at `file` is still on disk.
 - Exit 4 means a timeout: no ack or a short read. Retry the verb once, then ask the human
   to check the radio is on.
 - Exit 5 means the radio did not answer, gave a bad reply, refused a write, failed
@@ -61,6 +62,7 @@ uv5r restore radio.img --force
 uv5r settings
 uv5r settings voice eng beep on
 uv5r listen --seconds 5
+uv5r listen --seconds 5 --out rx.wav --play
 uv5r listen --seconds 5 --floor -40
 ```
 
@@ -79,6 +81,10 @@ field. `active` lists one true or false per second, aligned with `rmsDbfs`, and
 `--floor DBFS` sets another threshold. `warnings` holds
 `input clips: turn the volume knob down` when more than 1 percent of samples sit at full
 scale. Ask the human to turn the knob down, then listen again.
+
+To let the human hear what came in, run `listen --out FILE --play`. `--out` writes the
+analysed seconds as a 48 kHz mono WAV and the result carries `out`. `--play` plays it
+through `afplay` after the capture and needs `--out`.
 
 Frequencies in MHz, 136-174 or 400-520. Tones: `82.5`, `D023`, `D023I`, `none`.
 `scenarios/big-sky-2026-10.json` holds the Big Sky channel list and sweep windows.

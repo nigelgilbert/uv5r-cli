@@ -60,7 +60,7 @@ interface Verb {
   run: (args: Invocation) => Promise<number>;
 }
 
-const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'rx-only', 'force']);
+const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'rx-only', 'force', 'play']);
 const COMMON = ['json', 'text', 'target'];
 const TUNE_FLAGS = ['channel', 'offset', 'tone', 'rx-tone', 'narrow', 'low-power', 'rx-only', 'name'];
 const MAX_KEY_SECONDS = 60;
@@ -83,7 +83,7 @@ const verbs: Record<string, Verb> = {
   settings: { summary: 'Print the menu settings, or set fields', usage: 'settings voice eng beep on', positionals: Infinity, run: settingsVerb },
   listen: {
     summary: 'Capture receive audio from the AIOC and report dBFS, active, activeSeconds and warnings',
-    usage: 'listen --seconds 5 --floor -40',
+    usage: 'listen --seconds 5 --out rx.wav --play',
     positionals: 0,
     run: listenVerb,
   },
@@ -111,10 +111,11 @@ function helpText(): string {
     '  --rx-only          tune: receive only, TX inhibited; conflicts with --offset',
     '  --name TEXT        tune: channel name, 7 chars (default the frequency)',
     `  --seconds S        key: hold time, 0 < S <= ${MAX_KEY_SECONDS}; listen: capture time, whole number 1..${MAX_LISTEN_SECONDS} (required)`,
-    '  --out FILE         dump: output path (default uv5r-YYYY-MM-DDTHH-MM-SS.img)',
+    '  --out FILE         dump: output path (default uv5r-YYYY-MM-DDTHH-MM-SS.img); listen: write the capture as a 48 kHz mono WAV and report out',
     '  --force            restore: confirm a bulk write',
     `  --device NAME      listen: avfoundation audio device (default ${DEFAULT_AUDIO_DEVICE})`,
     `  --floor DBFS       listen: a second is active when its RMS is above DBFS (default ${DEFAULT_FLOOR_DBFS}); sets active and activeSeconds`,
+    '  --play             listen: play the --out file through afplay after the capture; needs --out',
     '',
     'settings fields, set by radio menu index or by name:',
     ...SETTING_NAMES.map((name) => `  ${name.padEnd(8)} ${settingValues(name)}`),
@@ -360,7 +361,7 @@ async function settingsVerb(args: Invocation): Promise<number> {
 }
 
 async function listenVerb(args: Invocation): Promise<number> {
-  checkFlags('listen', args.flags, ['json', 'text', 'seconds', 'device', 'floor']);
+  checkFlags('listen', args.flags, ['json', 'text', 'seconds', 'device', 'floor', 'out', 'play']);
   if (!args.flags.has('seconds')) throw new UsageError(`listen needs --seconds S (max ${MAX_LISTEN_SECONDS}), as in: listen --seconds 5`);
   const seconds = numberFlag(args.flags, 'seconds')!;
   if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
@@ -368,7 +369,10 @@ async function listenVerb(args: Invocation): Promise<number> {
   }
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
   const floor = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
-  const result = await listen(device, seconds, floor);
+  const out = stringFlag(args.flags, 'out');
+  const play = args.flags.get('play') === true;
+  if (play && out === undefined) throw new UsageError('--play needs --out FILE, as in: listen --seconds 5 --out rx.wav --play');
+  const result = await listen(device, seconds, floor, { out, play });
   // Print null levels as zero, since null marks digital zero.
   const level = (db: number | null) => (db === null ? 'zero' : `${db} dBFS`);
   print(args, result, () =>
@@ -382,6 +386,7 @@ async function listenVerb(args: Invocation): Promise<number> {
       `active     ${result.activeSeconds} of ${result.active.length} s above ${floor} dBFS`,
       `timeline   ${result.active.map((on) => (on ? '#' : '.')).join('')}`,
       ...result.warnings.map((w) => `warning    ${w}`),
+      ...(result.out === undefined ? [] : [`out        ${result.out}`]),
     ].join('\n'),
   );
   return EXIT.ok;
