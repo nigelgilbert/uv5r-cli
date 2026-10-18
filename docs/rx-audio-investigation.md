@@ -116,50 +116,7 @@ explicit permission.
    menu 14 VOICE to ENG and menu 8 BEEP to ON from the keypad and power cycle. If the
    internal speaker still plays with the AIOC inserted, see AIOC issue 106.
 
-Reference script for step 2, run from the repo root with `node`:
-
-```ts
-import { readFileSync } from 'node:fs';
-import { SerialTransport, resolveTarget } from './src/transport.ts';
-import { Session, hex } from './src/protocol.ts';
-const fixture = readFileSync('fixtures/uv5r-hn5rv011-2026-10-12.img');
-const size = Number(process.argv[2] ?? 32);          // 32 at 0x0E20, or 64 at 0x0E00
-const addr = size === 64 ? 0x0e00 : 0x0e20;
-const b = Uint8Array.from(fixture.subarray(8 + addr, 8 + addr + size));
-if (process.argv.includes('--sql0')) b[0x0e20 - addr] = 0;
-const t = await SerialTransport.open(await resolveTarget(undefined));
-const s = new Session(t);
-await s.start();
-await s.writeBlock(addr, b);
-const back = await s.readBlock(0x0e00, 0x40);
-for (let i = 0; i < 4; i++) console.log(`0x0E${(i * 16).toString(16).padStart(2, '0')}`, hex(back.subarray(i * 16, i * 16 + 16)));
-await t.close();
-```
-
-`Session.writeBlock` accepts any length; the radio's reply decides whether it took.
-
-## CLI changes
-
-This is the morning plan. "Result, 2026-10-12 afternoon" records what was done, and its
-measured rule supersedes the 32-byte and 64-byte write attempts.
-
-1. `restoreImage`: write the 0x0E00 to 0x0E7F region with the block size the repair proves
-   the radio honours, and read back with a 64-byte read to verify. Fail with
-   `DeviceStateError` when the readback differs.
-2. `readStatus`: read 0x0E00 with 64 bytes and index into it, so the result does not depend
-   on the aliasing. Report `voice`, `beep`, `squelch` and `abr` in the status payload. A
-   zero `voice` or `beep` on this firmware explains silent RX and belongs in the output.
-3. README: replace the sentence that says the radio acks and ignores settings writes.
-   State that the radio applied an early display-mode write and that 16-byte writes in
-   0x0E10 to 0x0E3F are acked and ignored while 64-byte reads show the true contents.
-4. Add a `settings` verb that reads the 64-byte block, decodes it with the CHIRP layout,
-   and writes a named field with the proven block size. Scope it to `squelch`, `voice`,
-   `beep`, `abr`, `save`, `timeout`, `mdfa`, `mdfb`.
-5. Optional: a `listen --seconds N` verb that shells out to ffmpeg and reports mean and peak
-   dBFS in JSON, so the receiver check in the README becomes automatic. Device name
-   `AIOC Audio`, 48 kHz mono.
-6. Add a test with `FakeRadio` that aliases 16-byte reads in 0x0E10 to 0x0E4F to the
-   0x0E40 record and ignores 16-byte writes there, so the fixes above are exercised.
+The reference script for step 2 did 32-byte and 64-byte writes. `Session.writeBlock` now takes one aligned 16-byte block and refuses anything else, and the afternoon result below supersedes that approach.
 
 ## Monitor command
 
@@ -312,7 +269,7 @@ RMS with a peak near -6 at 1x, and that is the reference position for every capt
 
 Four agents listed angles (radio jack hardware, radio firmware and EEPROM state, AIOC and
 macOS capture chain, measurement strategy) and a skeptic ranked them against the evidence
-above. `docs/rx-audio-angles-2026-10-17.md` holds the full lists.
+above. The lists were discarded once the fault was found; the outcome is below.
 
 Dead: every mute, tone, firmware-variant, aux-corruption, demod-fault, AIOC-path, TCC,
 loading and plug-detection hypothesis. Squelch applies live, the amp drives the tip at

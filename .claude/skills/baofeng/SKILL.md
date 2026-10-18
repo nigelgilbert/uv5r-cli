@@ -47,9 +47,9 @@ baofeng settings voice eng beep on
 baofeng listen --seconds 5
 ```
 
-`status` reports `squelch`, `voice`, `beep` and `abr`. `voice off` or `beep off` mutes receive
-audio on this firmware: set them back with `settings`, then ask the human to power cycle
-the radio. `listen` reports dBFS from the AIOC. The bare AIOC floor at 1x gain reads about
+`status` reports `squelch`, `voice`, `beep` and `abr`. Reports say `voice off` or `beep off`
+mutes receive audio on this firmware family; set them back with `settings` before chasing
+audio elsewhere. `listen` reports dBFS from the AIOC. The bare AIOC floor at 1x gain reads about
 -66; open-squelch static reads well above -30. A floor reading with squelch 0 means the
 volume knob is down or the 2.5 mm plug is short of its contact. `peakDbfs` above 0 means
 the knob is too high and the input clips; aim for static around -20 to -12. Seconds of digital zero come back as `null`
