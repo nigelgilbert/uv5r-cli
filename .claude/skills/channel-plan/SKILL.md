@@ -65,24 +65,28 @@ Brief:
 - Read the RadioReference county page for the location. Return conventional FM
   frequencies for the sheriff, fire, EMS and search and rescue. Skip anything marked P25,
   DMR, NXDN, encrypted or trunked. Set `rxOnly: true` on each sheriff, fire, EMS and SAR
-  entry.
+  entry. When the listing shows a tone for a receive-only entry, return it as `rxTone` and
+  leave `tone` off.
 
 ## Candidate format
 
 ```json
 { "name": "BIG SKY", "rxMhz": 146.820, "offsetMhz": -0.6, "tone": "82.5", "narrow": false,
   "notes": "Big Sky 2 m repeater", "source": "https://...", "confidence": "listed" }
+{ "name": "SHERIFF", "rxMhz": 154.6950, "rxTone": "156.7", "narrow": true, "rxOnly": true,
+  "notes": "County sheriff dispatch", "source": "https://...", "confidence": "listed" }
 ```
 
-`name` is at most 7 characters, upper case; the radio truncates longer names. `rxOnly` true
-marks a receive-only channel; PTT does nothing on it. Omit `offsetMhz` for simplex, `tone`
-when none, `narrow` and `rxOnly` when false.
+`name` is at most 7 characters, upper case; the radio truncates longer names. `tone` is the
+transmit tone and `rxTone` the receive tone. `rxOnly` true marks a receive-only channel;
+PTT does nothing on it. Omit `offsetMhz` for simplex, `tone` and `rxTone` when none,
+`narrow` and `rxOnly` when false.
 
 ## Compiling the plan
 
 Match the reference `channels.example.json`: a top-level `name`, a top-level `notes`, and a
 `channels` array. Each entry carries `channel`, `name`, `rxMhz`, and `notes`, plus
-`offsetMhz`, `tone`, `narrow` and `rxOnly` when they apply. Drop `source` and `confidence`
+`offsetMhz`, `tone`, `rxTone`, `narrow` and `rxOnly` when they apply. Drop `source` and `confidence`
 from the entries; put unverified items in the top-level `notes`. Give an `rxOnly` entry no
 `offsetMhz`; `tune` rejects the pair.
 
@@ -104,16 +108,17 @@ or GMRS license to transmit, which channel to try first for a call for help, and
 the plan was researched.
 
 Frequencies stay in MHz as numbers with three or four decimals. Tones are strings such as
-`"82.5"` or `"D023"`. Reject anything outside 136-174 or 400-520 MHz, since the radio cannot
+`"82.5"`, `"D606N"` or `"D023I"`. Reject anything outside 136-174 or 400-520 MHz, since the radio cannot
 tune it.
 
 ## Writing the plan to the radio
 
 Load the `uv5r` skill. Each entry goes to its own `channel` number through one `tune` call.
-Pass `--rx-only` when `rxOnly` is true.
+Each field maps onto one flag, as the README's plan fields table lists. Pass `--rx-only`
+when `rxOnly` is true.
 
 ```sh
-uv5r tune <rxMhz> --channel <channel> [--offset <offsetMhz>] [--tone <tone>] [--narrow] [--rx-only] --name "<name>"
+uv5r tune <rxMhz> --channel <channel> [--offset <offsetMhz>] [--tone <tone>] [--rx-tone <rxTone>] [--narrow] [--rx-only] --name "<name>"
 ```
 
 Programming another slot does not select it on the radio. The human turns the knob to it.

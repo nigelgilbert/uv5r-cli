@@ -8,6 +8,6 @@
     { "channel": 4, "name": "BIG SKY", "rxMhz": 146.820, "offsetMhz": -0.6, "tone": "82.5", "notes": "Big Sky 2 m repeater, first choice for a call for help" },
     { "channel": 5, "name": "2M CALL", "rxMhz": 146.520, "notes": "National 2 m FM calling frequency, simplex fallback" },
     { "channel": 6, "name": "GMRS 20", "rxMhz": 462.675, "tone": "141.3", "notes": "GMRS traveler assistance and emergency channel" },
-    { "channel": 7, "name": "SHERIFF", "rxMhz": 154.6950, "narrow": true, "rxOnly": true, "notes": "County sheriff dispatch, placeholder frequency; replace with the local RadioReference listing" }
+    { "channel": 7, "name": "SHERIFF", "rxMhz": 154.6950, "rxTone": "156.7", "narrow": true, "rxOnly": true, "notes": "County sheriff dispatch, placeholder frequency; replace with the local RadioReference listing" }
   ]
 }
