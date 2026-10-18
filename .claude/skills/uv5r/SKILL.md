@@ -58,6 +58,7 @@ uv5r restore radio.img --force
 uv5r settings
 uv5r settings voice eng beep on
 uv5r listen --seconds 5
+uv5r listen --seconds 5 --floor -40
 ```
 
 `status` reports `squelch`, `voice`, `beep` and `abr`. Reports say `voice off` or `beep off`
@@ -68,6 +69,13 @@ volume knob is down or the 2.5 mm plug is short of its contact. `peakDbfs` above
 the knob is too high and the input clips; aim for static around -20 to -12. Seconds of digital zero come back as `null`
 in `rmsDbfs` and count in `zeroSeconds`. Denied microphone permission for the terminal is
 one cause.
+
+`listen` drops the first captured second, which holds a capture-start burst, from every
+field. `active` lists one true or false per second, aligned with `rmsDbfs`, and
+`activeSeconds` counts the true entries. A second is active when its RMS is above -50 dBFS.
+`--floor DBFS` sets another threshold. `warnings` holds
+`input clips: turn the volume knob down` when more than 1 percent of samples sit at full
+scale. Ask the human to turn the knob down, then listen again.
 
 Frequencies in MHz, 136-174 or 400-520. Tones: `82.5`, `D023`, `D023I`, `none`.
 `scenarios/big-sky-2026-10.json` holds the Big Sky channel list and sweep windows.
