@@ -78,7 +78,13 @@ export class SerialTransport implements Transport {
     });
     const t = new SerialTransport(path, port);
     // Opening a tty raises DTR; release PTT before the radio sees it.
-    await t.setPtt(false);
+    try {
+      await t.setPtt(false);
+    } catch (err) {
+      // Close the port so the process can exit on its own.
+      await t.close();
+      throw err;
+    }
     return t;
   }
 
