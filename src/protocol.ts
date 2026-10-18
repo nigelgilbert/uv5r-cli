@@ -1,5 +1,5 @@
-import { ADDR } from './codec.ts';
-import { DeviceStateError, TimeoutError } from './errors.ts';
+import { ADDR, SETTINGS_BASE, SETTINGS_COMMIT } from './codec.ts';
+import { DeviceStateError, TimeoutError, UsageError } from './errors.ts';
 import type { Transport } from './transport.ts';
 
 /** Clone-mode magic for the UV-5R family (CHIRP UV5R_MODEL_291). */
@@ -17,6 +17,15 @@ export const SETTLE_MS = 3000;
 const HANDSHAKE_ATTEMPTS = 2;
 /** A previous verb may have left the radio in clone mode; this much silence drops it. */
 const HANDSHAKE_RETRY_MS = SETTLE_MS;
+/** The radio takes writes as 16-byte aligned blocks below this address. */
+const MEMORY_END = 0x2000;
+const BLOCK = 0x10;
+/** The two 16-byte halves the radio stages until a write at SETTINGS_COMMIT. */
+const SETTINGS_HALVES = [SETTINGS_BASE, SETTINGS_BASE + BLOCK] as const;
+/** 16-byte reads that start in this range return the 0x0E40 record. */
+const ALIAS_START = 0x0e10;
+const ALIAS_END = 0x0e50;
+const PAGE = 0x40;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Wait for the radio to drop the clone session and reload its settings from EEPROM. */
@@ -36,6 +45,8 @@ export interface Ident {
 export class Session {
   private lastCommandAt = 0;
   private commands = 0;
+  /** Settings halves the radio acked this session and holds in its staging buffer. */
+  private readonly staged = new Set<number>();
   ident: Ident | undefined;
 
   private readonly transport: Transport;
@@ -75,6 +86,7 @@ export class Session {
     }
     this.lastCommandAt = Date.now();
     this.commands = 0;
+    this.staged.clear();
     // A first read outside the aux area, then the firmware block; newer radios need this order.
     await this.readBlock(0x1e80, 0x40);
     const fw = await this.readBlock(ADDR.firmwareBlock, 0x40);
@@ -90,6 +102,7 @@ export class Session {
   private touch(): void {
     const gap = Date.now() - this.lastCommandAt;
     if (this.commands > 0 && gap > IDLE_LIMIT_MS - 300) {
+      this.staged.clear();
       throw new DeviceStateError(`clone session idle for ${gap} ms; the radio has left clone mode`, { idleMs: gap });
     }
     this.lastCommandAt = Date.now();
@@ -98,11 +111,17 @@ export class Session {
 
   /**
    * Read `size` bytes at `addr`; the radio serves 16-byte aligned blocks, so pass aligned addresses.
-   * A 16-byte read in 0x0E10..0x0E4F returns the 0x0E40 record; read that page with 64 bytes.
+   * The radio answers a 16-byte read in 0x0E10..0x0E4F with the 0x0E40 record, so such a read
+   * goes out as a 64-byte read of its aligned page and returns the requested slice.
    * Reads of 0x0E00..0x0E7F return the values loaded at the last reload, so a write there
    * reads back unchanged until the next session.
    */
   async readBlock(addr: number, size: number): Promise<Uint8Array> {
+    if (size === BLOCK && addr >= ALIAS_START && addr < ALIAS_END) {
+      const page = addr & ~(PAGE - 1);
+      const data = await this.readBlock(page, PAGE);
+      return data.subarray(addr - page, addr - page + size);
+    }
     const first = this.commands === 0;
     this.touch();
     this.transport.write(Uint8Array.of(CMD_READ, addr >> 8, addr & 0xff, size));
@@ -125,13 +144,35 @@ export class Session {
    * Write one 16-byte aligned block. The radio acks every write; only some regions take effect.
    * Writes to 0x0E20 and 0x0E30 are staged in a zero-filled 32-byte buffer and reach EEPROM
    * on the next write at 0x0E40; use writeSettings in radio.ts for that region.
+   * A write at 0x0E40 commits zeros over any half left unstaged, so it throws UsageError
+   * unless both halves were acked since the last commit, handshake or failed write.
+   * Each write throws UsageError unless it is 16 bytes at a 16-byte aligned address.
    */
   async writeBlock(addr: number, data: Uint8Array): Promise<void> {
-    this.touch();
-    this.transport.discard();
-    this.transport.write(Uint8Array.from([CMD_WRITE, addr >> 8, addr & 0xff, data.length, ...data]));
-    await sleep(50);
-    const ack = await this.transport.read(1, 1500);
-    if (ack[0] !== ACK) throw new DeviceStateError(`radio refused write at 0x${addr.toString(16)}`, { addr, got: hex(ack) });
+    if (!Number.isInteger(addr) || addr < 0 || addr % BLOCK !== 0 || addr + BLOCK > MEMORY_END) {
+      throw new UsageError(`write address 0x${addr.toString(16)} is outside the 16-byte aligned blocks below 0x${MEMORY_END.toString(16)}`, { addr });
+    }
+    if (data.length !== BLOCK) {
+      throw new UsageError(`write at 0x${addr.toString(16)} takes ${BLOCK} bytes; got ${data.length}`, { addr, size: data.length });
+    }
+    const commit = addr === SETTINGS_COMMIT;
+    if (commit && !SETTINGS_HALVES.every((h) => this.staged.has(h))) {
+      const staged = SETTINGS_HALVES.filter((h) => this.staged.has(h)).map((h) => `0x${h.toString(16)}`);
+      this.staged.clear();
+      throw new UsageError('write at 0x0e40 commits the settings block; stage both 0x0e20 and 0x0e30 first', { addr, staged });
+    }
+    try {
+      this.touch();
+      this.transport.discard();
+      this.transport.write(Uint8Array.from([CMD_WRITE, addr >> 8, addr & 0xff, data.length, ...data]));
+      await sleep(50);
+      const ack = await this.transport.read(1, 1500);
+      if (ack[0] !== ACK) throw new DeviceStateError(`radio refused write at 0x${addr.toString(16)}`, { addr, got: hex(ack) });
+    } catch (err) {
+      this.staged.clear();
+      throw err;
+    }
+    if (commit) this.staged.clear();
+    else if ((SETTINGS_HALVES as readonly number[]).includes(addr)) this.staged.add(addr);
   }
 }
