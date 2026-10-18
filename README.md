@@ -62,6 +62,7 @@ uv5r restore radio.img --force             # main memory back from an image, abo
 uv5r settings                              # squelch, save, abr, beep, timeout, voice, mdfa, mdfb
 uv5r settings voice eng beep on            # set fields, commit, verify in a fresh session
 uv5r listen --seconds 5                    # capture RX audio through ffmpeg, report dBFS
+uv5r listen --seconds 5 --out rx.wav --play # keep the capture as a WAV and play it back
 uv5r listen --seconds 30 --floor -40       # count the seconds with RMS above -40 dBFS
 uv5r help                                  # list verbs, flags and exit codes
 ```
@@ -82,10 +83,11 @@ Options:
 | `--low-power` | low power |
 | `--name TEXT` | channel name, printable ASCII, uppercased, cut to 7 characters; other characters exit 2 before the port opens. Default the frequency |
 | `--seconds S` | `key`: seconds to transmit, up to 60, required. `listen`: whole seconds to capture, 1..600 |
-| `--out FILE` | `dump`: image path; default `uv5r-YYYY-MM-DDTHH-MM-SS.img` in the working directory |
+| `--out FILE` | `dump`: image path; default `uv5r-YYYY-MM-DDTHH-MM-SS.img` in the working directory. `listen`: write the capture as a 48 kHz mono WAV |
 | `--force` | `restore`: confirm the bulk write, required |
 | `--device NAME` | `listen`: avfoundation audio input by name or index, default `AIOC Audio`. List inputs with `ffmpeg -f avfoundation -list_devices true -i ""` |
 | `--floor DBFS` | `listen`: a second is active when its RMS is above DBFS; default -50 |
+| `--play` | `listen`: play the `--out` file through `afplay` after the capture; needs `--out` |
 
 Frequencies take MHz (`154.680`), Hz (`154680000`) or exponent form (`154.68e6`) and lie
 in 136-174 or 400-520 MHz. Frequencies and offsets finer than 10 Hz exit 2.
@@ -147,6 +149,13 @@ Text output prints `active` as a timeline, `#` for an active second and `.` for 
 `warnings` lists level problems and is empty on a good capture. It holds `input clips: turn
 the volume knob down` when more than 1 percent of samples sit at full scale. An astats pass
 ahead of the high-pass counts those samples. Text output prints one line per warning.
+
+`--out FILE` writes the capture as a 48 kHz mono 16-bit WAV from the same ffmpeg run and
+adds `out` with the path to the result. The WAV holds the seconds that `rmsDbfs` covers,
+without the high-pass, and overwrites an existing file. `--play` runs `afplay` on it once
+ffmpeg exits, so `listen --seconds 5 --out rx.wav --play` records and plays in one command.
+`--play` without `--out` exits 2. A missing `afplay` or an `afplay` error exit is a
+transport error that names the file.
 
 The AIOC's bare ADC floor at 1x gain reads about -66 dBFS; open-squelch static reads well
 above -30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug

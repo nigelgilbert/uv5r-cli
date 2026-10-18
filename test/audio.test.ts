@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { CLIP_WARNING, captureSeconds, ffmpegArgs, listen, parseAstats, summarize, wholeSeconds } from '../src/audio.ts';
+import { CLIP_WARNING, captureSeconds, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
 
 /** Pre-high-pass astats fields for one frame: sample min and max on the float scale, and the count of samples at either. */
 interface Raw {
@@ -59,6 +59,24 @@ describe('ffmpegArgs', () => {
   it('counts peaks before the high-pass and reads levels after it', () => {
     const chain = ffmpegArgs('AIOC Audio', 5)[ffmpegArgs('AIOC Audio', 5).indexOf('-af') + 1]!;
     expect(chain).toMatch(/astats=[^,]*measure_overall=Min_level\+Max_level\+Peak_count,highpass=f=50,astats=[^,]*measure_overall=Peak_level\+RMS_level\+Number_of_samples,ametadata=print$/);
+  });
+  it('adds a 48 kHz mono WAV output of the analysed seconds after the null sink', () => {
+    const args = ffmpegArgs('AIOC Audio', 3, 'rx.wav');
+    const sink = args.indexOf('null');
+    expect(args.slice(sink - 1, sink + 2)).toEqual(['-f', 'null', '-']);
+    expect(args.slice(0, sink + 2)).toEqual(ffmpegArgs('AIOC Audio', 3));
+    expect(args.slice(sink + 2)).toEqual([
+      '-t',
+      '6',
+      '-af',
+      'aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono,asetpts=N/SR/TB,atrim=start_sample=48000:end_sample=192000',
+      '-c:a',
+      'pcm_s16le',
+      '-f',
+      'wav',
+      '-y',
+      'rx.wav',
+    ]);
   });
 });
 
@@ -204,5 +222,71 @@ describe('listen', () => {
     ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-45', '-40'), frame(2, '-35', '-30')].join('\n'));
     const r = await listen('AIOC Audio', 2, -40);
     expect(r).toMatchObject({ active: [false, true], activeSeconds: 1 });
+  });
+});
+
+describe('listen with out and play', () => {
+  beforeEach(() => {
+    execFile.mockReset();
+  });
+
+  it('writes the WAV and reports out without playing it', async () => {
+    ffmpegReturns(null, STDERR);
+    const r = await listen('AIOC Audio', 3, -50, { out: 'rx.wav' });
+    expect(r.out).toBe('rx.wav');
+    expect(execFile).toHaveBeenCalledTimes(1);
+    expect(execFile.mock.calls[0]![1]).toEqual(ffmpegArgs('AIOC Audio', 3, 'rx.wav'));
+  });
+  it('leaves out off the result without an out path', async () => {
+    ffmpegReturns(null, STDERR);
+    expect(await listen('AIOC Audio', 3)).not.toHaveProperty('out');
+  });
+  it('spawns afplay with the path after ffmpeg resolves and not before', async () => {
+    let finish = () => {};
+    execFile.mockImplementation((file, _args, _opts, cb) => {
+      if (file === 'ffmpeg') finish = () => cb(null, '', STDERR);
+      else cb(null, '', '');
+    });
+    const done = listen('AIOC Audio', 3, -50, { out: 'rx.wav', play: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(execFile.mock.calls.map((c) => c[0])).toEqual(['ffmpeg']);
+    finish();
+    const r = await done;
+    expect(execFile.mock.calls.map((c) => c[0])).toEqual(['ffmpeg', 'afplay']);
+    expect(execFile.mock.calls[1]![1]).toEqual(['rx.wav']);
+    expect(r.out).toBe('rx.wav');
+  });
+  it('does not play when the capture fails', async () => {
+    ffmpegReturns({ code: 1 as unknown as string }, 'Error opening input');
+    await expect(listen('AIOC Audio', 3, -50, { out: 'rx.wav', play: true })).rejects.toMatchObject({ kind: 'transport' });
+    expect(execFile.mock.calls.map((c) => c[0])).toEqual(['ffmpeg']);
+  });
+  it('rejects play without out before running ffmpeg', async () => {
+    await expect(listen('AIOC Audio', 3, -50, { play: true })).rejects.toMatchObject({ kind: 'usage' });
+    expect(execFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('play', () => {
+  beforeEach(() => {
+    execFile.mockReset();
+  });
+
+  it('reports a missing afplay as a transport error naming the file', async () => {
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('spawn afplay ENOENT'), { code: 'ENOENT' }), '', ''));
+    await expect(play('rx.wav', 3)).rejects.toMatchObject({ kind: 'transport', message: 'afplay not found on PATH; cannot play rx.wav', detail: { file: 'rx.wav' } });
+  });
+  it('reports a non-zero afplay exit as a transport error naming the file', async () => {
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', "Error: AudioFileOpen failed ('dta?')\n"));
+    await expect(play('rx.wav', 3)).rejects.toMatchObject({
+      kind: 'transport',
+      message: "afplay exited with code 1 playing rx.wav: Error: AudioFileOpen failed ('dta?')",
+      detail: { file: 'rx.wav', code: 1 },
+    });
+  });
+  it('passes the file to afplay with a timeout past its length', async () => {
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(null, '', ''));
+    await play('rx.wav', 3);
+    expect(execFile.mock.calls[0]!.slice(0, 3)).toEqual(['afplay', ['rx.wav'], { timeout: 18000 }]);
   });
 });

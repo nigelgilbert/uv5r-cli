@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { TransportError } from './errors.ts';
+import { TransportError, UsageError } from './errors.ts';
 
 export interface ListenResult {
   device: string;
@@ -18,6 +18,16 @@ export interface ListenResult {
   activeSeconds: number;
   /** Level problems found in the capture, such as clipping. */
   warnings: string[];
+  /** Path of the WAV written with the capture; present when the caller passed `out`. */
+  out?: string;
+}
+
+/** Options for `listen`. `play` needs `out`. */
+export interface ListenOptions {
+  /** Write the analysed seconds to this path as a 48 kHz mono 16-bit WAV. */
+  out?: string;
+  /** Run afplay on `out` after ffmpeg exits. */
+  play?: boolean;
 }
 
 /**
@@ -66,9 +76,10 @@ export function captureSeconds(seconds: number): number {
  * ffmpeg arguments that capture at least `seconds` from `device`, remove DC, and print per-second astats on stderr.
  * The first astats runs before the high-pass, which smooths clipped flat tops in float audio, and reports the peak count.
  * The second astats reports the levels after the high-pass.
+ * With `out`, a second output writes a WAV of the same seconds that the levels cover.
  */
-export function ffmpegArgs(device: string, seconds: number): string[] {
-  return [
+export function ffmpegArgs(device: string, seconds: number, out?: string): string[] {
+  const args = [
     '-hide_banner',
     '-nostdin',
     '-f',
@@ -89,6 +100,31 @@ export function ffmpegArgs(device: string, seconds: number): string[] {
     '-f',
     'null',
     '-',
+  ];
+  if (out === undefined) return args;
+  return [...args, ...wavOutput(seconds, out)];
+}
+
+/**
+ * ffmpeg output arguments that write captured seconds 2 to `seconds` + 1 as a 48 kHz mono 16-bit WAV.
+ * asetpts restamps by sample count, since avfoundation stamps drift from the sample clock, so atrim cuts the same frames that summarize reads.
+ */
+function wavOutput(seconds: number, out: string): string[] {
+  return [
+    '-t',
+    String(captureSeconds(seconds)),
+    '-af',
+    [
+      `aformat=sample_fmts=s16:sample_rates=${RATE}:channel_layouts=mono`,
+      'asetpts=N/SR/TB',
+      `atrim=start_sample=${RATE}:end_sample=${RATE * (seconds + 1)}`,
+    ].join(','),
+    '-c:a',
+    'pcm_s16le',
+    '-f',
+    'wav',
+    '-y',
+    out,
   ];
 }
 
@@ -166,11 +202,46 @@ function stderrTail(stderr: string): string {
     .join(' | ');
 }
 
-/** Capture `seconds` of receive audio through ffmpeg and report levels, activity against `floorDbfs`, and warnings. */
-export function listen(device: string, seconds: number, floorDbfs = DEFAULT_FLOOR_DBFS): Promise<ListenResult> {
+/**
+ * Capture `seconds` of receive audio through ffmpeg and report levels, activity against `floorDbfs`, and warnings.
+ * With `out`, ffmpeg also writes the capture to that WAV and the result carries `out`.
+ * With `play`, afplay plays the WAV once ffmpeg exits; one ffmpeg process that captured and played hung on the bench.
+ */
+export async function listen(device: string, seconds: number, floorDbfs = DEFAULT_FLOOR_DBFS, options: ListenOptions = {}): Promise<ListenResult> {
+  const { out, play: playIt = false } = options;
+  if (playIt && out === undefined) throw new UsageError('play needs an out file; pass --out FILE with --play');
+  const result = await capture(device, seconds, floorDbfs, out);
+  if (out === undefined) return result;
+  if (playIt) await play(out, seconds);
+  return { ...result, out };
+}
+
+/** Run afplay on `file`, a WAV of about `seconds`, and resolve when playback ends. */
+export function play(file: string, seconds: number): Promise<void> {
+  const timeoutMs = (seconds + 15) * 1000;
+  return new Promise((resolve, reject) => {
+    execFile('afplay', [file], { timeout: timeoutMs }, (err, _stdout, stderr) => {
+      const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null }) | null;
+      if (!e) {
+        resolve();
+        return;
+      }
+      if (e.code === 'ENOENT') {
+        reject(new TransportError(`afplay not found on PATH; cannot play ${file}`, { file }));
+        return;
+      }
+      const tail = stderrTail(stderr);
+      const how = e.killed && e.signal ? `timed out after ${timeoutMs / 1000}s` : e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
+      reject(new TransportError(`afplay ${how} playing ${file}${tail ? `: ${tail}` : ''}`, { file, code: e.code ?? null, signal: e.signal ?? null }));
+    });
+  });
+}
+
+/** Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV. */
+function capture(device: string, seconds: number, floorDbfs: number, out: string | undefined): Promise<ListenResult> {
   const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
   return new Promise((resolve, reject) => {
-    execFile('ffmpeg', ffmpegArgs(device, seconds), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
+    execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
       const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null }) | null;
       if (e?.code === 'ENOENT') {
         reject(new TransportError('ffmpeg not found on PATH; install it with brew install ffmpeg'));
