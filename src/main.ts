@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from 'node:fs';
-import { checkFlags, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
+import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { listen } from './audio.ts';
 import {
   SETTING_NAMES,
   checkBand,
   checkChannelNumber,
+  checkTenHz,
+  encodeName,
   isSettingName,
   parseFrequency,
   parseSettingValue,
@@ -16,11 +18,13 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, EXIT, UsageError, errorKind, exitCodeFor, signalExitCode } from './errors.ts';
-import { Session } from './protocol.ts';
+import { SETTLE_MS, Session } from './protocol.ts';
 import {
   channelPayload,
   dumpImage,
   erase,
+  IMAGE_HEADER,
+  RESTORE_RANGES,
   holdPtt,
   imageSettingsBlock,
   readChannel,
@@ -35,9 +39,20 @@ import {
 } from './radio.ts';
 import { SerialTransport, resolveTarget, type Transport } from './transport.ts';
 
+/** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
+export type OpenTransport = (target: string | undefined) => Promise<Transport>;
+
+/** Parsed arguments plus the transport opener the verb uses. */
+interface Invocation extends ParsedArgs {
+  open: OpenTransport;
+}
+
 interface Verb {
   summary: string;
-  run: (args: ParsedArgs) => Promise<number>;
+  usage: string;
+  /** Most positionals the verb takes after its name. */
+  positionals: number;
+  run: (args: Invocation) => Promise<number>;
 }
 
 const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'force']);
@@ -47,23 +62,25 @@ const MAX_KEY_SECONDS = 60;
 const MAX_LISTEN_SECONDS = 600;
 const DEFAULT_AUDIO_DEVICE = 'AIOC Audio';
 /** Seconds after the command ends until the radio reloads and applies a write. */
-const APPLIES_AFTER_SECONDS = 3;
+const APPLIES_AFTER_SECONDS = SETTLE_MS / 1000;
+/** Bytes a restore image needs to cover its header and every restore range. */
+const MIN_IMAGE_BYTES = IMAGE_HEADER + Math.max(...RESTORE_RANGES.map(([, end]) => end));
 
 const verbs: Record<string, Verb> = {
-  status: { summary: 'Print firmware, work mode, stored channel numbers, squelch, voice, beep, abr and the active record: status', run: statusVerb },
-  tune: { summary: 'Write a frequency into the channel the radio shows: tune 154.680 --channel 5 --tone 82.5', run: tuneVerb },
-  read: { summary: 'Print one channel record: read 5', run: readVerb },
-  erase: { summary: 'Clear one channel record and its name: erase 127', run: eraseVerb },
-  key: { summary: 'Key the transmitter for S seconds: key --seconds 2', run: keyVerb },
-  dump: { summary: 'Save the full memory image: dump --out radio.img', run: dumpVerb },
-  restore: { summary: 'Write the main memory of an image back: restore radio.img --force', run: restoreVerb },
-  settings: { summary: 'Print the menu settings, or set fields: settings voice eng beep on', run: settingsVerb },
-  listen: { summary: 'Capture receive audio from the AIOC and report dBFS: listen --seconds 5', run: listenVerb },
+  status: { summary: 'Print firmware, work mode, stored channel numbers, squelch, voice, beep, abr and the active record', usage: 'status', positionals: 0, run: statusVerb },
+  tune: { summary: 'Write a frequency into the channel the radio shows', usage: 'tune 154.680 --channel 5 --tone 82.5', positionals: 1, run: tuneVerb },
+  read: { summary: 'Print one channel record', usage: 'read 5', positionals: 1, run: readVerb },
+  erase: { summary: 'Clear one channel record and its name', usage: 'erase 127', positionals: 1, run: eraseVerb },
+  key: { summary: 'Key the transmitter for S seconds', usage: 'key --seconds 2', positionals: 0, run: keyVerb },
+  dump: { summary: 'Save the full memory image', usage: 'dump --out radio.img', positionals: 0, run: dumpVerb },
+  restore: { summary: 'Write the main memory of an image back', usage: 'restore radio.img --force', positionals: 1, run: restoreVerb },
+  settings: { summary: 'Print the menu settings, or set fields', usage: 'settings voice eng beep on', positionals: Infinity, run: settingsVerb },
+  listen: { summary: 'Capture receive audio from the AIOC and report dBFS', usage: 'listen --seconds 5', positionals: 0, run: listenVerb },
 };
 
 function helpText(): string {
   const width = Math.max(...Object.keys(verbs).map((v) => v.length));
-  const rows = Object.entries(verbs).map(([name, v]) => `  ${name.padEnd(width)}  ${v.summary}`);
+  const rows = Object.entries(verbs).map(([name, v]) => `  ${name.padEnd(width)}  ${v.summary}: ${v.usage}`);
   return [
     'usage: baofeng <verb> [options]',
     '',
@@ -100,9 +117,13 @@ function wantsJson(flags: Map<string, string | true>): boolean {
   return !process.stdout.isTTY;
 }
 
-async function withTransport<T>(flags: Map<string, string | true>, fn: (t: Transport) => Promise<T>): Promise<T> {
-  const target = await resolveTarget(stringFlag(flags, 'target') ?? process.env.BAOFENG_TARGET);
-  const transport = await SerialTransport.open(target);
+/** Open the serial port at the given path, or at the AIOC found by USB id. */
+async function openSerial(target: string | undefined): Promise<Transport> {
+  return SerialTransport.open(await resolveTarget(target));
+}
+
+async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<T>): Promise<T> {
+  const transport = await args.open(stringFlag(args.flags, 'target') ?? process.env.BAOFENG_TARGET);
   try {
     return await fn(transport);
   } finally {
@@ -117,10 +138,14 @@ function print(args: ParsedArgs, json: object, text: () => string): void {
 
 function channelSpec(freqText: string, flags: Map<string, string | true>): ChannelSpec {
   const rxHz = parseFrequency(freqText);
-  const offset = numberFlag(flags, 'offset');
-  const txHz = offset === undefined ? rxHz : rxHz + Math.round(offset * 1_000_000);
+  const offsetText = stringFlag(flags, 'offset');
+  const offsetHz = offsetText === undefined ? 0 : checkTenHz(parseDecimal(offsetText, '--offset') * 1_000_000, `--offset ${offsetText}`);
+  const txHz = rxHz + offsetHz;
   checkBand(rxHz);
   checkBand(txHz);
+  const name = stringFlag(flags, 'name');
+  // Encode the name here so a bad character fails before the port opens.
+  if (name !== undefined) encodeName(name);
   return {
     rxHz,
     txHz,
@@ -128,7 +153,7 @@ function channelSpec(freqText: string, flags: Map<string, string | true>): Chann
     rxTone: parseTone(stringFlag(flags, 'rx-tone') ?? 'none'),
     wide: !flags.get('narrow'),
     lowPower: Boolean(flags.get('low-power')),
-    name: stringFlag(flags, 'name'),
+    name,
   };
 }
 
@@ -168,14 +193,14 @@ function settingsPatch(positionals: string[]): Partial<Record<SettingName, numbe
   return patch;
 }
 
-async function statusVerb(args: ParsedArgs): Promise<number> {
+async function statusVerb(args: Invocation): Promise<number> {
   checkFlags('status', args.flags, COMMON);
-  const status = await withTransport(args.flags, (t) => readStatus(new Session(t)));
+  const status = await withTransport(args, (t) => readStatus(new Session(t)));
   print(args, status, () => statusText(status));
   return EXIT.ok;
 }
 
-async function tuneVerb(args: ParsedArgs): Promise<number> {
+async function tuneVerb(args: Invocation): Promise<number> {
   checkFlags('tune', args.flags, [...COMMON, ...TUNE_FLAGS]);
   const freq = args.positionals[0];
   if (!freq) throw new UsageError('tune needs a frequency in MHz, as in: tune 154.680 --channel 5');
@@ -183,19 +208,19 @@ async function tuneVerb(args: ParsedArgs): Promise<number> {
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
   const spec = channelSpec(freq, args.flags);
-  const written = await withTransport(args.flags, (t) => tune(t, n, spec));
+  const written = await withTransport(args, (t) => tune(t, n, spec));
   const result = { ...channelPayload(n, written), appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `${channelText(result)}\nwritten; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
 }
 
-async function readVerb(args: ParsedArgs): Promise<number> {
+async function readVerb(args: Invocation): Promise<number> {
   checkFlags('read', args.flags, COMMON);
   const numText = args.positionals[0];
   if (numText === undefined) throw new UsageError('read needs a channel number 0..127, as in: read 5');
   const n = parseDecimal(numText, 'channel');
   checkChannelNumber(n);
-  const ch = await withTransport(args.flags, async (t) => {
+  const ch = await withTransport(args, async (t) => {
     const s = new Session(t);
     await s.start();
     return readChannel(s, n);
@@ -205,30 +230,30 @@ async function readVerb(args: ParsedArgs): Promise<number> {
   return EXIT.ok;
 }
 
-async function eraseVerb(args: ParsedArgs): Promise<number> {
+async function eraseVerb(args: Invocation): Promise<number> {
   checkFlags('erase', args.flags, COMMON);
   const numText = args.positionals[0];
   if (numText === undefined) throw new UsageError('erase needs a channel number 0..127, as in: erase 127');
   const n = parseDecimal(numText, 'channel');
   checkChannelNumber(n);
-  await withTransport(args.flags, (t) => erase(t, n));
+  await withTransport(args, (t) => erase(t, n));
   const result = { channel: n, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `channel ${n} erased; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
 }
 
-async function keyVerb(args: ParsedArgs): Promise<number> {
+async function keyVerb(args: Invocation): Promise<number> {
   checkFlags('key', args.flags, [...COMMON, 'seconds']);
   if (!args.flags.has('seconds')) throw new UsageError(`key needs --seconds S (max ${MAX_KEY_SECONDS}), as in: key --seconds 2`);
   const seconds = numberFlag(args.flags, 'seconds')!;
   if (seconds <= 0 || seconds > MAX_KEY_SECONDS) throw new UsageError(`--seconds takes 0 < S <= ${MAX_KEY_SECONDS}; got ${seconds}`);
-  const held = await withTransport(args.flags, (t) => holdPtt(t, seconds));
+  const held = await withTransport(args, (t) => holdPtt(t, seconds));
   const signal = held.interrupted;
   if (signal) {
     print(args, { keyed: true, seconds: held.seconds, interrupted: signal, released: true }, () => `keyed for ${held.seconds} s; interrupted by ${signal}; PTT released`);
     return signalExitCode(signal);
   }
-  print(args, { keyed: true, seconds }, () => `keyed for ${seconds} s`);
+  print(args, { keyed: true, seconds: held.seconds }, () => `keyed for ${held.seconds} s`);
   return EXIT.ok;
 }
 
@@ -238,11 +263,11 @@ function defaultDumpName(now = new Date()): string {
   return `uv5r-${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}-${p(now.getMinutes())}-${p(now.getSeconds())}.img`;
 }
 
-async function dumpVerb(args: ParsedArgs): Promise<number> {
+async function dumpVerb(args: Invocation): Promise<number> {
   checkFlags('dump', args.flags, [...COMMON, 'out']);
   const out = stringFlag(args.flags, 'out') ?? defaultDumpName();
   const json = wantsJson(args.flags);
-  const result = await withTransport(args.flags, async (t) => {
+  const result = await withTransport(args, async (t) => {
     const s = new Session(t);
     const id = await s.start();
     const image = await dumpImage(s, (addr) => {
@@ -259,7 +284,7 @@ async function dumpVerb(args: ParsedArgs): Promise<number> {
   return EXIT.ok;
 }
 
-async function restoreVerb(args: ParsedArgs): Promise<number> {
+async function restoreVerb(args: Invocation): Promise<number> {
   checkFlags('restore', args.flags, [...COMMON, 'force']);
   const file = args.positionals[0];
   if (!file) throw new UsageError('restore needs an image file');
@@ -270,8 +295,11 @@ async function restoreVerb(args: ParsedArgs): Promise<number> {
   } catch (err) {
     throw new UsageError(`cannot read ${file}: ${(err as NodeJS.ErrnoException).message}`, { file });
   }
+  if (image.length < MIN_IMAGE_BYTES) {
+    throw new UsageError(`image too short: ${file} has ${image.length} bytes, restore needs ${MIN_IMAGE_BYTES}`, { file, bytes: image.length });
+  }
   const json = wantsJson(args.flags);
-  const result = await withTransport(args.flags, async (t) => {
+  const result = await withTransport(args, async (t) => {
     const s = new Session(t);
     await s.start();
     const blocks = await restoreImage(s, image, (addr) => {
@@ -284,10 +312,10 @@ async function restoreVerb(args: ParsedArgs): Promise<number> {
   return EXIT.ok;
 }
 
-async function settingsVerb(args: ParsedArgs): Promise<number> {
+async function settingsVerb(args: Invocation): Promise<number> {
   checkFlags('settings', args.flags, COMMON);
   const patch = settingsPatch(args.positionals);
-  const result = await withTransport(args.flags, async (t) => {
+  const result = await withTransport(args, async (t) => {
     const s = new Session(t);
     await s.start();
     if (Object.keys(patch).length === 0) return readSettings(s);
@@ -297,7 +325,7 @@ async function settingsVerb(args: ParsedArgs): Promise<number> {
   return EXIT.ok;
 }
 
-async function listenVerb(args: ParsedArgs): Promise<number> {
+async function listenVerb(args: Invocation): Promise<number> {
   checkFlags('listen', args.flags, ['json', 'text', 'seconds', 'device']);
   if (!args.flags.has('seconds')) throw new UsageError(`listen needs --seconds S (max ${MAX_LISTEN_SECONDS}), as in: listen --seconds 5`);
   const seconds = numberFlag(args.flags, 'seconds')!;
@@ -321,32 +349,34 @@ async function listenVerb(args: ParsedArgs): Promise<number> {
   return EXIT.ok;
 }
 
-async function main(args: ParsedArgs): Promise<number> {
+async function main(args: Invocation): Promise<number> {
   if (!args.verb || args.verb === 'help' || args.flags.get('help')) {
     process.stdout.write(`${helpText()}\n`);
     return EXIT.ok;
   }
   const verb = Object.hasOwn(verbs, args.verb) ? verbs[args.verb] : undefined;
   if (!verb) throw new UsageError(`unknown verb ${JSON.stringify(args.verb)}\n${helpText()}`);
+  checkPositionals(args.verb, args.positionals, verb.positionals, verb.usage);
   return verb.run(args);
 }
 
-let parsedFlags = new Map<string, string | true>();
-
-/** Parse argv inside the promise chain so a UsageError from parsing reaches the error handler. */
-async function run(argv: string[]): Promise<number> {
-  const args = parseArgs(argv, BOOLEAN_FLAGS);
-  parsedFlags = args.flags;
-  return main(args);
-}
-
-run(process.argv.slice(2)).then(
-  (code) => process.exit(code),
-  (err: unknown) => {
+/**
+ * Run one command line and set process.exitCode; errors go to stderr as JSON or text.
+ * The process exits on its own once stdout and stderr drain, so piped output arrives whole.
+ */
+export async function cli(argv: string[], open: OpenTransport = openSerial): Promise<void> {
+  let flags = new Map<string, string | true>();
+  try {
+    const args = parseArgs(argv, BOOLEAN_FLAGS);
+    flags = args.flags;
+    process.exitCode = await main({ ...args, open });
+  } catch (err) {
     const kind = errorKind(err);
     const body = err instanceof BaofengError ? err.toJSON() : { kind, message: err instanceof Error ? err.message : String(err) };
-    if (wantsJson(parsedFlags)) process.stderr.write(`${JSON.stringify(body)}\n`);
+    if (wantsJson(flags)) process.stderr.write(`${JSON.stringify(body)}\n`);
     else process.stderr.write(`baofeng: ${body.message}\n`);
-    process.exit(exitCodeFor(kind));
-  },
-);
+    process.exitCode = exitCodeFor(kind);
+  }
+}
+
+if (import.meta.main) await cli(process.argv.slice(2));

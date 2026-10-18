@@ -1,7 +1,10 @@
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { numberFlag, parseDecimal } from '../src/args.ts';
-import { parseFrequency } from '../src/codec.ts';
+import { checkTenHz, parseFrequency } from '../src/codec.ts';
 import { UsageError } from '../src/errors.ts';
 
 function cli(...argv: string[]) {
@@ -40,6 +43,21 @@ describe('parseFrequency', () => {
   it('rejects hex', () => {
     expect(() => parseFrequency('0x9')).toThrow(UsageError);
   });
+
+  it('rejects a part finer than 10 Hz, including sub-Hz digits', () => {
+    expect(() => parseFrequency('146.820005')).toThrow('finer than 10 Hz');
+    expect(() => parseFrequency('146.8200001')).toThrow('finer than 10 Hz');
+    expect(parseFrequency('462.5625')).toBe(462_562_500);
+  });
+});
+
+describe('checkTenHz', () => {
+  it('returns signed multiples of 10 and rejects finer offsets', () => {
+    expect(checkTenHz(-0.6 * 1_000_000, 'offset')).toBe(-600_000);
+    expect(checkTenHz(5 * 1_000_000, 'offset')).toBe(5_000_000);
+    expect(() => checkTenHz(-0.6000049 * 1_000_000, 'offset -0.6000049')).toThrow('offset -0.6000049 is finer than 10 Hz');
+    expect(() => checkTenHz(-0.6000001 * 1_000_000, 'offset')).toThrow(UsageError);
+  });
 });
 
 describe('CLI number and file errors', () => {
@@ -60,5 +78,42 @@ describe('CLI number and file errors', () => {
     expect(status).toBe(2);
     expect(body.kind).toBe('usage');
     expect(body.message).toContain('cannot read');
+  });
+
+  it.each([
+    ['dump', 'radio.img'],
+    ['tune', '146.82', '5', '--channel', '7'],
+    ['read', '5', '6'],
+  ])('exits 2 on an extra positional for %s without a device', (...argv) => {
+    const { status, body } = cli(...argv, '--json');
+    expect(status).toBe(2);
+    expect(body.message).toContain('unexpected argument');
+  });
+
+  it('exits 2 on a short restore image without a device', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'baofeng-')), 'short.img');
+    writeFileSync(file, new Uint8Array(100));
+    const { status, body } = cli('restore', file, '--force', '--json');
+    expect(status).toBe(2);
+    expect(body.message).toContain('image too short');
+  });
+
+  it('exits 2 on an offset finer than 10 Hz and reaches the transport with a valid negative one', () => {
+    expect(cli('tune', '146.82', '--channel', '5', '--offset', '-0.6000049', '--json').status).toBe(2);
+    const ok = cli('tune', '146.82', '--channel', '5', '--offset', '-0.6', '--json');
+    expect(ok.status).toBe(3);
+    expect(ok.body.kind).toBe('transport');
+  });
+
+  it('exits 2 on a non-ASCII name without a device', () => {
+    const { status, body } = cli('tune', '146.82', '--channel', '5', '--name', 'CAFÉ', '--json');
+    expect(status).toBe(2);
+    expect(body.kind).toBe('usage');
+  });
+
+  it('exits 0 with the whole help text on a pipe', () => {
+    const r = spawnSync(process.execPath, ['src/main.ts', 'help'], { cwd: process.cwd(), encoding: 'utf8' });
+    expect(r.status).toBe(0);
+    expect(r.stdout.trimEnd().endsWith('128+signal key interrupted')).toBe(true);
   });
 });

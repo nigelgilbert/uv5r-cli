@@ -42,6 +42,13 @@ export function checkFlags(verb: string, flags: Map<string, string | true>, allo
   }
 }
 
+/** Throw UsageError when the verb got more than `max` positionals. */
+export function checkPositionals(verb: string, positionals: readonly string[], max: number, usage: string): void {
+  if (positionals.length <= max) return;
+  const unexpected = positionals.slice(max);
+  throw new UsageError(`baofeng ${verb}: unexpected argument ${JSON.stringify(unexpected[0])}; usage: ${usage}`, { unexpected });
+}
+
 export function stringFlag(flags: Map<string, string | true>, name: string): string | undefined {
   const v = flags.get(name);
   if (v === true) throw new UsageError(`--${name} needs a value`);

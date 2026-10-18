@@ -93,9 +93,16 @@ export function decodeTone(value: number): Tone {
 export function parseFrequency(text: string): number {
   const n = parseDecimal(text, 'frequency');
   if (n <= 0) throw new UsageError(`bad frequency ${JSON.stringify(text)}`);
-  const hz = n < 1000 ? Math.round(n * 1_000_000) : Math.round(n);
-  if (hz % 10 !== 0) throw new UsageError(`frequency ${text} is finer than 10 Hz`);
-  return hz;
+  return checkTenHz(n < 1000 ? n * 1_000_000 : n, `frequency ${text}`);
+}
+
+/** Return signed `hz` as a whole multiple of 10, and throw UsageError naming `what` when it has a finer part. */
+export function checkTenHz(hz: number, what: string): number {
+  const steps = hz / 10;
+  const whole = Math.round(steps);
+  // Allow the float error from scaling MHz to Hz, which stays far below 1 Hz.
+  if (Math.abs(steps - whole) > 1e-6) throw new UsageError(`${what} is finer than 10 Hz`);
+  return whole * 10;
 }
 
 export function checkBand(hz: number): void {
@@ -180,11 +187,20 @@ export function encodeChannel(spec: ChannelSpec): Uint8Array {
   return out;
 }
 
-/** Pack a channel name: 7 chars, 0xFF padded, in a 16-byte record. */
+/**
+ * Pack a channel name: 7 chars, uppercased, 0xFF padded, in a 16-byte record. Rejects any
+ * character outside printable ASCII before uppercasing, since uppercasing can turn one
+ * character into several.
+ */
 export function encodeName(name: string): Uint8Array {
+  const bad = [...name].find((c) => c < ' ' || c > '~');
+  if (bad !== undefined) {
+    const code = `U+${bad.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`;
+    throw new UsageError(`name ${JSON.stringify(name)} has ${code}; use printable ASCII`, { name, character: code });
+  }
   const out = new Uint8Array(16).fill(0xff);
   const text = name.toUpperCase().slice(0, 7);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0x7f;
+  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i);
   return out;
 }
 

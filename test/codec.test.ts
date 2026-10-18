@@ -107,4 +107,15 @@ describe('channel records', () => {
     expect(decodeName(name)).toBe('162.550');
     expect(name[7]).toBe(0xff);
   });
+  it('stores printable ASCII names uppercased byte for byte', () => {
+    expect([...encodeName('wx ~!').subarray(0, 6)]).toEqual([0x57, 0x58, 0x20, 0x7e, 0x21, 0xff]);
+    expect(decodeName(encodeName('Big Sky'))).toBe('BIG SKY');
+  });
+  it('rejects non-ASCII and control characters before uppercasing', () => {
+    for (const text of ['CAFÉ', 'Ñ', 'straße', 'A\tB', 'A\nB', 'A\u007fB', 'ROCK🎸', 'ABCDEFGÉ']) {
+      expect(() => encodeName(text), JSON.stringify(text)).toThrow(UsageError);
+    }
+    expect(() => encodeName('CAFÉ')).toThrow('U+00C9');
+    expect(() => encodeName('A\tB')).toThrow('U+0009');
+  });
 });
