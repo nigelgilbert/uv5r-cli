@@ -15,6 +15,7 @@ import {
   encodeName,
   formatMhz,
   type Channel,
+  type ChannelJson,
   type ChannelSpec,
   type SettingName,
   type Settings,
@@ -27,16 +28,7 @@ import type { Transport } from './transport.ts';
 export const STATUS_NOTE = 'channelA/B are the values stored in EEPROM; the radio display shows the channel the knob selected';
 
 /** Channel fields every channel payload carries. */
-export interface ChannelPayload {
-  channel: number;
-  rxMhz: string;
-  txMhz: string | null;
-  txTone: string;
-  rxTone: string;
-  bandwidth: 'wide' | 'narrow';
-  power: 'high' | 'low';
-  name: string;
-}
+export type ChannelPayload = { channel: number } & Omit<ChannelJson, 'scan'>;
 
 export type ChannelResult = ChannelPayload | { channel: number; empty: true };
 
@@ -50,13 +42,14 @@ export type RadioStatus = {
   beep: number | string;
   abr: number | string;
   note: string;
-} & (ChannelPayload | { channel: number; empty: true });
+} & ChannelResult;
 
 /** Build the flat payload for channel `n`; an undefined record gives `empty: true`. */
 export function channelPayload(n: number, ch: Channel | undefined): ChannelResult {
   if (!ch) return { channel: n, empty: true };
-  const j = channelToJson(ch);
-  return { channel: n, rxMhz: j.rxMhz, txMhz: j.txMhz, txTone: j.txTone, rxTone: j.rxTone, bandwidth: j.bandwidth, power: j.power, name: j.name };
+  // Destructure the first three keys to keep the documented order, which puts txTone before rxTone.
+  const { scan: _scan, rxMhz, txMhz, txTone, ...rest } = channelToJson(ch);
+  return { channel: n, rxMhz, txMhz, txTone, ...rest };
 }
 
 /** Bytes of ident before main memory in a CHIRP image. */
@@ -143,7 +136,7 @@ export async function readChannel(s: Session, n: number): Promise<Channel | unde
   return decodeChannel(mem, name);
 }
 
-/** Write a channel record and its name; reads back the record in the same session. */
+/** Write a channel record and its name; reads back both in the same session. */
 export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Promise<Channel> {
   checkChannelNumber(n);
   const mem = encodeChannel(spec);
@@ -152,7 +145,11 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
   await s.writeBlock(NAME_BASE + n * 16, name);
   const back = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
   if (hex(back) !== hex(mem)) throw new DeviceStateError(`channel ${n} did not take the write`, { wrote: hex(mem), read: hex(back) });
-  return decodeChannel(back, name)!;
+  const nameBack = await s.readBlock(NAME_BASE + n * 16, 0x10);
+  if (hex(nameBack) !== hex(name)) {
+    throw new DeviceStateError(`channel ${n} name did not take the write`, { wrote: hex(name), read: hex(nameBack) });
+  }
+  return decodeChannel(back, nameBack)!;
 }
 
 /** Start a session and write `spec` into channel `n`; the radio applies it when the session ends. */

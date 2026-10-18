@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADDR, encodeChannel, encodeName } from '../src/codec.ts';
+import { ADDR, decodeChannel, encodeChannel, encodeName, parseTone } from '../src/codec.ts';
 import { Session } from '../src/protocol.ts';
 import { STATUS_NOTE, channelPayload, readChannel, readStatus, tune, writeChannel, erase } from '../src/radio.ts';
 import { FakeRadio } from './fake.ts';
@@ -63,6 +63,34 @@ describe('channels', () => {
     const s = new Session(radio);
     await s.start();
     await expect(writeChannel(s, 5, { rxHz: 154_680_000 })).rejects.toMatchObject({ kind: 'device-state' });
+  });
+  it('reports an acked but ignored name write as a device-state error', async () => {
+    const radio = new FakeRadio();
+    radio.writesIgnoredBelow = 0x1000 + 5 * 16;
+    radio.writesIgnoredAbove = 0x1000 + 6 * 16;
+    const s = new Session(radio);
+    await s.start();
+    await expect(writeChannel(s, 5, { rxHz: 154_680_000, name: 'SHERIFF' })).rejects.toMatchObject({
+      kind: 'device-state',
+      message: 'channel 5 name did not take the write',
+    });
+    expect(radio.writes).toEqual([5 * 16, 0x1000 + 5 * 16]);
+  });
+  it('builds the channel payload with the documented keys in order', () => {
+    const ch = decodeChannel(encodeChannel({ rxHz: 146_820_000, txHz: 146_220_000, txTone: parseTone('82.5') }), encodeName('RPT'))!;
+    const payload = channelPayload(3, ch);
+    expect(Object.keys(payload)).toEqual(['channel', 'rxMhz', 'txMhz', 'txTone', 'rxTone', 'bandwidth', 'power', 'name']);
+    expect(payload).toEqual({
+      channel: 3,
+      rxMhz: '146.82',
+      txMhz: '146.22',
+      txTone: '82.5',
+      rxTone: 'none',
+      bandwidth: 'wide',
+      power: 'high',
+      name: 'RPT',
+    });
+    expect(Object.keys(channelPayload(4, undefined))).toEqual(['channel', 'empty']);
   });
   it('reports a TX-inhibited record with a null txMhz', async () => {
     const radio = new FakeRadio();
