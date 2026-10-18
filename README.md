@@ -62,6 +62,7 @@ uv5r restore radio.img --force             # main memory back from an image, abo
 uv5r settings                              # squelch, save, abr, beep, timeout, voice, mdfa, mdfb
 uv5r settings voice eng beep on            # set fields, commit, verify in a fresh session
 uv5r listen --seconds 5                    # capture RX audio through ffmpeg, report dBFS
+uv5r listen --seconds 30 --floor -40       # count the seconds with RMS above -40 dBFS
 uv5r help                                  # list verbs, flags and exit codes
 ```
 
@@ -84,6 +85,7 @@ Options:
 | `--out FILE` | `dump`: image path; default `uv5r-YYYY-MM-DDTHH-MM-SS.img` in the working directory |
 | `--force` | `restore`: confirm the bulk write, required |
 | `--device NAME` | `listen`: avfoundation audio input by name or index, default `AIOC Audio`. List inputs with `ffmpeg -f avfoundation -list_devices true -i ""` |
+| `--floor DBFS` | `listen`: a second is active when its RMS is above DBFS; default -50 |
 
 Frequencies take MHz (`154.680`), Hz (`154680000`) or exponent form (`154.68e6`) and lie
 in 136-174 or 400-520 MHz. Frequencies and offsets finer than 10 Hz exit 2.
@@ -130,16 +132,29 @@ the port opens. `dump` returns `{"out", "bytes", "firmware"}`.
 
 `listen` runs `ffmpeg -f avfoundation -i ":AIOC Audio"` for `--seconds` at 48 kHz mono,
 removes DC with a 50 Hz high-pass and returns `rmsDbfs` per second, `meanRmsDbfs`,
-`peakDbfs` and `zeroSeconds`. A second of digital zero reads `null` in `rmsDbfs` and counts
-in `zeroSeconds`. `meanRmsDbfs` and `peakDbfs` are `null` when every second is zero. Denied
-microphone access gives digital zero. The AIOC's bare ADC floor at 1x gain reads about
--66 dBFS; open-squelch static reads well above -30. A floor reading with squelch 0 means
-the volume knob is down or the 2.5 mm plug is short of its contact. `peakDbfs` above 0
-means the input clips; set the knob so static reads around -20 to -12. A missing ffmpeg,
-an ffmpeg error exit, a timeout, or fewer whole seconds captured than requested is a
-transport error. ffmpeg 9 on macOS 26 returns about 88 percent of the `-t` length as
-samples. The CLI asks ffmpeg for `ceil(seconds / 0.88) + 2` and reports the first
-`--seconds` whole seconds.
+`peakDbfs`, `zeroSeconds`, `active`, `activeSeconds` and `warnings`. A second of digital
+zero reads `null` in `rmsDbfs` and counts in `zeroSeconds`. `meanRmsDbfs` and `peakDbfs`
+are `null` when every second is zero. Denied microphone access gives digital zero.
+
+The first captured second holds a capture-start burst. Every field drops it and covers
+captured seconds 2 to `--seconds` + 1, so `rmsDbfs[i]` and `active[i]` describe the same
+second.
+
+`active` holds one true or false per second and `activeSeconds` counts the true entries. A
+second is active when its RMS is above -50 dBFS; `--floor DBFS` sets another threshold.
+Text output prints `active` as a timeline, `#` for an active second and `.` for a quiet one.
+
+`warnings` lists level problems and is empty on a good capture. It holds `input clips: turn
+the volume knob down` when more than 1 percent of samples sit at full scale. An astats pass
+ahead of the high-pass counts those samples. Text output prints one line per warning.
+
+The AIOC's bare ADC floor at 1x gain reads about -66 dBFS; open-squelch static reads well
+above -30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug
+is short of its contact. `peakDbfs` above 0 also means the input clips; set the knob so
+static reads around -20 to -12. A missing ffmpeg, an ffmpeg error exit, a timeout, or fewer
+whole seconds captured than `--seconds` + 1 is a transport error. ffmpeg 9 on macOS 26
+returns about 88 percent of the `-t` length as samples. The CLI asks ffmpeg for
+`ceil(seconds / 0.88) + 2`, which covers the extra second.
 
 If the handshake gets no ack, the CLI waits 3 s and retries it once. This covers a clone
 session still closing from the previous verb.

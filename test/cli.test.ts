@@ -127,6 +127,20 @@ describe('tune input checks', () => {
   });
 });
 
+describe('listen input checks', () => {
+  it('rejects a non-numeric --floor with exit 2', async () => {
+    await cli(['listen', '--seconds', '5', '--floor', 'loud', '--json']);
+    expect(process.exitCode).toBe(2);
+    expect(errJson().message).toBe('--floor needs a number; got "loud"');
+  });
+
+  it('names --floor and the activity fields in the help text', async () => {
+    await cli(['help']);
+    const help = stdout.join('');
+    for (const word of ['--floor DBFS', 'active,', 'activeSeconds', 'warnings']) expect(help).toContain(word);
+  });
+});
+
 describe('restore input checks', () => {
   it('rejects a short image before opening the transport', async () => {
     const file = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'short.img');

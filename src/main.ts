@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
-import { listen } from './audio.ts';
+import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
 import {
   SETTING_NAMES,
   checkBand,
@@ -81,7 +81,12 @@ const verbs: Record<string, Verb> = {
   dump: { summary: 'Save the full memory image', usage: 'dump --out radio.img', positionals: 0, run: dumpVerb },
   restore: { summary: 'Write the main memory of an image back', usage: 'restore radio.img --force', positionals: 1, run: restoreVerb },
   settings: { summary: 'Print the menu settings, or set fields', usage: 'settings voice eng beep on', positionals: Infinity, run: settingsVerb },
-  listen: { summary: 'Capture receive audio from the AIOC and report dBFS', usage: 'listen --seconds 5', positionals: 0, run: listenVerb },
+  listen: {
+    summary: 'Capture receive audio from the AIOC and report dBFS, active, activeSeconds and warnings',
+    usage: 'listen --seconds 5 --floor -40',
+    positionals: 0,
+    run: listenVerb,
+  },
 };
 
 function helpText(): string {
@@ -109,6 +114,7 @@ function helpText(): string {
     '  --out FILE         dump: output path (default uv5r-YYYY-MM-DDTHH-MM-SS.img)',
     '  --force            restore: confirm a bulk write',
     `  --device NAME      listen: avfoundation audio device (default ${DEFAULT_AUDIO_DEVICE})`,
+    `  --floor DBFS       listen: a second is active when its RMS is above DBFS (default ${DEFAULT_FLOOR_DBFS}); sets active and activeSeconds`,
     '',
     'settings fields, set by radio menu index or by name:',
     ...SETTING_NAMES.map((name) => `  ${name.padEnd(8)} ${settingValues(name)}`),
@@ -354,24 +360,28 @@ async function settingsVerb(args: Invocation): Promise<number> {
 }
 
 async function listenVerb(args: Invocation): Promise<number> {
-  checkFlags('listen', args.flags, ['json', 'text', 'seconds', 'device']);
+  checkFlags('listen', args.flags, ['json', 'text', 'seconds', 'device', 'floor']);
   if (!args.flags.has('seconds')) throw new UsageError(`listen needs --seconds S (max ${MAX_LISTEN_SECONDS}), as in: listen --seconds 5`);
   const seconds = numberFlag(args.flags, 'seconds')!;
   if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
     throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
   }
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
-  const result = await listen(device, seconds);
+  const floor = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
+  const result = await listen(device, seconds, floor);
   // Print null levels as zero, since null marks digital zero.
   const level = (db: number | null) => (db === null ? 'zero' : `${db} dBFS`);
   print(args, result, () =>
     [
       `device     ${result.device}`,
-      `seconds    ${result.seconds}`,
+      `seconds    ${result.seconds}, after dropping the first captured second`,
       `zero secs  ${result.zeroSeconds}`,
       `mean rms   ${level(result.meanRmsDbfs)}`,
       `peak       ${level(result.peakDbfs)}`,
       `per second ${result.rmsDbfs.map((db) => db ?? 'zero').join(' ')}`,
+      `active     ${result.activeSeconds} of ${result.active.length} s above ${floor} dBFS`,
+      `timeline   ${result.active.map((on) => (on ? '#' : '.')).join('')}`,
+      ...result.warnings.map((w) => `warning    ${w}`),
     ].join('\n'),
   );
   return EXIT.ok;

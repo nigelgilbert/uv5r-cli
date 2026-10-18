@@ -12,13 +12,26 @@ export interface ListenResult {
   meanRmsDbfs: number | null;
   /** Highest sample peak over the captured seconds in dBFS; null when every sample is zero. */
   peakDbfs: number | null;
+  /** One entry per second, aligned with rmsDbfs; true when that second's RMS is above the floor. */
+  active: boolean[];
+  /** Count of true entries in `active`. */
+  activeSeconds: number;
+  /** Level problems found in the capture, such as clipping. */
+  warnings: string[];
 }
 
-/** Per-frame astats levels; samples holds each frame's sample count when ffmpeg reports it. */
+/**
+ * Per-frame astats levels; samples holds each frame's sample count when ffmpeg reports it.
+ * min, max and peakCount come from the astats before the high-pass, so they describe the
+ * samples as the ADC delivered them. peakCount is the number of samples at min or max.
+ */
 export interface Levels {
   rms: number[];
   peak: number[];
   samples: number[];
+  min: number[];
+  max: number[];
+  peakCount: number[];
 }
 
 /** Capture sample rate; asetnsamples cuts frames of this many samples, so each frame is one second. */
@@ -33,12 +46,27 @@ const RATIO = 0.88;
 /** Extra seconds added to the padded request. */
 const PAD_SECONDS = 2;
 
+/** RMS level in dBFS above which a second counts as active. */
+export const DEFAULT_FLOOR_DBFS = -50;
+
+/** Sample magnitude, on the float scale where 1 is full scale, at or above which a sample counts as clipped; the AIOC rails read -1 and 0.999512 on 2026-10-18. */
+const FULL_SCALE = 0.999;
+
+/** Fraction of full-scale samples above which the result warns of clipping. */
+const CLIP_FRACTION = 0.01;
+
+export const CLIP_WARNING = 'input clips: turn the volume knob down';
+
 /** Duration to pass to `-t` so that at least `seconds` whole frames come back. */
 export function captureSeconds(seconds: number): number {
   return Math.ceil(seconds / RATIO) + PAD_SECONDS;
 }
 
-/** ffmpeg arguments that capture at least `seconds` from `device`, remove DC, and print per-second astats on stderr. */
+/**
+ * ffmpeg arguments that capture at least `seconds` from `device`, remove DC, and print per-second astats on stderr.
+ * The first astats runs before the high-pass, which smooths clipped flat tops in float audio, and reports the peak count.
+ * The second astats reports the levels after the high-pass.
+ */
 export function ffmpegArgs(device: string, seconds: number): string[] {
   return [
     '-hide_banner',
@@ -50,7 +78,14 @@ export function ffmpegArgs(device: string, seconds: number): string[] {
     '-t',
     String(captureSeconds(seconds)),
     '-af',
-    `aformat=sample_rates=${RATE}:channel_layouts=mono,highpass=f=${HIGHPASS_HZ},asetnsamples=n=${RATE}:p=0,astats=metadata=1:reset=1,ametadata=print`,
+    [
+      `aformat=sample_fmts=flt:sample_rates=${RATE}:channel_layouts=mono`,
+      `asetnsamples=n=${RATE}:p=0`,
+      'astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=Min_level+Max_level+Peak_count',
+      `highpass=f=${HIGHPASS_HZ}`,
+      'astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=Peak_level+RMS_level+Number_of_samples',
+      'ametadata=print',
+    ].join(','),
     '-f',
     'null',
     '-',
@@ -62,16 +97,29 @@ const round = (x: number) => Math.round(x * 100) / 100;
 /** Round a dBFS level and map -Infinity (digital zero) to null. */
 const dbfs = (x: number) => (x === -Infinity ? null : round(x));
 
-/** Pull the per-second RMS, peak, and sample counts out of ffmpeg's stderr. */
+/** Map each astats key to its Levels series. */
+const SERIES = {
+  RMS_level: 'rms',
+  Peak_level: 'peak',
+  Number_of_samples: 'samples',
+  Min_level: 'min',
+  Max_level: 'max',
+  Peak_count: 'peakCount',
+} as const satisfies Record<string, keyof Levels>;
+
+/** Pull the per-second levels, sample counts and peak counts out of ffmpeg's stderr. */
 export function parseAstats(stderr: string): Levels {
-  const levels: Levels = { rms: [], peak: [], samples: [] };
-  for (const [, key, value] of stderr.matchAll(/lavfi\.astats\.Overall\.(RMS_level|Peak_level|Number_of_samples)=(\S+)/g)) {
-    const n = value === '-inf' ? -Infinity : Number(value);
-    if (key === 'RMS_level') levels.rms.push(n);
-    else if (key === 'Peak_level') levels.peak.push(n);
-    else levels.samples.push(n);
+  const levels: Levels = { rms: [], peak: [], samples: [], min: [], max: [], peakCount: [] };
+  for (const [, key, value] of stderr.matchAll(/lavfi\.astats\.Overall\.(RMS_level|Peak_level|Number_of_samples|Min_level|Max_level|Peak_count)=(\S+)/g)) {
+    levels[SERIES[key as keyof typeof SERIES]].push(value === '-inf' ? -Infinity : Number(value));
   }
   return levels;
+}
+
+/** Count the full-scale samples in frame `i`: its peak count when its min or max sits at full scale, else zero. */
+function fullScaleSamples(levels: Levels, i: number): number {
+  const top = Math.max(Math.abs(levels.min[i] ?? 0), Math.abs(levels.max[i] ?? 0));
+  return top >= FULL_SCALE ? (levels.peakCount[i] ?? 0) : 0;
 }
 
 /** Count leading frames that hold a full second; a frame without a sample count counts as full. */
@@ -81,12 +129,20 @@ export function wholeSeconds(levels: Levels): number {
   return n;
 }
 
-/** Summarize the first `seconds` frames; the caller checks that that many whole frames exist. */
-export function summarize(device: string, seconds: number, levels: Levels): ListenResult {
-  // The padded request returns frames past the window; keep the first `seconds` of each series.
-  const rms = levels.rms.slice(0, seconds);
-  const peak = levels.peak.slice(0, seconds);
+/**
+ * Summarize a capture; the caller checks that `seconds + 1` whole frames exist.
+ * Every field covers frames 1 to seconds, which drops the capture-start burst in frame 0.
+ * rmsDbfs[i] and active[i] describe the same second.
+ */
+export function summarize(device: string, seconds: number, levels: Levels, floorDbfs = DEFAULT_FLOOR_DBFS): ListenResult {
+  // Skip frame 0 and the frames past the window that the padded request returns.
+  const window = Array.from({ length: seconds }, (_, k) => k + 1);
+  const rms = window.map((i) => levels.rms[i] ?? -Infinity);
+  const peak = window.map((i) => levels.peak[i] ?? -Infinity);
   const power = rms.reduce((sum, db) => sum + 10 ** (db / 10), 0) / rms.length;
+  const active = rms.map((db) => db > floorDbfs);
+  const total = window.reduce((sum, i) => sum + (levels.samples[i] ?? RATE), 0);
+  const clipped = window.reduce((sum, i) => sum + fullScaleSamples(levels, i), 0);
   return {
     device,
     seconds,
@@ -94,6 +150,9 @@ export function summarize(device: string, seconds: number, levels: Levels): List
     zeroSeconds: rms.filter((db) => db === -Infinity).length,
     meanRmsDbfs: dbfs(10 * Math.log10(power)),
     peakDbfs: dbfs(Math.max(...peak)),
+    active,
+    activeSeconds: active.filter(Boolean).length,
+    warnings: clipped > CLIP_FRACTION * total ? [CLIP_WARNING] : [],
   };
 }
 
@@ -107,8 +166,8 @@ function stderrTail(stderr: string): string {
     .join(' | ');
 }
 
-/** Capture `seconds` of receive audio through ffmpeg and report levels. */
-export function listen(device: string, seconds: number): Promise<ListenResult> {
+/** Capture `seconds` of receive audio through ffmpeg and report levels, activity against `floorDbfs`, and warnings. */
+export function listen(device: string, seconds: number, floorDbfs = DEFAULT_FLOOR_DBFS): Promise<ListenResult> {
   const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', ffmpegArgs(device, seconds), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
@@ -125,12 +184,14 @@ export function listen(device: string, seconds: number): Promise<ListenResult> {
         return;
       }
       const levels = parseAstats(stderr);
+      // Frame 0 holds the capture-start burst, so one whole frame more than requested is needed.
       const captured = wholeSeconds(levels);
-      if (captured < seconds) {
-        reject(new TransportError(`ffmpeg captured ${captured} of ${seconds} seconds from ${JSON.stringify(device)}${suffix}`, { device, captured, requested: seconds }));
+      const needed = seconds + 1;
+      if (captured < needed) {
+        reject(new TransportError(`ffmpeg captured ${captured} of ${needed} seconds from ${JSON.stringify(device)}${suffix}`, { device, captured, requested: needed }));
         return;
       }
-      resolve(summarize(device, seconds, levels));
+      resolve(summarize(device, seconds, levels, floorDbfs));
     });
   });
 }
