@@ -135,7 +135,7 @@ describe('write shape', () => {
   });
 });
 
-describe('aliased reads', () => {
+describe('settings page reads', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -143,10 +143,12 @@ describe('aliased reads', () => {
     vi.useRealTimers();
   });
 
-  it.each([0x0e00, 0x0e10, 0x0e20, 0x0e30, 0x0e40, 0x0e50, 0x0e60, 0x0e70].map((a) => [a.toString(16).padStart(4, '0'), a] as const))('returns the bytes stored at 0x%s for a 16-byte read', async (_, addr) => {
+  it.each([0x0e00, 0x0e10, 0x0e20, 0x0e30, 0x0e40, 0x0e50].map((a) => [a.toString(16).padStart(4, '0'), a] as const))('sends a 16-byte read at 0x%s as one 16-byte read command', async (_, addr) => {
     const radio = new FakeRadio();
-    for (let a = 0x0e00; a < 0x0e80; a++) radio.eeprom[a] = a & 0xff;
     const s = await startSession(radio);
-    expect([...(await drive(s.readBlock(addr, 0x10)))]).toEqual([...radio.eeprom.subarray(addr, addr + 0x10)]);
+    const write = vi.spyOn(radio, 'write');
+    await drive(s.readBlock(addr, 0x10));
+    const reads = write.mock.calls.map(([bytes]) => [...bytes]).filter((b) => b[0] === 0x53);
+    expect(reads).toEqual([[0x53, addr >> 8, addr & 0xff, 0x10]]);
   });
 });

@@ -64,7 +64,8 @@ Brief:
   traveler assistance channel.
 - Read the RadioReference county page for the location. Return conventional FM
   frequencies for the sheriff, fire, EMS and search and rescue. Skip anything marked P25,
-  DMR, NXDN, encrypted or trunked. Mark these receive only.
+  DMR, NXDN, encrypted or trunked. Set `rxOnly: true` on each sheriff, fire, EMS and SAR
+  entry.
 
 ## Candidate format
 
@@ -73,15 +74,17 @@ Brief:
   "notes": "Big Sky 2 m repeater", "source": "https://...", "confidence": "listed" }
 ```
 
-`name` is at most 7 characters, upper case; the radio truncates longer names. Omit
-`offsetMhz` for simplex, `tone` when none, `narrow` when false.
+`name` is at most 7 characters, upper case; the radio truncates longer names. `rxOnly` true
+marks a receive-only channel; PTT does nothing on it. Omit `offsetMhz` for simplex, `tone`
+when none, `narrow` and `rxOnly` when false.
 
 ## Compiling the plan
 
 Match the reference `channels.example.json`: a top-level `name`, a top-level `notes`, and a
 `channels` array. Each entry carries `channel`, `name`, `rxMhz`, and `notes`, plus
-`offsetMhz`, `tone` and `narrow` when they apply. Drop `source` and `confidence` from the
-entries; put unverified items in the top-level `notes`.
+`offsetMhz`, `tone`, `narrow` and `rxOnly` when they apply. Drop `source` and `confidence`
+from the entries; put unverified items in the top-level `notes`. Give an `rxOnly` entry no
+`offsetMhz`; `tune` rejects the pair.
 
 Order the channels:
 
@@ -106,8 +109,11 @@ tune it.
 
 ## Writing the plan to the radio
 
-Load the `uv5r` skill. Each entry maps to one `tune` call:
+Load the `uv5r` skill. Each entry goes to its own `channel` number through one `tune` call.
+Pass `--rx-only` when `rxOnly` is true.
 
 ```sh
-uv5r tune <rxMhz> --channel <channel> [--offset <offsetMhz>] [--tone <tone>] [--narrow] --name "<name>"
+uv5r tune <rxMhz> --channel <channel> [--offset <offsetMhz>] [--tone <tone>] [--narrow] [--rx-only] --name "<name>"
 ```
+
+Programming another slot does not select it on the radio. The human turns the knob to it.

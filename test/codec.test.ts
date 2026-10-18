@@ -97,6 +97,29 @@ describe('channel records', () => {
     expect(ch).toMatchObject({ rxHz: 162_550_000, txHz: null, name: 'WX' });
     expect(channelToJson(ch!).txMhz).toBeNull();
   });
+  it('writes the TX-inhibit marker for a receive-only channel and reads it back as txHz null', () => {
+    const mem = encodeChannel({ rxHz: 155_475_000, txHz: 155_475_000, rxOnly: true });
+    expect([...mem.subarray(4, 8)]).toEqual([0xff, 0xff, 0xff, 0xff]);
+    expect(decodeChannel(mem, encodeName('SHERIFF'))).toMatchObject({ rxHz: 155_475_000, txHz: null });
+  });
+  it('skips the TX band check for a receive-only channel', () => {
+    expect(() => encodeChannel({ rxHz: 155_475_000, txHz: 121_500_000, rxOnly: true })).not.toThrow();
+  });
+  it('keeps S-code, byte 13, BCL, scan and PTT-ID from an initialized prior record', () => {
+    const prior = encodeChannel({ rxHz: 146_520_000 });
+    prior[12] = 0xf5;
+    prior[13] = 0x01;
+    prior[15] = 0x40 | 0x08 | 0x02;
+    const mem = encodeChannel({ rxHz: 146_820_000, wide: false }, prior);
+    expect(mem[12]).toBe(0x05);
+    expect(mem[13]).toBe(0x01);
+    expect(mem[15]).toBe(0x08 | 0x02);
+    expect(decodeChannel(mem, encodeName('X'))).toMatchObject({ rxHz: 146_820_000, wide: false, bcl: true, scan: false });
+  });
+  it('uses the defaults over an erased prior record', () => {
+    const mem = encodeChannel({ rxHz: 146_520_000 }, new Uint8Array(16).fill(0xff));
+    expect([...mem.subarray(12)]).toEqual([0, 0, 0, 0x44]);
+  });
   it('reads a record with malformed TX BCD as undefined', () => {
     const mem = encodeChannel({ rxHz: 162_550_000 });
     mem.set([0xff, 0x00, 0x00, 0x00], 4);

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { ffmpegArgs, listen, parseAstats, summarize, wholeSeconds } from '../src/audio.ts';
+import { captureSeconds, ffmpegArgs, listen, parseAstats, summarize, wholeSeconds } from '../src/audio.ts';
 
 /** Build ametadata stderr lines for one astats frame. */
 function frame(i: number, rms: string, peak: string, samples = 48000): string {
@@ -26,11 +26,21 @@ function ffmpegReturns(err: Partial<NodeJS.ErrnoException & { killed: boolean; s
 }
 
 describe('ffmpegArgs', () => {
-  it('builds a mono 48 kHz avfoundation capture with unpadded one-second frames', () => {
+  it('builds a mono 48 kHz avfoundation capture with unpadded one-second frames and a padded duration', () => {
     const args = ffmpegArgs('AIOC Audio', 5);
     expect(args).toContain(':AIOC Audio');
-    expect(args[args.indexOf('-t') + 1]).toBe('5');
+    expect(args[args.indexOf('-t') + 1]).toBe('8');
     expect(args[args.indexOf('-af') + 1]).toMatch(/sample_rates=48000:channel_layouts=mono,highpass=f=50,asetnsamples=n=48000:p=0/);
+  });
+});
+
+describe('captureSeconds', () => {
+  it('pads the request by the measured ratio plus two seconds', () => {
+    expect(captureSeconds(1)).toBe(4);
+    expect(captureSeconds(3)).toBe(6);
+    expect(captureSeconds(5)).toBe(8);
+    expect(captureSeconds(20)).toBe(25);
+    expect(captureSeconds(600)).toBe(684);
   });
 });
 
@@ -75,7 +85,7 @@ describe('listen', () => {
     ffmpegReturns({ killed: true, signal: 'SIGTERM', code: undefined }, stderr);
     const err = await listen('AIOC Audio', 3).catch((e) => e);
     expect(err).toMatchObject({ kind: 'transport', detail: { signal: 'SIGTERM' } });
-    expect(err.message).toMatch(/^ffmpeg timed out after 18s capturing from "AIOC Audio": /);
+    expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio": /);
     expect(err.message).toContain('Number_of_samples=48000.000000 | Input #0, avfoundation');
     expect(err.message).toMatch(/received signal 15\.$/);
   });
@@ -100,6 +110,11 @@ describe('listen', () => {
     const [file, args, opts] = execFile.mock.calls[0]!;
     expect(file).toBe('ffmpeg');
     expect(args).toEqual(ffmpegArgs('AIOC Audio', 3));
-    expect(opts).toMatchObject({ timeout: 18000 });
+    expect(opts).toMatchObject({ timeout: 21000 });
+  });
+  it('accepts exactly the requested whole seconds and drops a trailing partial frame', async () => {
+    ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-30', '-25'), frame(2, '-3', '-0.5', 20000)].join('\n'));
+    const r = await listen('AIOC Audio', 2);
+    expect(r).toMatchObject({ seconds: 2, rmsDbfs: [-40, -30], zeroSeconds: 0, peakDbfs: -25 });
   });
 });

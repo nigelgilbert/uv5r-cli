@@ -55,7 +55,7 @@ export function channelPayload(n: number, ch: Channel | undefined): ChannelResul
 /** Bytes of ident before main memory in a CHIRP image. */
 export const IMAGE_HEADER = 8;
 
-/** Start of the 64-byte page that holds the settings block; read it whole because 16-byte reads in 0x0E10..0x0E4F return the state page record. */
+/** Read the settings block through its 64-byte page because the radio answers 16-byte reads in 0x0E10..0x0E4F with the 0x0E40 record. */
 const SETTINGS_PAGE = 0x0e00;
 const SETTINGS_PAGE_OFFSET = SETTINGS_BASE - SETTINGS_PAGE;
 
@@ -93,20 +93,32 @@ export async function verifySettingsBlock(s: Session, expected: Uint8Array): Pro
   return decodeSettings(back);
 }
 
-/**
- * Wait for the radio to drop the current session and reload, start a new session on `t`,
- * and verify the settings block against `expected`. Call it after writeSettings or restoreImage.
- */
-export async function verifySettingsInFreshSession(t: Transport, expected: Uint8Array): Promise<Settings> {
+/** Start a session on `t`, run `fn` on it and return its result. */
+export async function withSession<T>(t: Transport, fn: (s: Session) => Promise<T>): Promise<T> {
+  const s = new Session(t);
+  await s.start();
+  return fn(s);
+}
+
+/** Wait for the radio to drop the current session and reload, then start a new session on `t`. */
+export async function startFreshSession(t: Transport): Promise<Session> {
   await settle();
   const fresh = new Session(t);
   await fresh.start();
-  return verifySettingsBlock(fresh, expected);
+  return fresh;
+}
+
+/**
+ * Wait for the radio to drop the current session and reload, start a new session on `t`,
+ * and verify the settings block against `expected`. Call it after writeSettings.
+ */
+export async function verifySettingsInFreshSession(t: Transport, expected: Uint8Array): Promise<Settings> {
+  return verifySettingsBlock(await startFreshSession(t), expected);
 }
 
 /** Read work mode, both channel numbers, the audio settings and the record on the display line in use. */
 export async function readStatus(s: Session): Promise<RadioStatus> {
-  const ident = s.ident ?? (await s.start());
+  const ident = s.startedIdent;
   const settings = await readSettings(s);
   const page = await s.readBlock(ADDR.statePage, 0x40);
   const workmode = page[ADDR.workmode - ADDR.statePage] === 1 ? 'channel' : 'vfo';
@@ -136,10 +148,14 @@ export async function readChannel(s: Session, n: number): Promise<Channel | unde
   return decodeChannel(mem, name);
 }
 
-/** Write a channel record and its name; reads back both in the same session. */
+/**
+ * Write a channel record and its name; reads back both in the same session. Reads the old
+ * record first so encodeChannel keeps its BCL, PTT-ID, S-code and scan settings.
+ */
 export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Promise<Channel> {
   checkChannelNumber(n);
-  const mem = encodeChannel(spec);
+  const prior = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
+  const mem = encodeChannel(spec, prior);
   const name = encodeName(spec.name ?? formatMhz(spec.rxHz));
   await s.writeBlock(CHANNEL_BASE + n * 16, mem);
   await s.writeBlock(NAME_BASE + n * 16, name);
@@ -152,33 +168,23 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
   return decodeChannel(back, nameBack)!;
 }
 
-/** Start a session and write `spec` into channel `n`; the radio applies it when the session ends. */
-export async function tune(transport: Transport, n: number, spec: ChannelSpec): Promise<Channel> {
-  const s = new Session(transport);
-  await s.start();
-  return writeChannel(s, n, spec);
-}
-
-/** Write 0xFF over a channel record and its name; reads back the record in the same session. */
+/** Write 0xFF over a channel record and its name; reads back both in the same session. */
 export async function eraseChannel(s: Session, n: number): Promise<void> {
   checkChannelNumber(n);
   const blank = new Uint8Array(16).fill(0xff);
   await s.writeBlock(CHANNEL_BASE + n * 16, blank);
   await s.writeBlock(NAME_BASE + n * 16, blank);
   const back = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
-  if (hex(back) !== hex(blank)) throw new DeviceStateError(`channel ${n} did not take the erase`, { read: hex(back) });
-}
-
-/** Start a session and erase channel `n`; the radio applies it when the session ends. */
-export async function erase(transport: Transport, n: number): Promise<void> {
-  const s = new Session(transport);
-  await s.start();
-  await eraseChannel(s, n);
+  if (hex(back) !== hex(blank)) throw new DeviceStateError(`channel ${n} did not take the erase`, { wrote: hex(blank), read: hex(back) });
+  const nameBack = await s.readBlock(NAME_BASE + n * 16, 0x10);
+  if (hex(nameBack) !== hex(blank)) {
+    throw new DeviceStateError(`channel ${n} name did not take the erase`, { wrote: hex(blank), read: hex(nameBack) });
+  }
 }
 
 /** Full image in CHIRP layout: 8-byte ident, main 0x0000-0x17FF, aux 0x1EC0-0x1FFF. */
 export async function dumpImage(s: Session, onProgress?: (addr: number) => void): Promise<Uint8Array> {
-  const ident = s.ident ?? (await s.start());
+  const ident = s.startedIdent;
   const out: number[] = [...ident.bytes];
   for (let a = 0; a < 0x1800; a += 0x40) {
     out.push(...(await s.readBlock(a, 0x40)));
@@ -211,7 +217,7 @@ export function imageSettingsBlock(image: Uint8Array): Uint8Array {
  */
 export async function restoreImage(s: Session, image: Uint8Array, onProgress?: (addr: number) => void): Promise<number> {
   if (image.length < IMAGE_HEADER + 0x1800) throw new DeviceStateError(`image too short: ${image.length} bytes`);
-  const ident = s.ident ?? (await s.start());
+  const ident = s.startedIdent;
   if (hex(image.subarray(0, IMAGE_HEADER)) !== hex(ident.bytes)) {
     throw new DeviceStateError('image ident does not match this radio', { image: hex(image.subarray(0, IMAGE_HEADER)), radio: hex(ident.bytes) });
   }
@@ -222,6 +228,43 @@ export async function restoreImage(s: Session, image: Uint8Array, onProgress?: (
       blocks++;
       onProgress?.(a);
     }
+  }
+  return blocks;
+}
+
+/** Channel records and names, the restored ranges the radio takes on write and verifyRestoredRanges reads back. */
+export const VERIFY_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [CHANNEL_BASE, CHANNEL_BASE + 0x0800],
+  [NAME_BASE, NAME_BASE + 0x0800],
+];
+
+/** Mismatches listed in the error detail of verifyRestoredRanges. */
+const MISMATCHES_REPORTED = 4;
+
+/**
+ * Read back VERIFY_RANGES in 64-byte blocks and compare each 16-byte row with the image.
+ * Run it in a fresh session after restoreImage. Throws DeviceStateError listing the first
+ * mismatched rows; returns the number of 64-byte blocks compared.
+ */
+export async function verifyRestoredRanges(s: Session, image: Uint8Array): Promise<number> {
+  const mismatches: Array<{ addr: string; wrote: string; read: string }> = [];
+  let blocks = 0;
+  for (const [start, end] of VERIFY_RANGES) {
+    for (let a = start; a < end; a += 0x40) {
+      const back = await s.readBlock(a, 0x40);
+      blocks++;
+      for (let row = 0; row < 0x40; row += 0x10) {
+        const wrote = hex(image.subarray(IMAGE_HEADER + a + row, IMAGE_HEADER + a + row + 0x10));
+        const read = hex(back.subarray(row, row + 0x10));
+        if (wrote !== read) mismatches.push({ addr: `0x${(a + row).toString(16).padStart(4, '0')}`, wrote, read });
+      }
+    }
+  }
+  if (mismatches.length > 0) {
+    throw new DeviceStateError(`restore did not take ${mismatches.length} blocks; first at ${mismatches[0]!.addr}`, {
+      mismatches: mismatches.length,
+      first: mismatches.slice(0, MISMATCHES_REPORTED),
+    });
   }
   return blocks;
 }

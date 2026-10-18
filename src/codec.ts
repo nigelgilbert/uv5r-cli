@@ -157,7 +157,10 @@ export interface Channel {
 
 export interface ChannelSpec {
   rxHz: number;
+  /** TX frequency; defaults to rxHz and is ignored when rxOnly is set. */
   txHz?: number;
+  /** Write the all-0xFF TX-inhibit marker so the channel cannot transmit. */
+  rxOnly?: boolean;
   rxTone?: Tone;
   txTone?: Tone;
   wide?: boolean;
@@ -165,25 +168,36 @@ export interface ChannelSpec {
   name?: string;
 }
 
-/** Pack a channel into its 16-byte memory record. */
-export function encodeChannel(spec: ChannelSpec): Uint8Array {
-  const txHz = spec.txHz ?? spec.rxHz;
+/** True when `mem` is a channel record with a decodable RX frequency; an erased slot reads 0xFF. */
+function isInitialized(mem: Uint8Array | undefined): mem is Uint8Array {
+  return mem !== undefined && mem.length >= 16 && mem[0] !== 0xff && decodeLbcd(mem.subarray(0, 4)) !== undefined;
+}
+
+/**
+ * Pack a channel into its 16-byte memory record. When `prior` is an initialized record, keep
+ * its S-code (byte 12 low nibble), byte 13 and the BCL, scan and PTT-ID bits (byte 15 bits
+ * 0-3). An absent or erased `prior` gives S-code 0, byte 13 zero, BCL off, PTT-ID 0 and scan on.
+ */
+export function encodeChannel(spec: ChannelSpec, prior?: Uint8Array): Uint8Array {
   checkBand(spec.rxHz);
-  checkBand(txHz);
+  const txHz = spec.txHz ?? spec.rxHz;
+  if (!spec.rxOnly) checkBand(txHz);
+  const keep = isInitialized(prior) ? prior : undefined;
   const out = new Uint8Array(16);
   out.set(encodeLbcd(spec.rxHz), 0);
-  out.set(encodeLbcd(txHz), 4);
+  if (spec.rxOnly) out.fill(0xff, 4, 8);
+  else out.set(encodeLbcd(txHz), 4);
   const rx = encodeTone(spec.rxTone ?? { kind: 'none' });
   const tx = encodeTone(spec.txTone ?? { kind: 'none' });
   out[8] = rx & 0xff;
   out[9] = rx >> 8;
   out[10] = tx & 0xff;
   out[11] = tx >> 8;
-  out[12] = 0;
-  out[13] = 0;
+  out[12] = keep ? keep[12]! & 0x0f : 0;
+  out[13] = keep ? keep[13]! : 0;
   out[14] = spec.lowPower ? 1 : 0;
-  // bit 6 wide, bit 2 scan; bcl and pttid stay clear.
-  out[15] = ((spec.wide ?? true) ? 0x40 : 0) | 0x04;
+  // Set bit 6 for wide and take BCL, scan and PTT-ID in bits 0-3 from the kept record or the defaults.
+  out[15] = ((spec.wide ?? true) ? 0x40 : 0) | (keep ? keep[15]! & 0x0f : 0x04);
   return out;
 }
 

@@ -18,11 +18,11 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, EXIT, UsageError, errorKind, exitCodeFor, signalExitCode } from './errors.ts';
-import { SETTLE_MS, Session } from './protocol.ts';
+import { SETTLE_MS } from './protocol.ts';
 import {
   channelPayload,
   dumpImage,
-  erase,
+  eraseChannel,
   IMAGE_HEADER,
   RESTORE_RANGES,
   holdPtt,
@@ -31,8 +31,12 @@ import {
   readSettings,
   readStatus,
   restoreImage,
-  tune,
+  startFreshSession,
+  verifyRestoredRanges,
+  verifySettingsBlock,
   verifySettingsInFreshSession,
+  withSession,
+  writeChannel,
   writeSettings,
   type ChannelResult,
   type RadioStatus,
@@ -55,9 +59,9 @@ interface Verb {
   run: (args: Invocation) => Promise<number>;
 }
 
-const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'force']);
+const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'rx-only', 'force']);
 const COMMON = ['json', 'text', 'target'];
-const TUNE_FLAGS = ['channel', 'offset', 'tone', 'rx-tone', 'narrow', 'low-power', 'name'];
+const TUNE_FLAGS = ['channel', 'offset', 'tone', 'rx-tone', 'narrow', 'low-power', 'rx-only', 'name'];
 const MAX_KEY_SECONDS = 60;
 const MAX_LISTEN_SECONDS = 600;
 const DEFAULT_AUDIO_DEVICE = 'AIOC Audio';
@@ -97,6 +101,7 @@ function helpText(): string {
     '  --rx-tone HZ       tune: RX tone; default none (carrier squelch)',
     '  --narrow           tune: 12.5 kHz bandwidth (default wide)',
     '  --low-power        tune: low TX power',
+    '  --rx-only          tune: receive only, TX inhibited; conflicts with --offset',
     '  --name TEXT        tune: channel name, 7 chars (default the frequency)',
     `  --seconds S        key: hold time, 0 < S <= ${MAX_KEY_SECONDS}; listen: capture time, whole number 1..${MAX_LISTEN_SECONDS} (required)`,
     '  --out FILE         dump: output path (default uv5r-YYYY-MM-DDTHH-MM-SS.img)',
@@ -138,17 +143,20 @@ function print(args: ParsedArgs, json: object, text: () => string): void {
 
 function channelSpec(freqText: string, flags: Map<string, string | true>): ChannelSpec {
   const rxHz = parseFrequency(freqText);
+  const rxOnly = Boolean(flags.get('rx-only'));
   const offsetText = stringFlag(flags, 'offset');
+  if (rxOnly && offsetText !== undefined) throw new UsageError('--rx-only and --offset conflict; a receive-only channel has no TX frequency');
   const offsetHz = offsetText === undefined ? 0 : checkTenHz(parseDecimal(offsetText, '--offset') * 1_000_000, `--offset ${offsetText}`);
-  const txHz = rxHz + offsetHz;
+  const txHz = rxOnly ? undefined : rxHz + offsetHz;
   checkBand(rxHz);
-  checkBand(txHz);
+  if (txHz !== undefined) checkBand(txHz);
   const name = stringFlag(flags, 'name');
   // Encode the name here so a bad character fails before the port opens.
   if (name !== undefined) encodeName(name);
   return {
     rxHz,
     txHz,
+    rxOnly,
     txTone: parseTone(stringFlag(flags, 'tone') ?? 'none'),
     rxTone: parseTone(stringFlag(flags, 'rx-tone') ?? 'none'),
     wide: !flags.get('narrow'),
@@ -195,7 +203,7 @@ function settingsPatch(positionals: string[]): Partial<Record<SettingName, numbe
 
 async function statusVerb(args: Invocation): Promise<number> {
   checkFlags('status', args.flags, COMMON);
-  const status = await withTransport(args, (t) => readStatus(new Session(t)));
+  const status = await withTransport(args, (t) => withSession(t, readStatus));
   print(args, status, () => statusText(status));
   return EXIT.ok;
 }
@@ -208,7 +216,7 @@ async function tuneVerb(args: Invocation): Promise<number> {
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
   const spec = channelSpec(freq, args.flags);
-  const written = await withTransport(args, (t) => tune(t, n, spec));
+  const written = await withTransport(args, (t) => withSession(t, (s) => writeChannel(s, n, spec)));
   const result = { ...channelPayload(n, written), appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `${channelText(result)}\nwritten; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
@@ -220,11 +228,7 @@ async function readVerb(args: Invocation): Promise<number> {
   if (numText === undefined) throw new UsageError('read needs a channel number 0..127, as in: read 5');
   const n = parseDecimal(numText, 'channel');
   checkChannelNumber(n);
-  const ch = await withTransport(args, async (t) => {
-    const s = new Session(t);
-    await s.start();
-    return readChannel(s, n);
-  });
+  const ch = await withTransport(args, (t) => withSession(t, (s) => readChannel(s, n)));
   const result = channelPayload(n, ch);
   print(args, result, () => channelText(result));
   return EXIT.ok;
@@ -236,7 +240,7 @@ async function eraseVerb(args: Invocation): Promise<number> {
   if (numText === undefined) throw new UsageError('erase needs a channel number 0..127, as in: erase 127');
   const n = parseDecimal(numText, 'channel');
   checkChannelNumber(n);
-  await withTransport(args, (t) => erase(t, n));
+  await withTransport(args, (t) => withSession(t, (s) => eraseChannel(s, n)));
   const result = { channel: n, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `channel ${n} erased; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
@@ -267,19 +271,19 @@ async function dumpVerb(args: Invocation): Promise<number> {
   checkFlags('dump', args.flags, [...COMMON, 'out']);
   const out = stringFlag(args.flags, 'out') ?? defaultDumpName();
   const json = wantsJson(args.flags);
-  const result = await withTransport(args, async (t) => {
-    const s = new Session(t);
-    const id = await s.start();
-    const image = await dumpImage(s, (addr) => {
-      if (!json && addr % 0x400 === 0) process.stderr.write(`read 0x${addr.toString(16).padStart(4, '0')}\n`);
-    });
-    try {
-      writeFileSync(out, image);
-    } catch (err) {
-      throw new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out });
-    }
-    return { out, bytes: image.length, firmware: id.firmware };
-  });
+  const result = await withTransport(args, (t) =>
+    withSession(t, async (s) => {
+      const image = await dumpImage(s, (addr) => {
+        if (!json && addr % 0x400 === 0) process.stderr.write(`read 0x${addr.toString(16).padStart(4, '0')}\n`);
+      });
+      try {
+        writeFileSync(out, image);
+      } catch (err) {
+        throw new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out });
+      }
+      return { out, bytes: image.length, firmware: s.startedIdent.firmware };
+    }),
+  );
   print(args, result, () => `wrote ${result.bytes} bytes to ${result.out} (${result.firmware})`);
   return EXIT.ok;
 }
@@ -300,15 +304,21 @@ async function restoreVerb(args: Invocation): Promise<number> {
   }
   const json = wantsJson(args.flags);
   const result = await withTransport(args, async (t) => {
-    const s = new Session(t);
-    await s.start();
-    const blocks = await restoreImage(s, image, (addr) => {
-      if (!json && addr % 0x400 === 0) process.stderr.write(`write 0x${addr.toString(16).padStart(4, '0')}\n`);
-    });
-    const settings = await verifySettingsInFreshSession(t, imageSettingsBlock(image));
-    return { file, blocks, settings };
+    const blocks = await withSession(t, (s) =>
+      restoreImage(s, image, (addr) => {
+        if (!json && addr % 0x400 === 0) process.stderr.write(`write 0x${addr.toString(16).padStart(4, '0')}\n`);
+      }),
+    );
+    const fresh = await startFreshSession(t);
+    const settings = await verifySettingsBlock(fresh, imageSettingsBlock(image));
+    const verifiedBlocks = await verifyRestoredRanges(fresh, image);
+    return { file, blocks, verifiedBlocks, settings };
   });
-  print(args, result, () => `wrote ${result.blocks} blocks from ${result.file}; settings verified\n${settingsText(result.settings)}`);
+  print(
+    args,
+    result,
+    () => `wrote ${result.blocks} blocks from ${result.file}; settings and ${result.verifiedBlocks} channel and name blocks verified\n${settingsText(result.settings)}`,
+  );
   return EXIT.ok;
 }
 
@@ -316,10 +326,9 @@ async function settingsVerb(args: Invocation): Promise<number> {
   checkFlags('settings', args.flags, COMMON);
   const patch = settingsPatch(args.positionals);
   const result = await withTransport(args, async (t) => {
-    const s = new Session(t);
-    await s.start();
-    if (Object.keys(patch).length === 0) return readSettings(s);
-    return verifySettingsInFreshSession(t, await writeSettings(s, patch));
+    if (Object.keys(patch).length === 0) return withSession(t, readSettings);
+    const block = await withSession(t, (s) => writeSettings(s, patch));
+    return verifySettingsInFreshSession(t, block);
   });
   print(args, result, () => settingsText(result));
   return EXIT.ok;

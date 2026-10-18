@@ -22,10 +22,6 @@ const MEMORY_END = 0x2000;
 const BLOCK = 0x10;
 /** The two 16-byte halves the radio stages until a write at SETTINGS_COMMIT. */
 const SETTINGS_HALVES = [SETTINGS_BASE, SETTINGS_BASE + BLOCK] as const;
-/** 16-byte reads that start in this range return the 0x0E40 record. */
-const ALIAS_START = 0x0e10;
-const ALIAS_END = 0x0e50;
-const PAGE = 0x40;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Wait for the radio to drop the clone session and reload its settings from EEPROM. */
@@ -48,6 +44,12 @@ export class Session {
   /** Settings halves the radio acked this session and holds in its staging buffer. */
   private readonly staged = new Set<number>();
   ident: Ident | undefined;
+
+  /** The ident from start; throws DeviceStateError before the handshake. */
+  get startedIdent(): Ident {
+    if (!this.ident) throw new DeviceStateError('clone session not started');
+    return this.ident;
+  }
 
   private readonly transport: Transport;
 
@@ -111,17 +113,10 @@ export class Session {
 
   /**
    * Read `size` bytes at `addr`; the radio serves 16-byte aligned blocks, so pass aligned addresses.
-   * The radio answers a 16-byte read in 0x0E10..0x0E4F with the 0x0E40 record, so such a read
-   * goes out as a 64-byte read of its aligned page and returns the requested slice.
    * Reads of 0x0E00..0x0E7F return the values loaded at the last reload, so a write there
    * reads back unchanged until the next session.
    */
   async readBlock(addr: number, size: number): Promise<Uint8Array> {
-    if (size === BLOCK && addr >= ALIAS_START && addr < ALIAS_END) {
-      const page = addr & ~(PAGE - 1);
-      const data = await this.readBlock(page, PAGE);
-      return data.subarray(addr - page, addr - page + size);
-    }
     const first = this.commands === 0;
     this.touch();
     this.transport.write(Uint8Array.of(CMD_READ, addr >> 8, addr & 0xff, size));

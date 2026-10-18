@@ -7,6 +7,8 @@ import { cli, type OpenTransport } from '../src/main.ts';
 import type { Transport } from '../src/transport.ts';
 import { FakeRadio } from './fake.ts';
 
+const FIXTURE = new URL('../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url).pathname;
+
 let stdout: string[];
 let stderr: string[];
 let exit: ReturnType<typeof vi.spyOn>;
@@ -99,6 +101,21 @@ describe('tune input checks', () => {
     expect(open.calls).toBe(0);
   });
 
+  it('writes a receive-only channel with --rx-only', async () => {
+    await cli(['tune', '155.475', '--channel', '5', '--rx-only', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ channel: 5, rxMhz: '155.475', txMhz: null });
+  });
+
+  it('rejects --rx-only with --offset before opening the transport', async () => {
+    const open = opener(new FakeRadio());
+    await cli(['tune', '146.82', '--channel', '5', '--rx-only', '--offset', '-0.6', '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson().message).toContain('--rx-only');
+    expect(errJson().message).toContain('--offset');
+    expect(open.calls).toBe(0);
+  });
+
   it('rejects a non-ASCII name before opening the transport', async () => {
     const open = opener(new FakeRadio());
     await cli(['tune', '146.82', '--channel', '5', '--name', 'CAFÉ', '--json'], open);
@@ -117,6 +134,39 @@ describe('restore input checks', () => {
     expect(process.exitCode).toBe(2);
     expect(errJson().message).toContain('image too short');
     expect(open.calls).toBe(0);
+  });
+});
+
+describe('restore verification', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Run the CLI under fake timers until it finishes. */
+  async function run(argv: string[], open: OpenTransport): Promise<void> {
+    const done = cli(argv, open);
+    await vi.runAllTimersAsync();
+    await done;
+  }
+
+  it('reports the channel and name blocks it read back', async () => {
+    await run(['restore', FIXTURE, '--force', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ file: FIXTURE, blocks: 382, verifiedBlocks: 64 });
+  });
+
+  it('exits 5 naming the address when the radio drops name writes', async () => {
+    const radio = new FakeRadio();
+    radio.eeprom.fill(0, 0x1000, 0x1800);
+    radio.writesIgnoredBelow = 0x1000;
+    radio.writesIgnoredAbove = 0x1800;
+    await run(['restore', FIXTURE, '--force', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({ kind: 'device-state', message: 'restore did not take 128 blocks; first at 0x1000' });
+    expect(stdout).toEqual([]);
   });
 });
 

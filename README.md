@@ -32,6 +32,11 @@ seen at the same time traced to the volume knob and the seating of the 2.5 mm pl
 3. The radio leaves clone mode after 2.5 s of silence and reloads from EEPROM. The new
    frequency is live about 3 s after the command ends.
 
+`tune` reads the old record before it writes. Over an existing record it keeps BCL,
+PTT-ID, S-code and scan as they were. An empty slot gets BCL off, PTT-ID 0, S-code 0 and
+scan on. Frequency, offset, tones, bandwidth, power and name come from the command line.
+A receive-only record tuned without `--rx-only` gets a TX frequency again.
+
 Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows
 it. `listen` captures receive audio through the AIOC sound card with ffmpeg and reports
 levels, so the receiver check is one command; macOS blocks microphone access for the
@@ -47,6 +52,7 @@ uv5r status                                # firmware, channel A/B, audio settin
 uv5r tune 154.680 --channel 5              # write 154.680 into channel 5
 uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
 uv5r tune 462.5625 --channel 5 --narrow --low-power
+uv5r tune 155.475 --channel 6 --rx-only    # receive only, TX inhibited
 uv5r read 5                                # read channel record 5
 uv5r erase 127                             # clear channel record 127 and its name
 uv5r key --seconds 2                       # DTR high, RTS low; releases on exit or Ctrl-C
@@ -69,6 +75,7 @@ Options:
 | `--tone HZ` | TX CTCSS from the standard table (`82.5`), DCS (`D023`, `D023I`) or `none` |
 | `--rx-tone HZ` | RX tone, default `none` |
 | `--offset MHZ` | signed repeater offset in 10 Hz steps; default simplex |
+| `--rx-only` | `tune`: receive only. Writes `FF FF FF FF` as the TX frequency so PTT does not transmit. Conflicts with `--offset`; both together exit 2 |
 | `--narrow` | 12.5 kHz bandwidth |
 | `--low-power` | low power |
 | `--name TEXT` | channel name, printable ASCII, uppercased, cut to 7 characters; other characters exit 2 before the port opens. Default the frequency |
@@ -92,14 +99,15 @@ carry `kind`, `message` and any detail fields, such as `file`, `got` or `unexpec
 `status` returns one flat object: `firmware`, `workmode` (`vfo` or `channel`), `channelA`,
 `channelB`, `squelch`, `voice`, `beep`, `abr`, `channel`, then the record fields `rxMhz`,
 `txMhz`, `txTone`, `rxTone`, `bandwidth`, `power` and `name`. `txMhz` is `null` for a
-receive-only channel. An empty record gives `"empty": true` in place of the record fields.
-The `note` field always reads "channelA/B are the values stored in EEPROM; the radio
-display shows the channel the knob selected". Trust the display for the active channel.
+receive-only channel, such as one written with `tune --rx-only`. An empty record gives
+`"empty": true` in place of the record fields. The `note` field always reads "channelA/B
+are the values stored in EEPROM; the radio display shows the channel the knob selected".
+Trust the display for the active channel.
 
 `tune` returns the written record plus `"appliesAfterSeconds": 3`. `read` returns the
 record, or `{"channel": N, "empty": true}`. `erase` writes 0xFF over the record and the
-name and returns `{"channel": N, "empty": true, "appliesAfterSeconds": 3}`. `key` returns
-`{"keyed": true, "seconds": S}` with the measured hold time. A key cut short by a signal
+name, reads both back and returns `{"channel": N, "empty": true, "appliesAfterSeconds":
+3}`. `key` returns `{"keyed": true, "seconds": S}` with the measured hold time. A key cut short by a signal
 adds `"interrupted": "SIGINT"` and `"released": true`.
 
 `settings` with no arguments returns the eight fields. With `field value` pairs it writes
@@ -111,8 +119,11 @@ soon as the session ends. Reports say voice or beep off mutes receive audio on t
 firmware family; the bench unit has not confirmed it. `settings` restores only its eight fields; bring back a zeroed block in full with
 `restore` from an image.
 
-`restore` verifies the settings block the same way and returns `{"file", "blocks",
-"settings"}` with the fields it read back. An image shorter than 6152 bytes exits 2 before
+`restore` verifies the settings block the same way. In that fresh session it also reads
+back the channel records `0x0000..0x07FF` and names `0x1000..0x17FF` and compares them
+with the image. A mismatch is a device-state error that names the first differing address.
+It returns `{"file", "blocks", "verifiedBlocks", "settings"}`, where `verifiedBlocks` counts
+the 64-byte blocks compared. An image shorter than 6152 bytes exits 2 before
 the port opens. `dump` returns `{"out", "bytes", "firmware"}`.
 
 `listen` runs `ffmpeg -f avfoundation -i ":AIOC Audio"` for `--seconds` at 48 kHz mono,
@@ -124,8 +135,9 @@ microphone access gives digital zero. The AIOC's bare ADC floor at 1x gain reads
 the volume knob is down or the 2.5 mm plug is short of its contact. `peakDbfs` above 0
 means the input clips; set the knob so static reads around -20 to -12. A missing ffmpeg,
 an ffmpeg error exit, a timeout, or fewer whole seconds captured than requested is a
-transport error. ffmpeg 9 on macOS 26 returns about 88 percent of the requested length, so
-captures above about 6 s fail; use 4 to 5 s.
+transport error. ffmpeg 9 on macOS 26 returns about 88 percent of the `-t` length as
+samples. The CLI asks ffmpeg for `ceil(seconds / 0.88) + 2` and reports the first
+`--seconds` whole seconds.
 
 If the handshake gets no ack, the CLI waits 3 s and retries it once. This covers a clone
 session still closing from the previous verb.
@@ -161,9 +173,9 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
   per write.
 - Reads of `0x0E00..0x0E7F` during a session return the values the radio loaded at its
   last reload. A 16-byte read at `0x0E10`, `0x0E20`, `0x0E30` or `0x0E40` returns the
-  `0x0E40` record. `Session.readBlock` sends such a read as a 64-byte read of the aligned page and
-  returns the slice. The page still holds the reload snapshot, so a settings write reads
-  back unchanged until the next session.
+  `0x0E40` record. `radio.ts` reads the settings block and the state record as 64-byte
+  pages. The page still holds the reload snapshot, so a settings write reads back unchanged
+  until the next session.
 - After a reload the settings page reads back the written channel A/B value while the
   display shows the knob channel.
 - The session drops after 2.5 s without a command. A second handshake inside a live

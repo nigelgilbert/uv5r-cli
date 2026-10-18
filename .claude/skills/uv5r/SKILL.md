@@ -5,24 +5,36 @@ description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and t
 
 # uv5r
 
-`tune` writes a frequency into the memory channel the radio is parked on. The radio applies
+`tune` writes a frequency into the memory channel given by `--channel`. The radio applies
 it about 3 s after the command ends.
 
 Run commands from the repo root. `uv5r` below means `node src/main.ts`.
 
 ## Operating rules
 
-- Never open, `cat`, `screen` or `stty` the serial port.
+- Do not open, `cat`, `screen` or `stty` the serial port.
 - Run one verb at a time.
 - Start every task with `uv5r status`.
 - Exit 2 means bad input. Read `message` and fix the command.
-- Exit 3 means no device. Ask the human to check the cable is seated.
+- Exit 3 means a transport error. Read `kind` and `message` before choosing a remedy.
+  - No AIOC found or no device at the path: ask the human to reseat the cable, or pass
+    `--target`.
+  - Serial error: ask the human to reseat the cable.
+  - ffmpeg missing from PATH: run `brew install ffmpeg`.
+  - ffmpeg failed or timed out: read `message` and check `--device`.
+  - Short capture: retry `listen` once, then check the AIOC audio device is listed.
+- Exit 4 means a timeout: no ack or a short read. Retry the verb once, then ask the human
+  to check the radio is on.
 - Exit 5 means the radio did not answer, gave a bad reply, refused a write, failed
   verification, or holds a different ident than the image. Read `message` and the detail
   fields first. Check the input, such as the image file, before asking the human to check
   the radio is on and the cable is seated.
-- Ask the human once per session to read the channel number off the radio display. Call it N.
-- Pass `--channel N` to every `tune`.
+- Exit 6 means the port is busy. Another process such as CHIRP or a terminal holds it. Ask
+  the human to close it.
+- To change what the radio is parked on, ask the human once per session to read the
+  channel number off the display. Call it N and pass `--channel N`.
+- Writing a plan or any other slot uses that slot's own number.
+- Write public-safety listening channels with `--rx-only`.
 - Trust the display for the active channel. `status` channelA and channelB come from
   EEPROM and may differ from it.
 - Run verbs back to back. The CLI retries the handshake once.
@@ -37,6 +49,7 @@ uv5r status
 uv5r tune 154.680 --channel 5
 uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
 uv5r tune 462.5625 --channel 5 --narrow --low-power
+uv5r tune 154.695 --channel 7 --narrow --rx-only --name "SHERIFF"
 uv5r read 5
 uv5r erase 127
 uv5r key --seconds 2

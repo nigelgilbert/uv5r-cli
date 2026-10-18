@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ADDR, decodeChannel, encodeChannel, encodeName, parseTone } from '../src/codec.ts';
+import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../src/codec.ts';
 import { Session } from '../src/protocol.ts';
-import { STATUS_NOTE, channelPayload, readChannel, readStatus, tune, writeChannel, erase } from '../src/radio.ts';
+import { STATUS_NOTE, channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../src/radio.ts';
 import { FakeRadio } from './fake.ts';
+
+/** Write channel `n` in a new session, as the tune verb does. */
+const tune = (radio: FakeRadio, n: number, spec: ChannelSpec) => withSession(radio, (s) => writeChannel(s, n, spec));
 
 /** Drop the clone session and start a new one, as the next CLI invocation does after the reload. */
 async function nextSession(radio: FakeRadio): Promise<Session> {
@@ -17,10 +20,22 @@ describe('erase', () => {
     const radio = new FakeRadio();
     await tune(radio, 127, { rxHz: 435_725_000, name: 'JUNK' });
     radio.dropSession();
-    await erase(radio, 127);
+    await withSession(radio, (s) => eraseChannel(s, 127));
     const s = await nextSession(radio);
     expect(await readChannel(s, 127)).toBeUndefined();
     expect(radio.eeprom.subarray(0x1000 + 127 * 16, 0x1000 + 128 * 16).every((b) => b === 0xff)).toBe(true);
+  });
+  it('reports an acked but ignored name erase as a device-state error', async () => {
+    const radio = new FakeRadio();
+    await tune(radio, 127, { rxHz: 435_725_000, name: 'JUNK' });
+    radio.dropSession();
+    radio.writesIgnoredBelow = 0x1000 + 127 * 16;
+    radio.writesIgnoredAbove = 0x1000 + 128 * 16;
+    await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
+      kind: 'device-state',
+      message: 'channel 127 name did not take the erase',
+      detail: { wrote: expect.stringMatching(/^ff( ff){15}$/), read: expect.stringMatching(/^4a 55 4e 4b/) },
+    });
   });
 });
 
@@ -122,6 +137,41 @@ describe('tune', () => {
   });
 });
 
+describe('tune over an existing slot', () => {
+  it('keeps BCL, PTT-ID and S-code from the record it replaces', async () => {
+    const radio = new FakeRadio();
+    const old = encodeChannel({ rxHz: 146_520_000 });
+    old[12] = 0x05;
+    old[15] = 0x40 | 0x08 | 0x04 | 0x02;
+    radio.eeprom.set(old, 5 * 16);
+    await tune(radio, 5, { rxHz: 146_820_000, txHz: 146_220_000 });
+    const mem = radio.eeprom.subarray(5 * 16, 6 * 16);
+    expect(mem[12]! & 0x0f).toBe(5);
+    expect(mem[15]! & 0x08).toBe(0x08);
+    expect(mem[15]! & 0x03).toBe(2);
+    expect(await readChannel(await nextSession(radio), 5)).toMatchObject({ rxHz: 146_820_000, txHz: 146_220_000, bcl: true, scan: true });
+  });
+  it('writes scan on and BCL off over an erased slot', async () => {
+    const radio = new FakeRadio();
+    const ch = await tune(radio, 5, { rxHz: 146_520_000 });
+    expect(ch).toMatchObject({ scan: true, bcl: false });
+    expect(radio.eeprom[5 * 16 + 15]! & 0x0f).toBe(0x04);
+  });
+  it('writes a receive-only channel with the TX-inhibit marker', async () => {
+    const radio = new FakeRadio();
+    const ch = await tune(radio, 5, { rxHz: 155_475_000, rxOnly: true });
+    expect(ch.txHz).toBeNull();
+    expect([...radio.eeprom.subarray(5 * 16 + 4, 5 * 16 + 8)]).toEqual([0xff, 0xff, 0xff, 0xff]);
+  });
+  it('replaces the TX-inhibit marker with a TX frequency when rxOnly is unset', async () => {
+    const radio = new FakeRadio();
+    await tune(radio, 5, { rxHz: 155_475_000, rxOnly: true });
+    radio.dropSession();
+    const ch = await tune(radio, 5, { rxHz: 155_475_000 });
+    expect(ch.txHz).toBe(155_475_000);
+  });
+});
+
 describe('status', () => {
   it('returns the flat payload with the note', async () => {
     const radio = new FakeRadio();
@@ -158,6 +208,12 @@ describe('status', () => {
     const st = await readStatus(s);
     expect(st).toMatchObject({ channel: 0x7f, empty: true, note: STATUS_NOTE });
     expect(st).not.toHaveProperty('rxMhz');
+  });
+  it('reads the settings block from the page values despite the 16-byte read alias', async () => {
+    const radio = new FakeRadio();
+    for (let a = 0x0e00; a < 0x0e80; a++) radio.eeprom[a] = a & 0xff;
+    const s = await withSession(radio, async (s) => s);
+    expect(await readSettings(s)).toEqual(decodeSettings(radio.eeprom.subarray(SETTINGS_BASE, SETTINGS_BASE + SETTINGS_SIZE)));
   });
   it('reads work mode and a zeroed settings block despite the 16-byte read alias', async () => {
     const radio = new FakeRadio();

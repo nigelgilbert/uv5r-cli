@@ -59,7 +59,7 @@ export class SerialTransport implements Transport {
     port.on('close', (err?: Error | null) => this.fail(err ? `device disconnected: ${err.message}` : 'device disconnected'));
   }
 
-  /** Record the first failure seen while the port is in use; later reads, writes and PTT calls reject with it. */
+  /** Record the first failure seen while the port is in use; later reads, writes and PTT key calls reject with it. */
   private fail(message: string): void {
     if (this.closing || this.failure) return;
     if (DEBUG) process.stderr.write(`fail ${Date.now() % 100000} ${message}\n`);
@@ -111,15 +111,18 @@ export class SerialTransport implements Transport {
   }
 
   setPtt(on: boolean): Promise<void> {
-    if (this.failure) return Promise.reject(this.failure);
+    // Reject a key after a stored failure and send every release to the port.
+    if (on && this.failure) return Promise.reject(this.failure);
     return new Promise((resolve, reject) => {
       this.port.set({ dtr: on, rts: false }, (err) => (err ? reject(new TransportError(err.message, { target: this.target })) : resolve()));
     });
   }
 
-  close(): Promise<void> {
-    if (!this.port.isOpen) return Promise.resolve();
+  async close(): Promise<void> {
+    if (!this.port.isOpen) return;
     this.closing = true;
-    return new Promise((resolve) => this.port.close(() => resolve()));
+    // Lower DTR before closing and ignore any error from the port.
+    await this.setPtt(false).catch(() => {});
+    await new Promise<void>((resolve) => this.port.close(() => resolve()));
   }
 }

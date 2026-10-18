@@ -27,7 +27,18 @@ const RATE = 48000;
 /** High-pass corner that removes the ADC bias so levels report audio only. */
 const HIGHPASS_HZ = 50;
 
-/** ffmpeg arguments that capture `seconds` from `device`, remove DC, and print per-second astats on stderr. */
+/** Fraction of the `-t` duration that ffmpeg 9.0.2 avfoundation returns as samples on macOS 26.7.1; the AIOC and the built-in microphone both stamped 48000-sample frames about 1.137 s apart on 2026-10-18. */
+const RATIO = 0.88;
+
+/** Extra seconds added to the padded request. */
+const PAD_SECONDS = 2;
+
+/** Duration to pass to `-t` so that at least `seconds` whole frames come back. */
+export function captureSeconds(seconds: number): number {
+  return Math.ceil(seconds / RATIO) + PAD_SECONDS;
+}
+
+/** ffmpeg arguments that capture at least `seconds` from `device`, remove DC, and print per-second astats on stderr. */
 export function ffmpegArgs(device: string, seconds: number): string[] {
   return [
     '-hide_banner',
@@ -37,7 +48,7 @@ export function ffmpegArgs(device: string, seconds: number): string[] {
     '-i',
     `:${device}`,
     '-t',
-    String(seconds),
+    String(captureSeconds(seconds)),
     '-af',
     `aformat=sample_rates=${RATE}:channel_layouts=mono,highpass=f=${HIGHPASS_HZ},asetnsamples=n=${RATE}:p=0,astats=metadata=1:reset=1,ametadata=print`,
     '-f',
@@ -72,7 +83,7 @@ export function wholeSeconds(levels: Levels): number {
 
 /** Summarize the first `seconds` frames; the caller checks that that many whole frames exist. */
 export function summarize(device: string, seconds: number, levels: Levels): ListenResult {
-  // ffmpeg emits frames past the requested window; keep the first `seconds` of each series.
+  // The padded request returns frames past the window; keep the first `seconds` of each series.
   const rms = levels.rms.slice(0, seconds);
   const peak = levels.peak.slice(0, seconds);
   const power = rms.reduce((sum, db) => sum + 10 ** (db / 10), 0) / rms.length;
@@ -98,7 +109,7 @@ function stderrTail(stderr: string): string {
 
 /** Capture `seconds` of receive audio through ffmpeg and report levels. */
 export function listen(device: string, seconds: number): Promise<ListenResult> {
-  const timeoutMs = (seconds + 15) * 1000;
+  const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', ffmpegArgs(device, seconds), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
       const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null }) | null;

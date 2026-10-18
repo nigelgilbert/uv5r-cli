@@ -12,7 +12,9 @@ const { FakePort, ports } = await vi.hoisted(async () => {
     static list = async (): Promise<unknown[]> => [];
     isOpen = false;
     writeError: Error | undefined;
+    setError: Error | undefined;
     written: Buffer[] = [];
+    sets: unknown[] = [];
     readonly options: Record<string, unknown>;
     constructor(options: Record<string, unknown>) {
       super();
@@ -29,8 +31,10 @@ const { FakePort, ports } = await vi.hoisted(async () => {
       process.nextTick(() => cb(err ?? null));
       return true;
     }
-    set(_opts: unknown, cb: Cb): void {
-      process.nextTick(() => cb(null));
+    set(opts: unknown, cb: Cb): void {
+      this.sets.push(opts);
+      const err = this.setError;
+      process.nextTick(() => cb(err ?? null));
     }
     close(cb: Cb): void {
       this.isOpen = false;
@@ -75,7 +79,38 @@ describe('SerialTransport', () => {
     expect((err as TransportError).message).toContain('EIO');
     expect((err as TransportError).detail).toEqual({ target: '/dev/null' });
     expect(() => t.write(Uint8Array.of(0x50))).toThrow(TransportError);
-    await expect(t.setPtt(false)).rejects.toBeInstanceOf(TransportError);
+    await expect(t.setPtt(true)).rejects.toBeInstanceOf(TransportError);
+  });
+
+  it('refuses to key after a stored failure and still sends the release to the port', async () => {
+    const { t, port } = await openFake();
+    port.emit('error', new Error('EIO'));
+    port.sets.length = 0;
+    await expect(t.setPtt(true)).rejects.toThrow(/EIO/);
+    expect(port.sets).toEqual([]);
+    await expect(t.setPtt(false)).resolves.toBeUndefined();
+    expect(port.sets).toEqual([{ dtr: false, rts: false }]);
+  });
+
+  it('rejects a release after a stored failure when the port refuses it', async () => {
+    const { t, port } = await openFake();
+    port.emit('error', new Error('EIO'));
+    port.setError = new Error('set EIO');
+    const err = await t.setPtt(false).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    expect((err as TransportError).message).toBe('set EIO');
+  });
+
+  it('lowers DTR before closing and ignores a failed release', async () => {
+    const { t, port } = await openFake();
+    port.sets.length = 0;
+    await t.close();
+    expect(port.sets).toEqual([{ dtr: false, rts: false }]);
+    expect(port.isOpen).toBe(false);
+    const { t: t2, port: port2 } = await openFake();
+    port2.setError = new Error('set EIO');
+    await expect(t2.close()).resolves.toBeUndefined();
+    expect(port2.isOpen).toBe(false);
   });
 
   it('rejects the next read after a write callback reports an error', async () => {

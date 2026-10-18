@@ -293,8 +293,10 @@ Loose ends outside the fault, by value:
 2. Short captures: ffmpeg 9.0.2 avfoundation on macOS 26.7.1 returns 88 percent of the
    requested length from every device, including the built-in microphone (5 s asked,
    4.46 s returned). The AIOC reports RECRATE 48000 and RECSTATE running. HID traffic
-   during capture makes no difference. `listen` fails on the shortfall above about 6 s;
-   it should accept the short capture or ask ffmpeg for seconds / 0.88.
+   during capture makes no difference. Unpadded astats runs on 2026-10-18 returned 6, 5, 9,
+   12 and 19 whole frames for 5, 4, 8, 12 and 20 s, so the unpadded threshold sat between
+   12 and 20 s. Fixed: `listen` now asks ffmpeg for `ceil(seconds / 0.88) + 2` and keeps the
+   first `seconds` frames.
 3. Radio identity: store a hash of 0x1F00-0x1FBF with each backup and warn when a dump's
    calibration differs.
 4. Aux-read reliability: read a block outside aux first and dump twice. The bench values

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_FIELDS, SETTINGS_SIZE, applySettings, decodeSettings, parseSettingValue } from '../src/codec.ts';
 import { MAGIC, Session } from '../src/protocol.ts';
-import { imageSettingsBlock, restoreImage, verifySettingsBlock, verifySettingsInFreshSession, writeSettings } from '../src/radio.ts';
+import { imageSettingsBlock, restoreImage, startFreshSession, verifyRestoredRanges, verifySettingsBlock, verifySettingsInFreshSession, writeSettings } from '../src/radio.ts';
 import { FakeRadio } from './fake.ts';
 
 const fixture = new Uint8Array(readFileSync(new URL('../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url)));
@@ -110,11 +110,27 @@ describe('restore', () => {
     vi.useRealTimers();
   });
 
-  it('commits the settings block through the in-order write and verifies it', async () => {
+  it('commits the settings block through the in-order write and verifies it with the channels and names', async () => {
     const radio = new FakeRadio();
     radio.eeprom.fill(0, SETTINGS_BASE, SETTINGS_BASE + SETTINGS_SIZE);
     const s = await startSession(radio);
     await drive(restoreImage(s, fixture));
-    expect(await drive(verifySettingsInFreshSession(radio, imageSettingsBlock(fixture)))).toEqual(FIXTURE_SETTINGS);
+    const fresh = await drive(startFreshSession(radio));
+    expect(await drive(verifySettingsBlock(fresh, imageSettingsBlock(fixture)))).toEqual(FIXTURE_SETTINGS);
+    expect(await drive(verifyRestoredRanges(fresh, fixture))).toBe(64);
+  });
+  it('reports dropped name writes as a device-state error naming the first address', async () => {
+    const radio = new FakeRadio();
+    radio.eeprom.fill(0, 0x1050, 0x1070);
+    radio.writesIgnoredBelow = 0x1050;
+    radio.writesIgnoredAbove = 0x1070;
+    const s = await startSession(radio);
+    await drive(restoreImage(s, fixture));
+    const fresh = await drive(startFreshSession(radio));
+    await expect(drive(verifyRestoredRanges(fresh, fixture))).rejects.toMatchObject({
+      kind: 'device-state',
+      message: 'restore did not take 2 blocks; first at 0x1050',
+      detail: { mismatches: 2, first: [{ addr: '0x1050' }, { addr: '0x1060' }] },
+    });
   });
 });
