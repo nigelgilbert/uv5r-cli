@@ -1,6 +1,6 @@
 ---
 name: uv5r
-description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, MR or VFO mode, checking the live channel, loading a channel plan, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
+description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, MR or VFO mode, checking the live channel, loading or sweeping a channel plan, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
 ---
 
 # uv5r
@@ -68,6 +68,7 @@ uv5r settings voice eng beep on
 uv5r listen --seconds 5
 uv5r listen --seconds 5 --out rx.wav --play
 uv5r listen --seconds 5 --floor -40
+uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx --play --verbose
 ```
 
 `status` reports `squelch`, `voice`, `beep` and `abr`. Reports say `voice off` or `beep off`
@@ -94,6 +95,34 @@ through `afplay` after the capture and needs `--out`.
 5 s and returns the `listen` fields plus `channel` and `rxMhz`. It takes the `tune` flags,
 `--device`, `--floor` and `--seconds`. Silence exits 5 with
 `no audio on channel N: set MR mode and select N`.
+
+## Sweep a plan
+
+Run one `sweep` to listen across a plan. It replaces the per-channel shell loop of
+`tune`, `read 0` and `listen` from the 2026-10-18 run.
+
+```sh
+uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx --play --verbose
+```
+
+- `--scratch 0` writes each plan entry into slot 0 in turn. Use the N that `check` proved.
+- `--check 162.400` runs `check` on slot N before the loop. Exit 5 means the radio is off
+  slot N; follow the `check` rule above, then rerun with `--scratch N`. Pass `--no-check`
+  when `check` already passed on N this session. One of the two is required.
+- `--seconds` sets the dwell per entry, default 30. Each entry adds about 3 s of write and
+  reload, plus `afplay` time for an active capture.
+- `--out-dir rx` keeps one WAV per entry, such as `rx/ch07-2026-10-18T00-15-00.wav`.
+  `--play` plays the active ones after their dwell and needs `--out-dir`.
+- `--verbose` writes one JSON line per entry to stderr as each dwell ends. Read it to
+  follow a long sweep.
+- stdout is one object: `swept`, `seconds`, `active` and `warnings`. Each `active` item has
+  `channel`, `name`, `rxMhz`, `activeSeconds` and `out`. Each warning starts with
+  `channel N:`.
+- Ctrl-C ends the loop. The summary still prints for the finished entries, with
+  `interrupted`, and the exit code is 130.
+- Slot N holds the last plan entry afterwards. Run `uv5r load channels.json` to put the
+  plan in its own slots.
+- `sweep` without `--scratch` exits 2. Knob mode is not available yet.
 
 Frequencies in MHz, 136-174 or 400-520. Tones: `82.5`, `D023`, `D023I`, `none`.
 `scenarios/big-sky-2026-10.json` holds the Big Sky channel list and sweep windows.

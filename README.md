@@ -68,6 +68,8 @@ uv5r settings voice eng beep on            # set fields, commit, verify in a fre
 uv5r listen --seconds 5                    # capture RX audio through ffmpeg, report dBFS
 uv5r listen --seconds 5 --out rx.wav --play # keep the capture as a WAV and play it back
 uv5r listen --seconds 30 --floor -40       # count the seconds with RMS above -40 dBFS
+uv5r sweep channels.json --scratch 0 --check 162.400  # dwell 30 s on each plan entry through slot 0
+uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 60 --out-dir rx --play --verbose
 uv5r help                                  # list verbs, flags and exit codes
 ```
 
@@ -86,12 +88,17 @@ Options:
 | `--narrow` | 12.5 kHz bandwidth |
 | `--low-power` | low power |
 | `--name TEXT` | channel name, printable ASCII, uppercased, cut to 7 characters; other characters exit 2 before the port opens. Default the frequency |
-| `--seconds S` | `key`: seconds to transmit, up to 60, required. `listen`: whole seconds to capture, 1..600 |
+| `--seconds S` | `key`: seconds to transmit, up to 60, required. `listen`: whole seconds to capture, 1..600. `sweep`: whole seconds to dwell per entry, 1..600, default 30 |
 | `--out FILE` | `dump`: image path; default `uv5r-YYYY-MM-DDTHH-MM-SS.img` in the working directory. `listen`: write the capture as a 48 kHz mono WAV |
 | `--force` | `restore`: confirm the bulk write, required |
-| `--device NAME` | `listen`: avfoundation audio input by name or index, default `AIOC Audio`. List inputs with `ffmpeg -f avfoundation -list_devices true -i ""` |
-| `--floor DBFS` | `listen`: a second is active when its RMS is above DBFS; default -50 |
-| `--play` | `listen`: play the `--out` file through `afplay` after the capture; needs `--out` |
+| `--device NAME` | `listen`, `check`, `sweep`: avfoundation audio input by name or index, default `AIOC Audio`. List inputs with `ffmpeg -f avfoundation -list_devices true -i ""` |
+| `--floor DBFS` | `listen`, `check`, `sweep`: a second is active when its RMS is above DBFS; default -50 |
+| `--play` | `listen`: play the `--out` file through `afplay` after the capture; needs `--out`. `sweep`: play each active capture after its dwell; needs `--out-dir` |
+| `--scratch N` | `sweep`: slot that takes each plan entry in turn, 0..127, required |
+| `--check MHZ` | `sweep`: run `check` on the scratch slot with MHZ before the loop |
+| `--no-check` | `sweep`: skip the check. `sweep` needs `--check` or `--no-check` |
+| `--out-dir DIR` | `sweep`: keep each capture as `DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav`; creates DIR |
+| `--verbose` | `sweep`: write one JSON line per entry to stderr as each dwell ends |
 
 Frequencies take MHz (`154.680`), Hz (`154680000`) or exponent form (`154.68e6`) and lie
 in 136-174 or 400-520 MHz. Frequencies and offsets finer than 10 Hz exit 2.
@@ -176,13 +183,40 @@ whole seconds captured than `--seconds` + 1 is a transport error. ffmpeg 9 on ma
 returns about 88 percent of the `-t` length as samples. The CLI asks ffmpeg for
 `ceil(seconds / 0.88) + 2`, which covers the extra second.
 
+`sweep PLAN.json --scratch N` dwells on every plan entry through slot N. It checks the
+plan before the port opens. With `--check MHZ` it then runs `check MHZ --channel N --rx-only`
+and exits 5 on silence; `--no-check` skips that step. Passing neither exits 2, and so does
+passing both. For each entry, in plan order, `sweep` writes the record into slot N in a
+fresh clone session, waits 3 s for the reload and captures `--seconds` (default 30) with
+the `listen` pipeline. `--device` and `--floor` pass through to `listen`. Slot N ends up
+holding the last entry. Without `--scratch`, `sweep` exits 2; knob mode comes later.
+
+`--out-dir DIR` keeps each capture as a WAV named by plan channel and local start time,
+such as `rx/ch07-2026-10-18T00-15-00.wav`, and creates DIR when it is missing. `--play`
+runs `afplay` on a capture after its dwell when `activeSeconds` is above 0, and needs
+`--out-dir`.
+
+stdout gets one object when the loop ends: `swept` (entries finished), `seconds` (the
+dwell), `active` and `warnings`. `active` lists `channel`, `name`, `rxMhz`, `activeSeconds`
+and `out` for each entry with an active second. `channel` is the plan channel. `name` is the
+plan name, or the frequency when the entry has none. `warnings` collects every dwell's
+warnings, each prefixed with its plan channel, as in `channel 4: input clips: turn the
+volume knob down`. `--verbose` writes one JSON line per entry to stderr as its dwell ends,
+with `channel`, `name`, `rxMhz`, `activeSeconds`, `active`, `meanRmsDbfs`, `peakDbfs`,
+`warnings` and `out`.
+
+Ctrl-C, SIGTERM or SIGHUP ends the loop. `sweep` prints the summary for the entries finished
+so far, adds `"interrupted": "SIGINT"` and exits 128 plus the signal number. A capture the
+signal cut short is left out of the summary.
+
 If the handshake gets no ack, the CLI waits 3 s and retries it once. This covers a clone
 session still closing from the previous verb.
 
 Exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport (no device, serial or ffmpeg
 failure), 4 timeout (no ack, short read), 5 device-state (no handshake, bad reply, refused
 write, failed verification, image ident mismatch, a silent `check` or a session idle past 2.2 s), 6 busy (port held by another process),
-128+signal (key interrupted by SIGINT, SIGTERM or SIGHUP; PTT released).
+128+signal (key or sweep interrupted by SIGINT, SIGTERM or SIGHUP; key releases PTT,
+sweep prints its summary).
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
