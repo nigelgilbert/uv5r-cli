@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs';
 import { SerialPort } from 'serialport';
 import { BusyError, TransportError } from './errors.ts';
 
-/** Set BAOFENG_DEBUG=1 to log every byte on stderr. */
-const DEBUG = process.env.BAOFENG_DEBUG === '1';
+/** Set UV5R_DEBUG=1 to log every byte on stderr. */
+const DEBUG = process.env.UV5R_DEBUG === '1';
 
 /** AIOC USB ids; used to find the port when no target is given. */
 export const AIOC_VENDOR_ID = '1209';
@@ -35,7 +35,7 @@ export async function findAioc(): Promise<string | undefined> {
 export async function resolveTarget(given: string | undefined): Promise<string> {
   if (given) return given;
   const found = await findAioc();
-  if (!found) throw new TransportError('no AIOC found; pass --target /dev/cu.usbmodemXXXX or set BAOFENG_TARGET');
+  if (!found) throw new TransportError('no AIOC found; pass --target /dev/cu.usbmodemXXXX or set UV5R_TARGET');
   return found;
 }
 

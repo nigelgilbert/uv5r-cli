@@ -38,7 +38,7 @@ export function parseArgs(argv: string[], booleanFlags: ReadonlySet<string>): Pa
 
 export function checkFlags(verb: string, flags: Map<string, string | true>, allowed: readonly string[]): void {
   for (const name of flags.keys()) {
-    if (!allowed.includes(name)) throw new UsageError(`baofeng ${verb}: unknown option --${name}`);
+    if (!allowed.includes(name)) throw new UsageError(`uv5r ${verb}: unknown option --${name}`);
   }
 }
 
@@ -46,7 +46,7 @@ export function checkFlags(verb: string, flags: Map<string, string | true>, allo
 export function checkPositionals(verb: string, positionals: readonly string[], max: number, usage: string): void {
   if (positionals.length <= max) return;
   const unexpected = positionals.slice(max);
-  throw new UsageError(`baofeng ${verb}: unexpected argument ${JSON.stringify(unexpected[0])}; usage: ${usage}`, { unexpected });
+  throw new UsageError(`uv5r ${verb}: unexpected argument ${JSON.stringify(unexpected[0])}; usage: ${usage}`, { unexpected });
 }
 
 export function stringFlag(flags: Map<string, string | true>, name: string): string | undefined {

@@ -10,7 +10,7 @@ import { UsageError } from '../src/errors.ts';
 function cli(...argv: string[]) {
   const r = spawnSync(process.execPath, ['src/main.ts', ...argv], {
     cwd: process.cwd(),
-    env: { ...process.env, BAOFENG_TARGET: '/dev/null-nonexistent' },
+    env: { ...process.env, UV5R_TARGET: '/dev/null-nonexistent' },
     encoding: 'utf8',
   });
   const body = JSON.parse(r.stderr.trim()) as { kind: string; message: string };
@@ -91,7 +91,7 @@ describe('CLI number and file errors', () => {
   });
 
   it('exits 2 on a short restore image without a device', () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'baofeng-')), 'short.img');
+    const file = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'short.img');
     writeFileSync(file, new Uint8Array(100));
     const { status, body } = cli('restore', file, '--force', '--json');
     expect(status).toBe(2);

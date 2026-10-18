@@ -1,4 +1,4 @@
-# baofeng-cli
+# uv5r-cli
 
 Control a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable from the
 command line: put a frequency in a memory channel, read the radio's state, back up and
@@ -14,7 +14,7 @@ npm install
 node src/main.ts status
 ```
 
-`baofeng` below means `node src/main.ts` (also `npm run baofeng --`).
+`uv5r` below means `node src/main.ts` (also `npm run uv5r --`).
 
 ## How the radio takes a frequency
 
@@ -27,7 +27,7 @@ seen at the same time traced to the volume knob and the seating of the 2.5 mm pl
 `tune` writes the memory channel the radio is parked on:
 
 1. Read the channel number off the radio display.
-2. Run `baofeng tune FREQ --channel N`. The CLI writes the channel record and name and
+2. Run `uv5r tune FREQ --channel N`. The CLI writes the channel record and name and
    reads both back; a mismatch exits 5.
 3. The radio leaves clone mode after 2.5 s of silence and reloads from EEPROM. The new
    frequency is live about 3 s after the command ends.
@@ -43,26 +43,26 @@ session. Do not open, `cat` or `screen` the serial port while a verb runs.
 ## Verbs
 
 ```sh
-baofeng status                                # firmware, channel A/B, audio settings, active channel record
-baofeng tune 154.680 --channel 5              # write 154.680 into channel 5
-baofeng tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
-baofeng tune 462.5625 --channel 5 --narrow --low-power
-baofeng read 5                                # read channel record 5
-baofeng erase 127                             # clear channel record 127 and its name
-baofeng key --seconds 2                       # DTR high, RTS low; releases on exit or Ctrl-C
-baofeng dump --out radio.img                  # full image, CHIRP layout, about 14 s
-baofeng restore radio.img --force             # main memory back from an image, about 30 s
-baofeng settings                              # squelch, save, abr, beep, timeout, voice, mdfa, mdfb
-baofeng settings voice eng beep on            # set fields, commit, verify in a fresh session
-baofeng listen --seconds 5                    # capture RX audio through ffmpeg, report dBFS
-baofeng help                                  # list verbs, flags and exit codes
+uv5r status                                # firmware, channel A/B, audio settings, active channel record
+uv5r tune 154.680 --channel 5              # write 154.680 into channel 5
+uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
+uv5r tune 462.5625 --channel 5 --narrow --low-power
+uv5r read 5                                # read channel record 5
+uv5r erase 127                             # clear channel record 127 and its name
+uv5r key --seconds 2                       # DTR high, RTS low; releases on exit or Ctrl-C
+uv5r dump --out radio.img                  # full image, CHIRP layout, about 14 s
+uv5r restore radio.img --force             # main memory back from an image, about 30 s
+uv5r settings                              # squelch, save, abr, beep, timeout, voice, mdfa, mdfb
+uv5r settings voice eng beep on            # set fields, commit, verify in a fresh session
+uv5r listen --seconds 5                    # capture RX audio through ffmpeg, report dBFS
+uv5r help                                  # list verbs, flags and exit codes
 ```
 
 Options:
 
 | Flag | Meaning |
 |---|---|
-| `--target PATH` | serial device, every verb except `listen`; default `BAOFENG_TARGET`, else the AIOC found by USB id 1209:7388 |
+| `--target PATH` | serial device, every verb except `listen`; default `UV5R_TARGET`, else the AIOC found by USB id 1209:7388 |
 | `--json` | JSON output |
 | `--text` | text output |
 | `--channel N` | `tune`: channel to write, 0..127, required |
@@ -135,7 +135,7 @@ failure), 4 timeout (no ack, short read), 5 device-state (no handshake, bad repl
 write, failed verification, image ident mismatch or a session idle past 2.2 s), 6 busy (port held by another process),
 128+signal (key interrupted by SIGINT, SIGTERM or SIGHUP; PTT released).
 
-`BAOFENG_DEBUG=1` logs every serial byte to stderr.
+`UV5R_DEBUG=1` logs every serial byte to stderr.
 
 ## Protocol notes from the bench
 
@@ -188,7 +188,7 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
   Ignored by git.
 - `docs/rx-audio-investigation.md`: the settings block wipe, its repair, the clone protocol
   rules measured on the bench, and the receive audio findings.
-- `.claude/skills/baofeng/SKILL.md`: the operating notes an agent loads to drive the radio.
+- `.claude/skills/uv5r/SKILL.md`: the operating notes an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
 

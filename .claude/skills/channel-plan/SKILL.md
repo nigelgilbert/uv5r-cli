@@ -7,8 +7,8 @@ description: Build a UV-5R channel plan JSON for a location by researching Repea
 
 Takes a location and writes `channels.json` at the repo root, shaped like the reference
 `channels.example.json`. `channels.json` is ignored by git, so scripts read a fixed path and
-each run replaces the previous plan. The plan feeds `baofeng tune` one channel at a time
-through the `baofeng` skill.
+each run replaces the previous plan. The plan feeds `uv5r tune` one channel at a time
+through the `uv5r` skill.
 
 ## Steps
 
@@ -106,8 +106,8 @@ tune it.
 
 ## Writing the plan to the radio
 
-Load the `baofeng` skill. Each entry maps to one `tune` call:
+Load the `uv5r` skill. Each entry maps to one `tune` call:
 
 ```sh
-baofeng tune <rxMhz> --channel <channel> [--offset <offsetMhz>] [--tone <tone>] [--narrow] --name "<name>"
+uv5r tune <rxMhz> --channel <channel> [--offset <offsetMhz>] [--tone <tone>] [--narrow] --name "<name>"
 ```

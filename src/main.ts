@@ -82,7 +82,7 @@ function helpText(): string {
   const width = Math.max(...Object.keys(verbs).map((v) => v.length));
   const rows = Object.entries(verbs).map(([name, v]) => `  ${name.padEnd(width)}  ${v.summary}: ${v.usage}`);
   return [
-    'usage: baofeng <verb> [options]',
+    'usage: uv5r <verb> [options]',
     '',
     'verbs:',
     ...rows,
@@ -90,7 +90,7 @@ function helpText(): string {
     'options:',
     '  --json             print JSON (default when stdout is not a terminal)',
     '  --text             print text',
-    '  --target PATH      serial device (default: BAOFENG_TARGET, else the AIOC found by USB id)',
+    '  --target PATH      serial device (default: UV5R_TARGET, else the AIOC found by USB id)',
     '  --channel N        tune: channel to write, 0..127, as shown on the radio display (required)',
     '  --offset MHZ       tune: repeater offset, signed: --offset -0.6',
     '  --tone HZ          tune: TX CTCSS in Hz (82.5), DCS (D023, D023I) or none',
@@ -123,7 +123,7 @@ async function openSerial(target: string | undefined): Promise<Transport> {
 }
 
 async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<T>): Promise<T> {
-  const transport = await args.open(stringFlag(args.flags, 'target') ?? process.env.BAOFENG_TARGET);
+  const transport = await args.open(stringFlag(args.flags, 'target') ?? process.env.UV5R_TARGET);
   try {
     return await fn(transport);
   } finally {
@@ -374,7 +374,7 @@ export async function cli(argv: string[], open: OpenTransport = openSerial): Pro
     const kind = errorKind(err);
     const body = err instanceof BaofengError ? err.toJSON() : { kind, message: err instanceof Error ? err.message : String(err) };
     if (wantsJson(flags)) process.stderr.write(`${JSON.stringify(body)}\n`);
-    else process.stderr.write(`baofeng: ${body.message}\n`);
+    else process.stderr.write(`uv5r: ${body.message}\n`);
     process.exitCode = exitCodeFor(kind);
   }
 }

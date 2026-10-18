@@ -150,7 +150,7 @@ with 64-byte reads and reports squelch, voice, beep and abr, `listen --seconds N
 the ffmpeg capture, and `FakeRadio` models the alias and the staged commit.
 
 Audio after the repair, without a power cycle: -49 dBFS flat, peak -47. Next step is step 5
-above: power cycle the radio, then `baofeng listen --seconds 5`.
+above: power cycle the radio, then `uv5r listen --seconds 5`.
 
 ## Open, 2026-10-12 evening
 
@@ -216,7 +216,7 @@ Both cables read the same signature, and this one passes loopback, so the cables
 cleared. The remaining candidates sit on the radio side: volume knob near minimum, the
 2.5 mm plug not seated, or the amp still muted after the clone-mode squelch write.
 
-Bench steps, in order, with `baofeng listen --seconds 4` after each:
+Bench steps, in order, with `uv5r listen --seconds 4` after each:
 
 1. Turn the volume knob to about three quarters.
 2. Hold MONI. The amp powers up and static plays regardless of the stored squelch.

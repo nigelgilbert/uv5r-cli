@@ -1,20 +1,20 @@
 ---
-name: baofeng
-description: Operate the Baofeng UV-5R on the bench through the `baofeng` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
+name: uv5r
+description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
 ---
 
-# baofeng
+# uv5r
 
 `tune` writes a frequency into the memory channel the radio is parked on. The radio applies
 it about 3 s after the command ends.
 
-Run commands from the repo root. `baofeng` below means `node src/main.ts`.
+Run commands from the repo root. `uv5r` below means `node src/main.ts`.
 
 ## Operating rules
 
 - Never open, `cat`, `screen` or `stty` the serial port.
 - Run one verb at a time.
-- Start every task with `baofeng status`.
+- Start every task with `uv5r status`.
 - Exit 2 means bad input. Read `message` and fix the command.
 - Exit 3 means no device. Ask the human to check the cable is seated.
 - Exit 5 means the radio did not answer, gave a bad reply, refused a write, failed
@@ -33,18 +33,18 @@ Run commands from the repo root. `baofeng` below means `node src/main.ts`.
 ## Verbs
 
 ```sh
-baofeng status
-baofeng tune 154.680 --channel 5
-baofeng tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
-baofeng tune 462.5625 --channel 5 --narrow --low-power
-baofeng read 5
-baofeng erase 127
-baofeng key --seconds 2
-baofeng dump --out radio.img
-baofeng restore radio.img --force
-baofeng settings
-baofeng settings voice eng beep on
-baofeng listen --seconds 5
+uv5r status
+uv5r tune 154.680 --channel 5
+uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
+uv5r tune 462.5625 --channel 5 --narrow --low-power
+uv5r read 5
+uv5r erase 127
+uv5r key --seconds 2
+uv5r dump --out radio.img
+uv5r restore radio.img --force
+uv5r settings
+uv5r settings voice eng beep on
+uv5r listen --seconds 5
 ```
 
 `status` reports `squelch`, `voice`, `beep` and `abr`. Reports say `voice off` or `beep off`

@@ -110,7 +110,7 @@ describe('tune input checks', () => {
 
 describe('restore input checks', () => {
   it('rejects a short image before opening the transport', async () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'baofeng-')), 'short.img');
+    const file = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'short.img');
     writeFileSync(file, new Uint8Array(100));
     const open = opener(new FakeRadio());
     await cli(['restore', file, '--force', '--json'], open);

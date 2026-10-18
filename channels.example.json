@@ -1,6 +1,6 @@
 {
   "name": "Bench UV-5R channel plan, written 2026-10-13",
-  "notes": "Written with baofeng tune. Channels 4 and 5 need an amateur license to transmit; channel 6 needs a GMRS license. Use channel 4 first to call for help.",
+  "notes": "Written with uv5r tune. Channels 4 and 5 need an amateur license to transmit; channel 6 needs a GMRS license. Use channel 4 first to call for help.",
   "channels": [
     { "channel": 1, "name": "NOAA 1", "rxMhz": 162.400, "notes": "NOAA Weather Radio, no audio in Big Sky on 2026-10-13" },
     { "channel": 2, "name": "NOAA 2", "rxMhz": 162.475, "notes": "NOAA Weather Radio" },

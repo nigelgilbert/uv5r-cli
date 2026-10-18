@@ -1,13 +1,13 @@
 {
-  "name": "baofeng-cli",
+  "name": "uv5r-cli",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
-  "bin": { "baofeng": "./src/main.ts" },
+  "bin": { "uv5r": "./src/main.ts" },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "baofeng": "node src/main.ts"
+    "uv5r": "node src/main.ts"
   },
   "dependencies": { "serialport": "^13.0.0" },
   "devDependencies": {

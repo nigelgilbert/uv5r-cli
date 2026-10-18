@@ -81,7 +81,7 @@ describe('signalExitCode', () => {
 describe('key verb', () => {
   it('exits 3 with a transport error when the target does not exist', () => {
     const res = spawnSync(process.execPath, [MAIN, 'key', '--seconds', '5', '--json'], {
-      env: { ...process.env, BAOFENG_TARGET: '/dev/does-not-exist-baofeng' },
+      env: { ...process.env, UV5R_TARGET: '/dev/does-not-exist-uv5r' },
       encoding: 'utf8',
       timeout: 10_000,
     });

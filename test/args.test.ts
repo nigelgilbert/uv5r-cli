@@ -34,7 +34,7 @@ describe('cli', () => {
   it('exits 2 with a usage error for --force=no before opening a port', () => {
     const r = spawnSync(process.execPath, ['src/main.ts', 'restore', 'x.img', '--force=no', '--json'], {
       cwd: process.cwd(),
-      env: { ...process.env, BAOFENG_TARGET: '/dev/null-nonexistent' },
+      env: { ...process.env, UV5R_TARGET: '/dev/null-nonexistent' },
       encoding: 'utf8',
     });
     expect(r.status).toBe(2);
