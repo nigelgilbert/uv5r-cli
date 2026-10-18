@@ -5,3 +5,4 @@ node_modules/
 *.img
 !fixtures/**/*.img
 channels.json
+.claude/worktrees/
