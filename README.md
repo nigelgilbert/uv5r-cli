@@ -68,6 +68,7 @@ uv5r settings voice eng beep on            # set fields, commit, verify in a fre
 uv5r listen --seconds 5                    # capture RX audio through ffmpeg, report dBFS
 uv5r listen --seconds 5 --out rx.wav --play # keep the capture as a WAV and play it back
 uv5r listen --seconds 30 --floor -40       # count the seconds with RMS above -40 dBFS
+uv5r sweep channels.json                   # prompt for the knob at each plan channel, dwell 30 s on each
 uv5r sweep channels.json --scratch 0 --check 162.400  # dwell 30 s on each plan entry through slot 0
 uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 60 --out-dir rx --play --verbose
 uv5r help                                  # list verbs, flags and exit codes
@@ -94,9 +95,9 @@ Options:
 | `--device NAME` | `listen`, `check`, `sweep`: avfoundation audio input by name or index, default `AIOC Audio`. List inputs with `ffmpeg -f avfoundation -list_devices true -i ""` |
 | `--floor DBFS` | `listen`, `check`, `sweep`: a second is active when its RMS is above DBFS; default -50 |
 | `--play` | `listen`: play the `--out` file through `afplay` after the capture; needs `--out`. `sweep`: play each active capture after its dwell; needs `--out-dir` |
-| `--scratch N` | `sweep`: slot that takes each plan entry in turn, 0..127, required |
-| `--check MHZ` | `sweep`: run `check` on the scratch slot with MHZ before the loop |
-| `--no-check` | `sweep`: skip the check. `sweep` needs `--check` or `--no-check` |
+| `--scratch N` | `sweep`: write each plan entry in turn into slot N, 0..127. Without it `sweep` runs in knob mode |
+| `--check MHZ` | `sweep --scratch`: run `check` on the scratch slot with MHZ before the loop |
+| `--no-check` | `sweep --scratch`: skip the check. `--scratch` needs `--check` or `--no-check`; either one without `--scratch` exits 2 |
 | `--out-dir DIR` | `sweep`: keep each capture as `DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav`; creates DIR |
 | `--verbose` | `sweep`: write one JSON line per entry to stderr as each dwell ends |
 
@@ -183,13 +184,26 @@ whole seconds captured than `--seconds` + 1 is a transport error. ffmpeg 9 on ma
 returns about 88 percent of the `-t` length as samples. The CLI asks ffmpeg for
 `ceil(seconds / 0.88) + 2`, which covers the extra second.
 
-`sweep PLAN.json --scratch N` dwells on every plan entry through slot N. It checks the
-plan before the port opens. With `--check MHZ` it then runs `check MHZ --channel N --rx-only`
-and exits 5 on silence; `--no-check` skips that step. Passing neither exits 2, and so does
+`sweep PLAN.json` runs in knob mode and writes nothing to the radio. Load the plan first
+with `load PLAN.json`. In one clone session `sweep` reads every plan slot and compares it
+with its plan entry. A slot that differs exits 5 with the channel, the plan record and the
+radio record, and names `load` as the fix. The port then closes. For each entry, in plan
+order, `sweep` prints `turn the knob to channel N (NAME) and press Enter` on stderr, waits
+for Enter and captures `--seconds` (default 30). Set the radio to MR mode before the run.
+Knob mode needs a terminal on stdin. Piped stdin exits 2 and names `--scratch`.
+
+```sh
+uv5r load channels.json
+uv5r sweep channels.json --seconds 30 --out-dir rx --play
+```
+
+`sweep PLAN.json --scratch N` dwells on every plan entry through slot N with no human at
+the knob. It checks the plan before the port opens. With `--check MHZ` it then runs
+`check MHZ --channel N --rx-only` and exits 5 on silence; `--no-check` skips that step. Passing neither exits 2, and so does
 passing both. For each entry, in plan order, `sweep` writes the record into slot N in a
 fresh clone session, waits 3 s for the reload and captures `--seconds` (default 30) with
 the `listen` pipeline. `--device` and `--floor` pass through to `listen`. Slot N ends up
-holding the last entry. Without `--scratch`, `sweep` exits 2; knob mode comes later.
+holding the last entry.
 
 `--out-dir DIR` keeps each capture as a WAV named by plan channel and local start time,
 such as `rx/ch07-2026-10-18T00-15-00.wav`, and creates DIR when it is missing. `--play`
@@ -214,7 +228,7 @@ session still closing from the previous verb.
 
 Exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport (no device, serial or ffmpeg
 failure), 4 timeout (no ack, short read), 5 device-state (no handshake, bad reply, refused
-write, failed verification, image ident mismatch, a silent `check` or a session idle past 2.2 s), 6 busy (port held by another process),
+write, failed verification, image ident mismatch, a silent `check`, a plan slot that differs from the plan in a knob-mode `sweep` or a session idle past 2.2 s), 6 busy (port held by another process),
 128+signal (key or sweep interrupted by SIGINT, SIGTERM or SIGHUP; key releases PTT,
 sweep prints its summary).
 

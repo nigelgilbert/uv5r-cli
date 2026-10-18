@@ -43,7 +43,7 @@ import {
   type ChannelResult,
   type RadioStatus,
 } from './radio.ts';
-import { SWEEP_SECONDS, runSweep, scratchSlot, type SweepSummary } from './sweep.ts';
+import { SWEEP_SECONDS, knobSlot, readLines, runSweep, scratchSlot, verifyPlanSlots, type DwellRecord, type SweepSummary } from './sweep.ts';
 import { SerialTransport, resolveTarget, type Transport } from './transport.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
@@ -96,8 +96,8 @@ const verbs: Record<string, Verb> = {
     run: listenVerb,
   },
   sweep: {
-    summary: 'Write each plan entry into scratch slot N, listen S seconds on each and report the active ones',
-    usage: 'sweep channels.json --scratch 0 --check 162.400 --seconds 30',
+    summary: 'Listen S seconds on each plan channel, prompting for the knob or writing each into --scratch N, and report the active ones',
+    usage: 'sweep channels.json --seconds 30',
     positionals: 1,
     run: sweepVerb,
   },
@@ -131,9 +131,11 @@ function helpText(): string {
     `  --device NAME      listen: avfoundation audio device (default ${DEFAULT_AUDIO_DEVICE})`,
     `  --floor DBFS       listen: a second is active when its RMS is above DBFS (default ${DEFAULT_FLOOR_DBFS}); sets active and activeSeconds`,
     '  --play             listen: play the --out file through afplay after the capture; needs --out',
-    '  --scratch N        sweep: slot to write each plan entry into, 0..127 (required; knob mode is not available yet)',
-    '  --check MHZ        sweep: run check on the scratch slot with MHZ before the loop; silence exits 5',
-    '  --no-check         sweep: skip the check; one of --check and --no-check is required',
+    '  sweep              without --scratch: knob mode; reads every plan slot, exits 5 when one differs from the plan,',
+    '                     then prompts on stderr to turn the knob to each channel and waits for Enter; writes nothing; needs a terminal on stdin',
+    '  --scratch N        sweep: write each plan entry into slot N instead, 0..127, as in: sweep channels.json --scratch 0 --check 162.400',
+    '  --check MHZ        sweep --scratch: run check on the scratch slot with MHZ before the loop; silence exits 5',
+    '  --no-check         sweep --scratch: skip the check; one of --check and --no-check is required with --scratch',
     `  sweep              --seconds S sets the dwell per entry (default ${SWEEP_SECONDS}); takes --device, --floor and --play`,
     '  --out-dir DIR      sweep: keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR; --play needs it',
     '  --verbose          sweep: write one JSON line per entry to stderr as each dwell ends',
@@ -450,16 +452,16 @@ function sweepText(s: SweepSummary): string {
 async function sweepVerb(args: Invocation): Promise<number> {
   checkFlags('sweep', args.flags, [...COMMON, 'scratch', 'check', 'no-check', 'seconds', 'device', 'floor', 'out-dir', 'play', 'verbose']);
   const file = args.positionals[0];
-  if (!file) throw new UsageError('sweep needs a plan file, as in: sweep channels.json --scratch 0 --check 162.400');
-  if (!args.flags.has('scratch')) {
-    throw new UsageError('knob mode is not available yet; pass --scratch N, as in: sweep channels.json --scratch 0 --check 162.400');
-  }
-  const n = numberFlag(args.flags, 'scratch')!;
-  checkChannelNumber(n);
+  if (!file) throw new UsageError('sweep needs a plan file, as in: sweep channels.json --seconds 30');
+  const n = args.flags.has('scratch') ? numberFlag(args.flags, 'scratch')! : undefined;
+  if (n !== undefined) checkChannelNumber(n);
   const checkText = stringFlag(args.flags, 'check');
   const noCheck = args.flags.get('no-check') === true;
+  if (n === undefined && (checkText !== undefined || noCheck)) {
+    throw new UsageError(`--check and --no-check need --scratch N; knob mode reads the plan slots instead, as in: sweep ${file} --seconds 30`);
+  }
   if (checkText !== undefined && noCheck) throw new UsageError('--check and --no-check conflict; pass one');
-  if (checkText === undefined && !noCheck) {
+  if (n !== undefined && checkText === undefined && !noCheck) {
     throw new UsageError(`sweep --scratch needs --check MHZ to confirm the radio is on slot ${n}, or --no-check, as in: sweep ${file} --scratch ${n} --check 162.400`);
   }
   const checkSpec = checkText === undefined ? undefined : channelSpec(checkText, new Map([['rx-only', true]]));
@@ -471,8 +473,11 @@ async function sweepVerb(args: Invocation): Promise<number> {
   const floorDbfs = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
   const outDir = stringFlag(args.flags, 'out-dir');
   const play = args.flags.get('play') === true;
-  if (play && outDir === undefined) throw new UsageError('--play needs --out-dir DIR, as in: sweep channels.json --scratch 0 --check 162.400 --out-dir rx --play');
+  if (play && outDir === undefined) throw new UsageError('--play needs --out-dir DIR, as in: sweep channels.json --out-dir rx --play');
   const verbose = args.flags.get('verbose') === true;
+  if (n === undefined && !process.stdin.isTTY) {
+    throw new UsageError(`knob mode waits for Enter on a terminal and stdin is not one; pass --scratch N to sweep unattended, as in: sweep ${file} --scratch 0 --check 162.400`);
+  }
   const plan = readPlan(file);
   if (outDir !== undefined) {
     try {
@@ -481,12 +486,26 @@ async function sweepVerb(args: Invocation): Promise<number> {
       throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
     }
   }
-  const summary = await withTransport(args, async (t) => {
-    if (checkSpec) await checkChannel(t, n, checkSpec, { device, seconds: CHECK_SECONDS, floorDbfs });
-    return runSweep(plan.entries, scratchSlot(t, n), { device, seconds, floorDbfs, outDir, play }, (record) => {
-      if (verbose) process.stderr.write(`${JSON.stringify(record)}\n`);
+  const options = { device, seconds, floorDbfs, outDir, play };
+  const onDwell = (record: DwellRecord) => {
+    if (verbose) process.stderr.write(`${JSON.stringify(record)}\n`);
+  };
+  let summary: SweepSummary;
+  if (n === undefined) {
+    // Close the port after the read since knob mode never writes.
+    await withTransport(args, (t) => withSession(t, (s) => verifyPlanSlots(s, plan.entries, file)));
+    const lines = readLines(process.stdin);
+    try {
+      summary = await runSweep(plan.entries, knobSlot(lines, (text) => process.stderr.write(text)), options, onDwell);
+    } finally {
+      lines.close();
+    }
+  } else {
+    summary = await withTransport(args, async (t) => {
+      if (checkSpec) await checkChannel(t, n, checkSpec, { device, seconds: CHECK_SECONDS, floorDbfs });
+      return runSweep(plan.entries, scratchSlot(t, n), options, onDwell);
     });
-  });
+  }
   print(args, summary, () => sweepText(summary));
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;
 }
