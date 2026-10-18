@@ -1,6 +1,6 @@
 ---
 name: uv5r
-description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
+description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, loading a channel plan, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
 ---
 
 # uv5r
@@ -34,6 +34,8 @@ Run commands from the repo root. `uv5r` below means `node src/main.ts`.
 - To change what the radio is parked on, ask the human once per session to read the
   channel number off the display. Call it N and pass `--channel N`.
 - Writing a plan or any other slot uses that slot's own number.
+- Write a plan file with one `uv5r load PLAN.json`. Exit 2 names the channel and field to
+  fix in the plan. Exit 5 names the channel that did not take the write.
 - Write public-safety listening channels with `--rx-only`.
 - Trust the display for the active channel. `status` channelA and channelB come from
   EEPROM and may differ from it.
@@ -50,6 +52,7 @@ uv5r tune 154.680 --channel 5
 uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
 uv5r tune 462.5625 --channel 5 --narrow --low-power
 uv5r tune 154.695 --channel 7 --narrow --rx-only --name "SHERIFF"
+uv5r load channels.json
 uv5r read 5
 uv5r erase 127
 uv5r key --seconds 2

@@ -42,6 +42,8 @@ export class FakeRadio implements Transport {
   handshakesIgnored = 0;
   writesIgnoredBelow = 0x0f00;
   writesIgnoredAbove = 0x0f40;
+  /** Address of a write whose first byte the radio stores inverted, to fail a read-back. */
+  corruptWriteAt: number | undefined;
 
   constructor() {
     this.eeprom.set(Buffer.from('HN5RV011', 'latin1'), 0x1ec0 + 48);
@@ -122,6 +124,7 @@ export class FakeRadio implements Transport {
       return;
     }
     if (addr >= PAGE && addr < PAGE_END) return;
+    if (addr === this.corruptWriteAt) data = [data[0]! ^ 0xff, ...data.slice(1)];
     if (addr < this.writesIgnoredBelow || addr >= this.writesIgnoredAbove) this.eeprom.set(data, addr);
   }
 

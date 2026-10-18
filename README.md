@@ -53,6 +53,7 @@ uv5r tune 154.680 --channel 5              # write 154.680 into channel 5
 uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
 uv5r tune 462.5625 --channel 5 --narrow --low-power
 uv5r tune 155.475 --channel 6 --rx-only    # receive only, TX inhibited
+uv5r load channels.json                    # write every plan entry to its slot, read each back
 uv5r read 5                                # read channel record 5
 uv5r erase 127                             # clear channel record 127 and its name
 uv5r key --seconds 2                       # DTR high, RTS low; releases on exit or Ctrl-C
@@ -105,9 +106,10 @@ are the values stored in EEPROM; the radio display shows the channel the knob se
 Trust the display for the active channel.
 
 `tune` returns the written record plus `"appliesAfterSeconds": 3`. `read` returns the
-record, or `{"channel": N, "empty": true}`. `erase` writes 0xFF over the record and the
-name, reads both back and returns `{"channel": N, "empty": true, "appliesAfterSeconds":
-3}`. `key` returns `{"keyed": true, "seconds": S}` with the measured hold time. A key cut short by a signal
+record, or `{"channel": N, "empty": true}`. `load PLAN.json` returns an array of the
+written records in plan order, each with `"appliesAfterSeconds": 3`; see "Plan fields".
+`erase` writes 0xFF over the record and the name, reads both back and returns
+`{"channel": N, "empty": true, "appliesAfterSeconds": 3}`. `key` returns `{"keyed": true, "seconds": S}` with the measured hold time. A key cut short by a signal
 adds `"interrupted": "SIGINT"` and `"released": true`.
 
 `settings` with no arguments returns the eight fields. With `field value` pairs it writes
@@ -207,8 +209,9 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 ### Plan fields
 
 A plan has a top-level `name`, `notes` and a `channels` array. Each entry is one `tune`
-call, and each entry field maps onto one `tune` flag. `tone` is the transmit tone and
-`rxTone` the receive tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
+call, and each entry field maps onto one `tune` flag. `uv5r load PLAN.json` writes the
+whole plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
+tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
 
 | Field | `tune` flag |
 |---|---|
@@ -218,9 +221,16 @@ call, and each entry field maps onto one `tune` flag. `tone` is the transmit ton
 | `tone` | `--tone HZ` |
 | `rxTone` | `--rx-tone HZ` |
 | `narrow` | `--narrow` when true |
+| `lowPower` | `--low-power` when true |
 | `rxOnly` | `--rx-only` when true |
 | `name` | `--name TEXT` |
 | `notes` | none |
+
+`load` checks every entry before the port opens. A bad field, an unknown field, a channel
+outside 0..127 or a channel listed twice exits 2; the message and the `channel` and `field`
+detail fields name the entry. `load` then writes each entry to its slot and reads the slot
+back. A mismatch exits 5 naming the channel. Slots absent from the plan keep their records
+and names. Text output prints one line per written record.
 
 ## Development
 

@@ -18,6 +18,7 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, EXIT, UsageError, errorKind, exitCodeFor, signalExitCode } from './errors.ts';
+import { readPlan } from './plan.ts';
 import { SETTLE_MS } from './protocol.ts';
 import {
   channelPayload,
@@ -73,6 +74,7 @@ const MIN_IMAGE_BYTES = IMAGE_HEADER + Math.max(...RESTORE_RANGES.map(([, end]) 
 const verbs: Record<string, Verb> = {
   status: { summary: 'Print firmware, work mode, stored channel numbers, squelch, voice, beep, abr and the active record', usage: 'status', positionals: 0, run: statusVerb },
   tune: { summary: 'Write a frequency into the channel the radio shows', usage: 'tune 154.680 --channel 5 --tone 82.5', positionals: 1, run: tuneVerb },
+  load: { summary: 'Write every channel of a plan file and read each back', usage: 'load channels.json', positionals: 1, run: loadVerb },
   read: { summary: 'Print one channel record', usage: 'read 5', positionals: 1, run: readVerb },
   erase: { summary: 'Clear one channel record and its name', usage: 'erase 127', positionals: 1, run: eraseVerb },
   key: { summary: 'Key the transmitter for S seconds', usage: 'key --seconds 2', positionals: 0, run: keyVerb },
@@ -219,6 +221,23 @@ async function tuneVerb(args: Invocation): Promise<number> {
   const written = await withTransport(args, (t) => withSession(t, (s) => writeChannel(s, n, spec)));
   const result = { ...channelPayload(n, written), appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `${channelText(result)}\nwritten; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
+  return EXIT.ok;
+}
+
+async function loadVerb(args: Invocation): Promise<number> {
+  checkFlags('load', args.flags, COMMON);
+  const file = args.positionals[0];
+  if (!file) throw new UsageError('load needs a plan file, as in: load channels.json');
+  const plan = readPlan(file);
+  const written = await withTransport(args, (t) =>
+    withSession(t, async (s) => {
+      const records: ChannelResult[] = [];
+      for (const { channel, spec } of plan.entries) records.push(channelPayload(channel, await writeChannel(s, channel, spec)));
+      return records;
+    }),
+  );
+  const result = written.map((record) => ({ ...record, appliesAfterSeconds: APPLIES_AFTER_SECONDS }));
+  print(args, result, () => result.map(channelText).join('\n'));
   return EXIT.ok;
 }
 

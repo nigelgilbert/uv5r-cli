@@ -7,7 +7,7 @@ description: Build a UV-5R channel plan JSON for a location by researching Repea
 
 Takes a location and writes `channels.json` at the repo root, shaped like the reference
 `channels.example.json`. `channels.json` is ignored by git, so scripts read a fixed path and
-each run replaces the previous plan. The plan feeds `uv5r tune` one channel at a time
+each run replaces the previous plan. `uv5r load channels.json` writes it to the radio
 through the `uv5r` skill.
 
 ## Steps
@@ -113,12 +113,14 @@ tune it.
 
 ## Writing the plan to the radio
 
-Load the `uv5r` skill. Each entry goes to its own `channel` number through one `tune` call.
-Each field maps onto one flag, as the README's plan fields table lists. Pass `--rx-only`
-when `rxOnly` is true.
+Load the `uv5r` skill and write the whole plan with one command:
 
 ```sh
-uv5r tune <rxMhz> --channel <channel> [--offset <offsetMhz>] [--tone <tone>] [--rx-tone <rxTone>] [--narrow] [--rx-only] --name "<name>"
+uv5r load channels.json
 ```
+
+Each entry goes to its own `channel` number. Each field maps onto one `tune` flag, as the
+README's plan fields table lists. Exit 2 names the channel and field to fix in the plan;
+nothing is written. Exit 5 names the channel that did not take the write.
 
 Programming another slot does not select it on the radio. The human turns the knob to it.
