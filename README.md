@@ -204,6 +204,24 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
 
+### Plan fields
+
+A plan has a top-level `name`, `notes` and a `channels` array. Each entry is one `tune`
+call, and each entry field maps onto one `tune` flag. `tone` is the transmit tone and
+`rxTone` the receive tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
+
+| Field | `tune` flag |
+|---|---|
+| `channel` | `--channel N` |
+| `rxMhz` | the `FREQ` argument |
+| `offsetMhz` | `--offset MHZ` |
+| `tone` | `--tone HZ` |
+| `rxTone` | `--rx-tone HZ` |
+| `narrow` | `--narrow` when true |
+| `rxOnly` | `--rx-only` when true |
+| `name` | `--name TEXT` |
+| `notes` | none |
+
 ## Development
 
 ```sh
