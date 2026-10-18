@@ -1,10 +1,12 @@
 import type { EventEmitter } from 'node:events';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { listen, play } from './audio.ts';
-import { formatMhz } from './codec.ts';
+import { decodeChannel, encodeChannel, encodeName, formatMhz } from './codec.ts';
+import { DeviceStateError, UsageError } from './errors.ts';
 import type { PlanEntry } from './plan.ts';
-import { settle } from './protocol.ts';
-import { KEY_SIGNALS, withSession, writeChannel } from './radio.ts';
+import { settle, type Session } from './protocol.ts';
+import { KEY_SIGNALS, channelPayload, readChannel, withSession, writeChannel, type ChannelResult } from './radio.ts';
 import type { Transport } from './transport.ts';
 
 /** Seconds `sweep` dwells on each entry when the caller gives no length. */
@@ -108,6 +110,76 @@ export function scratchSlot(t: Transport, n: number): Prepare {
   return async (entry, stop) => {
     await withSession(t, (s) => writeChannel(s, n, entry.spec));
     await Promise.race([settle(), stop.stopped]);
+  };
+}
+
+/** Return the record `entry` puts in its slot, in the channelPayload shape `read` prints. */
+export function planRecord(entry: PlanEntry): ChannelResult {
+  const { channel, spec } = entry;
+  return channelPayload(channel, decodeChannel(encodeChannel(spec), encodeName(spec.name ?? formatMhz(spec.rxHz))));
+}
+
+/**
+ * Read every plan slot in session `s` and compare each with its plan record. Throws
+ * DeviceStateError naming the first channel that differs, with both records, and naming
+ * `load` as the fix. The detail lists every channel that differs.
+ */
+export async function verifyPlanSlots(s: Session, entries: readonly PlanEntry[], file: string): Promise<void> {
+  const differ: Array<{ channel: number; plan: ChannelResult; radio: ChannelResult }> = [];
+  for (const entry of entries) {
+    const plan = planRecord(entry);
+    const radio = channelPayload(entry.channel, await readChannel(s, entry.channel));
+    if (JSON.stringify(radio) !== JSON.stringify(plan)) differ.push({ channel: entry.channel, plan, radio });
+  }
+  const first = differ[0];
+  if (first === undefined) return;
+  const also = differ.length > 1 ? `; channels ${differ.slice(1).map((d) => d.channel).join(', ')} differ too` : '';
+  throw new DeviceStateError(
+    `channel ${first.channel} differs from the plan: plan ${JSON.stringify(first.plan)}, radio ${JSON.stringify(first.radio)}${also}; run uv5r load ${file} to write the plan`,
+    { channel: first.channel, plan: first.plan, radio: first.radio, differ: differ.map((d) => d.channel) },
+  );
+}
+
+/** Lines read from a stream, one per call to `next`; `next` resolves undefined once the stream ends. */
+export interface Lines {
+  next(): Promise<string | undefined>;
+  close(): void;
+}
+
+/** Read lines from `input` and queue the ones that arrive before a call to `next`. */
+export function readLines(input: NodeJS.ReadableStream): Lines {
+  const rl = createInterface({ input, terminal: false });
+  const queue: string[] = [];
+  let waiter: ((line: string | undefined) => void) | undefined;
+  let ended = false;
+  rl.on('line', (line) => {
+    if (waiter === undefined) queue.push(line);
+    else {
+      waiter(line);
+      waiter = undefined;
+    }
+  });
+  rl.on('close', () => {
+    ended = true;
+    waiter?.(undefined);
+    waiter = undefined;
+  });
+  return {
+    next: () => {
+      if (queue.length > 0) return Promise.resolve(queue.shift());
+      if (ended) return Promise.resolve(undefined);
+      return new Promise((resolve) => (waiter = resolve));
+    },
+    close: () => rl.close(),
+  };
+}
+
+/** Return a Prepare that asks the human through `write` to turn the knob to the entry's slot and waits for a line. */
+export function knobSlot(lines: Lines, write: (text: string) => void): Prepare {
+  return async (entry, stop) => {
+    write(`turn the knob to channel ${entry.channel} (${entry.spec.name ?? formatMhz(entry.spec.rxHz)}) and press Enter\n`);
+    const line = await Promise.race([lines.next(), stop.stopped.then(() => '')]);
+    if (line === undefined && stop.signal === undefined) throw new UsageError(`stdin closed before channel ${entry.channel}; press Enter at each prompt`);
   };
 }
 

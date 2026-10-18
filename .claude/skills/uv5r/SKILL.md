@@ -68,6 +68,7 @@ uv5r settings voice eng beep on
 uv5r listen --seconds 5
 uv5r listen --seconds 5 --out rx.wav --play
 uv5r listen --seconds 5 --floor -40
+uv5r sweep channels.json --seconds 30
 uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx --play --verbose
 ```
 
@@ -99,7 +100,25 @@ through `afplay` after the capture and needs `--out`.
 ## Sweep a plan
 
 Run one `sweep` to listen across a plan. It replaces the per-channel shell loop of
-`tune`, `read 0` and `listen` from the 2026-10-18 run.
+`tune`, `read 0` and `listen` from the 2026-10-18 run. `sweep` has two modes.
+
+### Knob mode: the plan is loaded and a human turns the knob
+
+```sh
+uv5r load channels.json
+uv5r sweep channels.json --seconds 30 --out-dir rx --play
+```
+
+- Knob mode writes nothing to the radio. It reads every plan slot first. Exit 5 names the
+  channel that differs and carries `plan` and `radio` records. Run `uv5r load
+  channels.json`, then rerun the sweep.
+- At each entry it prints `turn the knob to channel N (NAME) and press Enter` on stderr
+  and waits. The radio stays in MR mode for the whole run.
+- Knob mode needs a terminal on stdin. A Bash tool call has piped stdin and exits 2. Give
+  the human the command to run in their own terminal and read the summary they paste back,
+  or use scratch mode.
+
+### Scratch mode: no human at the knob
 
 ```sh
 uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx --play --verbose
@@ -108,9 +127,16 @@ uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx -
 - `--scratch 0` writes each plan entry into slot 0 in turn. Use the N that `check` proved.
 - `--check 162.400` runs `check` on slot N before the loop. Exit 5 means the radio is off
   slot N; follow the `check` rule above, then rerun with `--scratch N`. Pass `--no-check`
-  when `check` already passed on N this session. One of the two is required.
-- `--seconds` sets the dwell per entry, default 30. Each entry adds about 3 s of write and
-  reload, plus `afplay` time for an active capture.
+  when `check` already passed on N this session. One of the two is required with
+  `--scratch` and exits 2 without it.
+- Each entry adds about 3 s of write and reload to the dwell.
+- Slot N holds the last plan entry afterwards. Run `uv5r load channels.json` to put the
+  plan in its own slots.
+
+### Both modes
+
+- `--seconds` sets the dwell per entry, default 30. `afplay` time adds to it for an active
+  capture.
 - `--out-dir rx` keeps one WAV per entry, such as `rx/ch07-2026-10-18T00-15-00.wav`.
   `--play` plays the active ones after their dwell and needs `--out-dir`.
 - `--verbose` writes one JSON line per entry to stderr as each dwell ends. Read it to
@@ -120,9 +146,6 @@ uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx -
   `channel N:`.
 - Ctrl-C ends the loop. The summary still prints for the finished entries, with
   `interrupted`, and the exit code is 130.
-- Slot N holds the last plan entry afterwards. Run `uv5r load channels.json` to put the
-  plan in its own slots.
-- `sweep` without `--scratch` exits 2. Knob mode is not available yet.
 
 Frequencies in MHz, 136-174 or 400-520. Tones: `82.5`, `D023`, `D023I`, `none`.
 `scenarios/big-sky-2026-10.json` holds the Big Sky channel list and sweep windows.

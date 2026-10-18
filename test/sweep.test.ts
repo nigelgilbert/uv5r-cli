@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listen, type ListenResult } from '../src/audio.ts';
 import { TransportError } from '../src/errors.ts';
@@ -153,7 +154,8 @@ describe('sweep --scratch', () => {
   it.each([
     ['neither --check nor --no-check', ['sweep', EXAMPLE_PLAN, '--scratch', '0'], '--no-check'],
     ['both --check and --no-check', ['sweep', EXAMPLE_PLAN, '--scratch', '0', '--check', '162.400', '--no-check'], 'conflict'],
-    ['no --scratch', ['sweep', EXAMPLE_PLAN, '--no-check'], 'knob mode is not available yet; pass --scratch N'],
+    ['--no-check without --scratch', ['sweep', EXAMPLE_PLAN, '--no-check'], '--check and --no-check need --scratch N'],
+    ['--check without --scratch', ['sweep', EXAMPLE_PLAN, '--check', '162.400'], '--check and --no-check need --scratch N'],
     ['--play without --out-dir', ['sweep', EXAMPLE_PLAN, '--scratch', '0', '--no-check', '--play'], '--out-dir'],
     ['a fractional --seconds', ['sweep', EXAMPLE_PLAN, '--scratch', '0', '--no-check', '--seconds', '2.5'], '--seconds'],
     ['a scratch slot past 127', ['sweep', EXAMPLE_PLAN, '--scratch', '128', '--no-check'], '128'],
@@ -237,8 +239,128 @@ describe('sweep --scratch', () => {
   it('lists sweep in the help text', async () => {
     await cli(['help']);
     const help = stdout.join('');
+    expect(help).toContain('sweep channels.json --seconds 30');
     expect(help).toContain('sweep channels.json --scratch 0 --check 162.400');
+    expect(help).toContain('knob mode');
     expect(help).toMatch(/--out-dir DIR .*sweep/);
+  });
+});
+
+const KNOB_PROMPT = /^turn the knob to channel (\d+) \((.+)\) and press Enter\n$/;
+
+/** Replace stdin with a stream; a TTY one answers each knob prompt on stderr with a line. */
+function stubStdin(isTTY: boolean): PassThrough {
+  const stdin = Object.assign(new PassThrough(), { isTTY });
+  vi.spyOn(process, 'stdin', 'get').mockReturnValue(stdin as unknown as typeof process.stdin);
+  vi.mocked(process.stderr.write).mockImplementation((chunk: string | Uint8Array) => {
+    stderr.push(String(chunk));
+    if (isTTY && KNOB_PROMPT.test(String(chunk))) setImmediate(() => stdin.write('\n'));
+    return true;
+  });
+  return stdin;
+}
+
+/** Return a fake with the example plan loaded through the CLI and its session dropped. */
+async function loadedRadio(): Promise<FakeRadio> {
+  const radio = new FakeRadio();
+  await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
+  expect(process.exitCode).toBe(0);
+  radio.dropSession();
+  stdout = [];
+  stderr = [];
+  process.exitCode = undefined;
+  return radio;
+}
+
+const prompts = () => stderr.filter((line) => KNOB_PROMPT.test(line));
+
+describe('sweep in knob mode', () => {
+  it('prompts once per entry, dwells after each Enter and prints one summary object', async () => {
+    const radio = await loadedRadio();
+    stubStdin(true);
+    const promptsAtListen: number[] = [];
+    listenMock.mockImplementation(async (_device, seconds) => {
+      promptsAtListen.push(prompts().length);
+      return heard(seconds, promptsAtListen.length === 2 ? 1 : 0);
+    });
+    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(prompts().map((line) => line.match(KNOB_PROMPT)!.slice(1))).toEqual([
+      ['1', 'NOAA 1'],
+      ['2', 'NOAA 2'],
+      ['3', 'NOAA 3'],
+      ['4', 'BIG SKY'],
+      ['5', '2M CALL'],
+      ['6', 'GMRS 20'],
+      ['7', 'SHERIFF'],
+    ]);
+    expect(promptsAtListen).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    for (const call of listenMock.mock.calls) expect(call).toEqual(['AIOC Audio', 2, -50, { out: undefined, play: false }]);
+    expect(stdout).toHaveLength(1);
+    expect(outJson()).toEqual({ swept: 7, seconds: 2, active: [{ channel: 2, name: 'NOAA 2', rxMhz: '162.475', activeSeconds: 1 }], warnings: [] });
+  });
+
+  it('leaves the radio memory byte-identical', async () => {
+    const radio = await loadedRadio();
+    const before = Uint8Array.from(radio.eeprom);
+    const writes = radio.writes.length;
+    stubStdin(true);
+    listenMock.mockResolvedValue(heard(2, 1));
+    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(radio.writes).toHaveLength(writes);
+    expect(Buffer.from(radio.eeprom).equals(Buffer.from(before))).toBe(true);
+  });
+
+  it('exits 5 before any prompt when a slot differs from the plan, naming the channel, both records and load', async () => {
+    const radio = await loadedRadio();
+    await run(['tune', '146.550', '--channel', '5', '--name', '2M CALL', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    radio.dropSession();
+    stdout = [];
+    process.exitCode = undefined;
+    stubStdin(true);
+    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(prompts()).toEqual([]);
+    expect(listenMock).not.toHaveBeenCalled();
+    expect(stdout).toEqual([]);
+    const plan = { channel: 5, rxMhz: '146.52', txMhz: '146.52', txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '2M CALL' };
+    const body = errJson();
+    expect(body).toMatchObject({ kind: 'device-state', channel: 5, plan, radio: { ...plan, rxMhz: '146.55', txMhz: '146.55' }, differ: [5] });
+    expect(body.message).toMatch(/^channel 5 differs from the plan: plan \{.*"rxMhz":"146.52".*\}, radio \{.*"rxMhz":"146.55".*\}; run uv5r load .*channels.example.json to write the plan$/);
+  });
+
+  it('exits 5 on an empty slot', async () => {
+    const radio = new FakeRadio();
+    stubStdin(true);
+    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({ channel: 1, radio: { channel: 1, empty: true }, differ: PLAN_CHANNELS });
+    expect(prompts()).toEqual([]);
+  });
+
+  it('exits 2 naming --scratch on piped stdin before opening the transport', async () => {
+    stubStdin(false);
+    const open = opener(new FakeRadio());
+    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining('--scratch N') });
+    expect(open.calls).toBe(0);
+  });
+
+  it('ends the wait at a prompt on SIGINT and prints the summary so far', async () => {
+    const radio = await loadedRadio();
+    const stdin = stubStdin(true);
+    vi.mocked(process.stderr.write).mockImplementation((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk));
+      if (KNOB_PROMPT.test(String(chunk))) setImmediate(() => (prompts().length < 3 ? stdin.write('\n') : process.emit('SIGINT')));
+      return true;
+    });
+    listenMock.mockImplementation(async (_device, seconds) => heard(seconds, 1));
+    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
+    expect(process.exitCode).toBe(130);
+    expect(outJson()).toMatchObject({ swept: 2, interrupted: 'SIGINT' });
   });
 });
 
