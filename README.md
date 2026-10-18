@@ -186,6 +186,8 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 - `docs/rx-audio-investigation.md`: the settings block wipe, its repair, the clone protocol
   rules measured on the bench, and the receive audio findings.
 - `.claude/skills/baofeng/SKILL.md`: the operating notes an agent loads to drive the radio.
+- `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
+  channel plan for a new location in the shape of `channels.json`.
 
 ## Development
 
