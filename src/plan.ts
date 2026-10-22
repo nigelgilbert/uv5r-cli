@@ -13,6 +13,8 @@ export interface PlanEntry {
 export interface Plan {
   name?: string;
   notes?: string;
+  /** Frequency in Hz that `sweep` checks slot 0 with, from the top-level `checkMhz`; `load` writes nothing for it. */
+  checkHz?: number;
   entries: PlanEntry[];
 }
 
@@ -50,6 +52,7 @@ export function readPlan(file: string): Plan {
 export function parsePlan(json: unknown): Plan {
   if (!isObject(json) || !Array.isArray(json.channels)) throw new UsageError('a plan is an object with a channels array');
   if (json.channels.length === 0) throw new UsageError('the plan has no channels');
+  const checkHz = json.checkMhz === undefined ? undefined : parseCheckMhz(json.checkMhz);
   const seen = new Set<number>();
   const entries = json.channels.map((raw, i) => {
     const entry = parseEntry(raw, i + 1);
@@ -60,8 +63,21 @@ export function parsePlan(json: unknown): Plan {
   return {
     ...(typeof json.name === 'string' ? { name: json.name } : {}),
     ...(typeof json.notes === 'string' ? { notes: json.notes } : {}),
+    ...(checkHz === undefined ? {} : { checkHz }),
     entries,
   };
+}
+
+/** Parse the top-level `checkMhz` with the band and 10 Hz rules of an entry `rxMhz`, and name `checkMhz` in any error. */
+function parseCheckMhz(v: unknown): number {
+  try {
+    const hz = parseFrequency(numberText(v));
+    checkBand(hz);
+    return hz;
+  } catch (err) {
+    if (!(err instanceof BaofengError)) throw err;
+    throw new UsageError(`plan checkMhz: ${err.message}`, { ...err.detail, field: 'checkMhz' });
+  }
 }
 
 function parseEntry(raw: unknown, index: number): PlanEntry {

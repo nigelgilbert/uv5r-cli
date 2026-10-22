@@ -50,7 +50,7 @@ Brief:
 
 - Read the NOAA Weather Radio station list for the state at weather.gov/nwr and find the
   transmitters that cover the location. Return each as `rxMhz` with the station callsign
-  and transmitter site in `notes`.
+  and transmitter site in `notes`, plus its distance, power and listed status.
 - Include the national FM calling frequencies 146.520 and 446.000 as simplex fallbacks.
 - Include the MURS channels 151.820, 151.880, 151.940, 154.570 and 154.600 when the human
   asked for license-free options.
@@ -84,11 +84,17 @@ PTT does nothing on it. Omit `offsetMhz` for simplex, `tone` and `rxTone` when n
 
 ## Compiling the plan
 
-Match the reference `channels.example.json`: a top-level `name`, a top-level `notes`, and a
-`channels` array. Each entry carries `channel`, `name`, `rxMhz`, and `notes`, plus
-`offsetMhz`, `tone`, `rxTone`, `narrow` and `rxOnly` when they apply. Drop `source` and `confidence`
+Match the reference `channels.example.json`: a top-level `name`, a top-level `notes`, a
+top-level `checkMhz` and a `channels` array. Each entry carries `channel`, `name`, `rxMhz`,
+and `notes`, plus `offsetMhz`, `tone`, `rxTone`, `narrow` and `rxOnly` when they apply. Drop `source` and `confidence`
 from the entries; put unverified items in the top-level `notes`. Give an `rxOnly` entry no
 `offsetMhz`; `tune` rejects the pair.
+
+Set `checkMhz` to the NOAA transmitter most likely audible at the location: the nearest
+one in service, preferring higher power and a clear path over the terrain. `sweep` checks
+slot 0 with it before the plan entries. Record in the top-level `notes` how sure the pick
+is, such as the distance and any terrain in the way. Ask the human when no NOAA
+transmitter fits.
 
 Order the channels:
 
@@ -119,8 +125,9 @@ Load the `uv5r` skill and write the whole plan with one command:
 uv5r load channels.json
 ```
 
-Each entry goes to its own `channel` number. Each field maps onto one `tune` flag, as the
-README's plan fields table lists. Exit 2 names the channel and field to fix in the plan;
-nothing is written. Exit 5 names the channel that did not take the write.
+Each entry goes to its own `channel` number. `load` checks `checkMhz` and writes nothing
+for it. Each field maps onto one `tune` flag, as the README's plan fields table lists.
+Exit 2 names the channel and field to fix in the plan; nothing is written. Exit 5 names
+the channel that did not take the write.
 
 Programming another slot does not select it on the radio. The human turns the knob to it.

@@ -6,12 +6,23 @@ export interface ParsedArgs {
   flags: Map<string, string | true>;
 }
 
-/** Split argv into a verb, positionals and `--flag [value]` pairs. */
+/**
+ * Split argv into a verb, positionals and `--flag [value]` pairs. `-h` stands for `--help`.
+ * Throw UsageError on a value given to a boolean flag and on a flag given twice.
+ */
 export function parseArgs(argv: string[], booleanFlags: ReadonlySet<string>): ParsedArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | true>();
+  const set = (name: string, value: string | true) => {
+    if (flags.has(name)) throw new UsageError(`--${name} given twice; pass it once`, { flag: name });
+    flags.set(name, value);
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string;
+    if (arg === '-h') {
+      set('help', true);
+      continue;
+    }
     if (!arg.startsWith('--')) {
       positionals.push(arg);
       continue;
@@ -20,14 +31,14 @@ export function parseArgs(argv: string[], booleanFlags: ReadonlySet<string>): Pa
     if (eq > 0) {
       const name = arg.slice(2, eq);
       if (booleanFlags.has(name)) throw new UsageError(`--${name} takes no value`);
-      flags.set(name, arg.slice(eq + 1));
+      set(name, arg.slice(eq + 1));
     } else if (booleanFlags.has(arg.slice(2))) {
-      flags.set(arg.slice(2), true);
+      set(arg.slice(2), true);
     } else {
       const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) flags.set(arg.slice(2), true);
+      if (next === undefined || next.startsWith('--')) set(arg.slice(2), true);
       else {
-        flags.set(arg.slice(2), next);
+        set(arg.slice(2), next);
         i++;
       }
     }
@@ -38,7 +49,7 @@ export function parseArgs(argv: string[], booleanFlags: ReadonlySet<string>): Pa
 
 export function checkFlags(verb: string, flags: Map<string, string | true>, allowed: readonly string[]): void {
   for (const name of flags.keys()) {
-    if (!allowed.includes(name)) throw new UsageError(`uv5r ${verb}: unknown option --${name}`);
+    if (!allowed.includes(name)) throw new UsageError(`uv5r ${verb}: unknown option --${name}; run uv5r help ${verb}`, { flag: name });
   }
 }
 

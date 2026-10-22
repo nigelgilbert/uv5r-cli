@@ -47,7 +47,7 @@ export class Session {
 
   /** The ident from start; throws DeviceStateError before the handshake. */
   get startedIdent(): Ident {
-    if (!this.ident) throw new DeviceStateError('clone session not started');
+    if (!this.ident) throw new DeviceStateError('session-unavailable', 'clone session not started', {}, { remedy: 'rerun the command' });
     return this.ident;
   }
 
@@ -77,14 +77,19 @@ export class Session {
       await sleep(300);
       let id = await this.transport.read(12, 50);
       if (id.length === 12) id = Uint8Array.from([id[0]!, id[3]!, id[5]!, ...id.subarray(7)]);
-      if (id.length !== 8) throw new DeviceStateError('unexpected ident from radio', { got: hex(id) });
+      if (id.length !== 8) throw new DeviceStateError('protocol-reply-invalid', 'unexpected ident from radio', { got: hex(id) });
       this.transport.write(Uint8Array.of(ACK));
       const ack2 = await this.transport.read(1, 1000);
-      if (ack2[0] !== ACK) throw new DeviceStateError('radio refused the clone session', { got: hex(ack2) });
+      if (ack2[0] !== ACK) throw new DeviceStateError('session-unavailable', 'radio refused the clone session', { got: hex(ack2) }, { remedy: 'wait 3 s and rerun the command' });
       bytes = id;
     }
     if (!bytes) {
-      throw new DeviceStateError('radio did not answer the clone handshake; check the radio is on and the cable is seated', { got: lastGot });
+      throw new DeviceStateError(
+        'session-unavailable',
+        'radio did not answer the clone handshake; check the radio is on and the cable is seated',
+        { got: lastGot },
+        { retry: 'after-remedy' },
+      );
     }
     this.lastCommandAt = Date.now();
     this.commands = 0;
@@ -105,7 +110,7 @@ export class Session {
     const gap = Date.now() - this.lastCommandAt;
     if (this.commands > 0 && gap > IDLE_LIMIT_MS - 300) {
       this.staged.clear();
-      throw new DeviceStateError(`clone session idle for ${gap} ms; the radio has left clone mode`, { idleMs: gap });
+      throw new DeviceStateError('session-unavailable', `clone session idle for ${gap} ms; the radio has left clone mode`, { idleMs: gap }, { remedy: 'rerun the command' });
     }
     this.lastCommandAt = Date.now();
     this.commands++;
@@ -126,7 +131,7 @@ export class Session {
     }
     const hdr = await this.transport.read(4, 1500);
     if (hdr.length < 4 || hdr[0] !== REPLY || ((hdr[1]! << 8) | hdr[2]!) !== addr || hdr[3] !== size) {
-      throw new DeviceStateError(`bad read header at 0x${addr.toString(16)}`, { addr, got: hex(hdr) });
+      throw new DeviceStateError('protocol-reply-invalid', `bad read header at 0x${addr.toString(16)}`, { addr, got: hex(hdr) });
     }
     const data = await this.transport.read(size, 3000);
     if (data.length !== size) throw new TimeoutError(`short read at 0x${addr.toString(16)}: ${data.length}/${size}`, { addr });
@@ -162,7 +167,7 @@ export class Session {
       this.transport.write(Uint8Array.from([CMD_WRITE, addr >> 8, addr & 0xff, data.length, ...data]));
       await sleep(50);
       const ack = await this.transport.read(1, 1500);
-      if (ack[0] !== ACK) throw new DeviceStateError(`radio refused write at 0x${addr.toString(16)}`, { addr, got: hex(ack) });
+      if (ack[0] !== ACK) throw new DeviceStateError('write-unacknowledged', `radio refused write at 0x${addr.toString(16)}`, { addr, got: hex(ack) });
     } catch (err) {
       this.staged.clear();
       throw err;

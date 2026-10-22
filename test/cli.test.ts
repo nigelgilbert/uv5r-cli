@@ -8,7 +8,31 @@ import type { Transport } from '../src/transport.ts';
 import { FakeRadio } from './fake.ts';
 
 const FIXTURE = new URL('../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url).pathname;
+const README = new URL('../README.md', import.meta.url).pathname;
+const SKILL = new URL('../.claude/skills/uv5r/SKILL.md', import.meta.url).pathname;
+const PACKAGE = new URL('../package.json', import.meta.url).pathname;
+const CHANNEL_RULE =
+  '`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. ' +
+  'The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.';
 const EXAMPLE_PLAN = new URL('../channels.example.json', import.meta.url).pathname;
+const REASON_ENUM = [
+  'device-unavailable',
+  'serial-io-failed',
+  'ptt-control-failed',
+  'dependency-missing',
+  'audio-process-failed',
+  'capture-incomplete',
+  'session-unavailable',
+  'protocol-reply-invalid',
+  'write-unacknowledged',
+  'verification-failed',
+  'image-incompatible',
+  'audio-inactive',
+  'invalid-argument',
+  'device-busy',
+  'serial-timeout',
+  'unexpected-error',
+];
 
 let stdout: string[];
 let stderr: string[];
@@ -34,7 +58,7 @@ function opener(transport?: Transport): OpenTransport & { calls: number } {
   const open = Object.assign(
     async (target: string | undefined) => {
       open.calls++;
-      if (!transport) throw new TransportError(`no device at ${target}`);
+      if (!transport) throw new TransportError('device-unavailable', `no device at ${target}`);
       return transport;
     },
     { calls: 0 },
@@ -43,7 +67,7 @@ function opener(transport?: Transport): OpenTransport & { calls: number } {
 }
 
 const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unknown>;
-const errJson = () => JSON.parse(stderr.join('').trim()) as { kind: string; message: string };
+const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, any>;
 
 describe('cli exit status', () => {
   it('sets exitCode 0 on success and leaves process.exit alone', async () => {
@@ -60,11 +84,203 @@ describe('cli exit status', () => {
     expect(exit).not.toHaveBeenCalled();
   });
 
+  it('prints reason unexpected-error and exits 1 on an error the CLI has no reason for', async () => {
+    const open: OpenTransport = async () => {
+      throw new RangeError('boom');
+    };
+    await cli(['status', '--json'], open);
+    expect(process.exitCode).toBe(1);
+    expect(errJson()).toEqual({ kind: 'unexpected', reason: 'unexpected-error', message: 'boom', remedy: 'report the message to the human', retry: 'no' });
+  });
+
+  it('prints the remedy and retry value under the message as text', async () => {
+    await cli(['status', '--text'], opener());
+    expect(process.exitCode).toBe(3);
+    expect(stderr.join('')).toMatch(/^uv5r: no device at .*\nremedy: ask the human to reseat the AIOC cable, or pass --target PATH \(retry: after-remedy\)\n$/);
+  });
+
   it('sets exitCode 3 on a transport error and leaves process.exit alone', async () => {
     await cli(['status', '--json'], opener());
     expect(process.exitCode).toBe(3);
     expect(errJson().kind).toBe('transport');
     expect(exit).not.toHaveBeenCalled();
+  });
+});
+
+describe('help', () => {
+  /** Run `help` with `argv` and parse its one-line JSON. */
+  async function helpJson(...argv: string[]): Promise<Record<string, any>> {
+    await cli(['help', ...argv, '--json']);
+    expect(process.exitCode).toBe(0);
+    const out = stdout.join('');
+    expect(out.trim().split('\n')).toHaveLength(1);
+    return JSON.parse(out) as Record<string, any>;
+  }
+
+  it('prints help tune --json with usage, flags, effects, preconditions, writes, result and exits', async () => {
+    const tune = await helpJson('tune');
+    expect(tune).toMatchObject({ schemaVersion: 1, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
+    expect(tune.usage).toMatch(/^uv5r tune FREQ --channel N \[--offset MHZ\]/);
+    expect(tune.flags).toContainEqual({ flag: '--channel', value: 'N', required: true, default: null, help: expect.any(String) });
+    expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--rx-tone', default: 'none' }));
+    expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--narrow', value: null, default: false }));
+    expect(tune.effects.length).toBeGreaterThan(0);
+    expect(tune.preconditions).toContain(CHANNEL_RULE);
+    expect(tune.writesToRadio).toEqual({ writes: true, note: expect.any(String) });
+    expect(tune.result).toMatchObject({ channel: 5, rxMhz: '154.68', appliesAfterSeconds: 3 });
+    expect(tune.exits.map((e: { code: number }) => e.code)).toEqual([0, 2, 3, 4, 5, 6]);
+  });
+
+  it('prints help --json with the schema version, rules, exit-code guidance and flag defaults', async () => {
+    const help = await helpJson();
+    expect(help.schemaVersion).toBe(1);
+    expect(help.version).toBe('0.1.0');
+    expect(help.rules).toEqual({
+      checkFirst: expect.stringContaining('check 162.400 --channel 0'),
+      scratchSlot: expect.stringContaining('Slot 0'),
+      channel: CHANNEL_RULE,
+      oneVerb: 'Run one verb at a time. Do not open, cat, screen or stty the serial port.',
+      clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.',
+      speaker:
+        'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or sweep --out-dir DIR --play.',
+    });
+    expect(Object.keys(help.exitCodes)).toEqual(['0', '1', '2', '3', '4', '5', '6', '128+signal']);
+    expect(help.errors.format).toContain('reason');
+    expect(help.errors.format).toContain('remedy');
+    expect(help.errors.format).toContain('when output is JSON, piped or with --json');
+    expect(help.errors.format).toContain('On a terminal it prints the message and a remedy line as text.');
+    expect(help.errors.format).toContain('An exit of 128 plus a signal number prints the result on stdout with interrupted and no error.');
+    expect(Object.keys(help.errors.reasons)).toEqual(REASON_ENUM);
+    for (const line of Object.values(help.errors.reasons)) expect(line).toMatch(/^exit \d: /);
+    expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
+    for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
+    expect(Object.keys(help.verbs)).toEqual(['status', 'tune', 'check', 'load', 'read', 'erase', 'key', 'dump', 'restore', 'settings', 'listen', 'sweep']);
+    const flag = (verb: string, name: string) => help.verbs[verb].flags.find((f: { flag: string }) => f.flag === name);
+    expect(flag('check', '--seconds').default).toBe(5);
+    expect(flag('sweep', '--seconds').default).toBe(30);
+    expect(flag('listen', '--floor').default).toBe(-50);
+    expect(flag('listen', '--device').default).toBe('AIOC Audio');
+    for (const verb of Object.values(help.verbs) as Array<Record<string, unknown>>) {
+      for (const key of ['usage', 'flags', 'effects', 'preconditions', 'writesToRadio', 'result', 'exits']) expect(verb).toHaveProperty(key);
+    }
+  });
+
+  it('prints the same entry for help VERB, VERB --help and VERB -h', async () => {
+    await cli(['help', 'tune']);
+    const viaHelp = stdout.join('');
+    expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N');
+    expect(viaHelp).toContain(CHANNEL_RULE);
+    for (const argv of [['tune', '--help'], ['tune', '-h']]) {
+      stdout = [];
+      await cli(argv, opener());
+      expect(process.exitCode).toBe(0);
+      expect(stdout.join('')).toBe(viaHelp);
+    }
+  });
+
+  it('prints the overview for -h', async () => {
+    await cli(['-h']);
+    expect(process.exitCode).toBe(0);
+    const help = stdout.join('');
+    expect(help).toContain('run uv5r help VERB');
+    expect(help).toContain('exit codes:');
+  });
+
+  it('prints the package version for --version', async () => {
+    const { version } = JSON.parse(readFileSync(PACKAGE, 'utf8')) as { version: string };
+    expect(version).toBe('0.1.0');
+    await cli(['--version']);
+    expect(process.exitCode).toBe(0);
+    expect(stdout.join('')).toBe(`${version}\n`);
+  });
+
+  it('answers an unknown verb in under 300 bytes with no help text', async () => {
+    const open = opener(new FakeRadio());
+    await cli(['frobnicate', '--json'], open);
+    expect(process.exitCode).toBe(2);
+    const line = stderr.join('');
+    expect(Buffer.byteLength(line)).toBeLessThan(300);
+    expect(errJson().message).toBe(
+      'unknown verb "frobnicate"; verbs: status, tune, check, load, read, erase, key, dump, restore, settings, listen, sweep; run uv5r help VERB',
+    );
+    expect(line).not.toContain('usage:');
+    expect(line).not.toContain('exit codes');
+    expect(open.calls).toBe(0);
+  });
+
+  it('exits 2 on an unknown help subject', async () => {
+    await cli(['help', 'nonsense', '--json']);
+    expect(process.exitCode).toBe(2);
+    expect(errJson().message).toMatch(/^unknown help subject "nonsense"; verbs: status, tune, .*; run uv5r help VERB$/);
+    expect(stdout).toEqual([]);
+  });
+
+  it.each([[['--bogus']], [['--bogus', 'value']], [['help', '--bogus']], [['status', '--bogus']]])('exits 2 on the unknown flag in %j', async (argv) => {
+    const open = opener(new FakeRadio());
+    await cli([...argv, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson().message).toContain('--bogus');
+    expect(stdout).toEqual([]);
+    expect(open.calls).toBe(0);
+  });
+
+  it.each([
+    [['status', '--bogus', '--help']],
+    [['status', 'extra', '--help']],
+    [['status', '--seconds', '2', '-h']],
+    [['check', '162.400', '--offset', '0.6', '--help']],
+  ])('exits 2 on %j before printing help or opening the transport', async (argv) => {
+    const open = opener(new FakeRadio());
+    await cli([...argv, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson().kind).toBe('usage');
+    expect(stdout).toEqual([]);
+    expect(open.calls).toBe(0);
+  });
+
+  it('prints help for VERB --help with flags the verb takes', async () => {
+    await cli(['check', '162.400', '--channel', '0', '--help', '--json'], opener());
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ verb: 'check' });
+  });
+
+  it('states the channel rule in the same words in help, README.md and SKILL.md', async () => {
+    const help = await helpJson();
+    expect(help.rules.channel).toBe(CHANNEL_RULE);
+    expect(readFileSync(README, 'utf8')).toContain(CHANNEL_RULE);
+    expect(readFileSync(SKILL, 'utf8')).toContain(CHANNEL_RULE);
+  });
+
+  it('keeps SKILL.md at most 60 lines', () => {
+    expect(readFileSync(SKILL, 'utf8').trimEnd().split('\n').length).toBeLessThanOrEqual(60);
+  });
+});
+
+describe('repeated flags', () => {
+  it('prints the duplicate-flag error as JSON on a terminal when --json was given', async () => {
+    const tty = process.stdout.isTTY;
+    process.stdout.isTTY = true;
+    try {
+      await cli(['status', '--json', '--json'], opener(new FakeRadio()));
+    } finally {
+      process.stdout.isTTY = tty;
+    }
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ kind: 'usage', reason: 'invalid-argument', message: '--json given twice; pass it once' });
+  });
+
+  it('prints a parse error as text when --text was given', async () => {
+    await cli(['status', '--text', '--text'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(2);
+    expect(stderr.join('')).toMatch(/^uv5r: --text given twice; pass it once\nremedy: /);
+  });
+
+  it('exits 2 naming the flag before opening the transport', async () => {
+    const open = opener(new FakeRadio());
+    await cli(['tune', '154.68', '--channel', '1', '--channel', '2', '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ kind: 'usage', message: '--channel given twice; pass it once', flag: 'channel' });
+    expect(open.calls).toBe(0);
   });
 });
 
@@ -134,8 +350,21 @@ describe('listen input checks', () => {
     expect(errJson().message).toBe('--floor needs a number; got "loud"');
   });
 
-  it('names --floor and the activity fields in the help text', async () => {
-    await cli(['help']);
+  it.each([
+    [['listen', '--seconds', '5', '--floor', '100']],
+    [['listen', '--seconds', '5', '--floor', '-101']],
+    [['check', '162.400', '--channel', '0', '--floor', '100']],
+    [['sweep', 'missing.json', '--floor', '100']],
+  ])('exits 2 on %j naming the -100..0 range before opening the transport', async (argv) => {
+    const open = opener(new FakeRadio());
+    await cli([...argv, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ kind: 'usage', flag: 'floor', message: expect.stringContaining('--floor takes -100..0 dBFS') });
+    expect(open.calls).toBe(0);
+  });
+
+  it('names --floor and the activity fields in help listen', async () => {
+    await cli(['help', 'listen']);
     const help = stdout.join('');
     for (const word of ['--floor DBFS', 'active,', 'activeSeconds', 'warnings']) expect(help).toContain(word);
   });
@@ -193,8 +422,67 @@ describe('key output', () => {
     await cli(['key', '--seconds', '0.1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     const out = outJson();
-    expect(out.keyed).toBe(true);
+    expect(out).toMatchObject({ pttAsserted: true, released: true });
     expect(out.seconds).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('prints pttAsserted, seconds and released on success', async () => {
+    await cli(['key', '--seconds', '0.1', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    const out = outJson();
+    expect(Object.keys(out)).toEqual(['pttAsserted', 'seconds', 'released']);
+    expect(out).toMatchObject({ pttAsserted: true, released: true });
+    expect(out.seconds).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it('exits 3 with pttAsserted, released and phase when the release fails after the assertion', async () => {
+    const radio = new FakeRadio();
+    let releases = 0;
+    radio.setPtt = async (on: boolean) => {
+      if (!on && releases++ === 0) throw new TransportError('ptt-control-failed', 'release failed', { target: 'fake' });
+      radio.ptt = on;
+    };
+    await cli(['key', '--seconds', '0.1', '--json'], opener(radio));
+    expect(process.exitCode).toBe(3);
+    expect(stdout).toEqual([]);
+    const err = errJson();
+    expect(err).toMatchObject({ kind: 'transport', reason: 'ptt-control-failed', retry: 'no', pttAsserted: true, released: false, phase: 'release' });
+    expect(err.message).toContain('unplug the AIOC');
+  });
+
+  it('exits 3 with pttAsserted false and released false when both steps fail', async () => {
+    const radio = new FakeRadio();
+    radio.setPtt = async () => {
+      throw new TransportError('ptt-control-failed', 'port gone', { target: 'fake' });
+    };
+    await cli(['key', '--seconds', '0.1', '--json'], opener(radio));
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ kind: 'transport', pttAsserted: false, released: false, phase: 'assert' });
+  });
+
+  it('exits 3 with pttAsserted false, released false, phase open and retry no when the device is missing', async () => {
+    await cli(['key', '--seconds', '0.1', '--json'], opener());
+    expect(process.exitCode).toBe(3);
+    expect(stdout).toEqual([]);
+    expect(errJson()).toMatchObject({ kind: 'transport', reason: 'device-unavailable', retry: 'no', pttAsserted: false, released: false, phase: 'open' });
+  });
+
+  it('reports phase open when the PTT release fails while the port opens', async () => {
+    const open: OpenTransport = async () => {
+      throw new TransportError('ptt-control-failed', 'cannot lower DTR', { target: 'fake' });
+    };
+    await cli(['key', '--seconds', '0.1', '--json'], open);
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', retry: 'no', pttAsserted: false, released: false, phase: 'open', target: 'fake' });
+  });
+
+  it('describes the displayed channel and receive-only slots in help', async () => {
+    await cli(['help', 'key']);
+    const help = stdout.join('');
+    expect(help).toContain('Raise PTT for S seconds on the channel the radio display shows');
+    expect(help).toContain('ask the human what the display shows before keying');
+    expect(help).toContain('The CLI cannot read the displayed channel; a receive-only slot radiates nothing');
+    for (const line of help.split('\n').filter((l) => /\bkey\b/.test(l))) expect(line).not.toMatch(/retry/i);
   });
 });
 
@@ -237,6 +525,7 @@ describe('load', () => {
     expect(records).toHaveLength(7);
     expect(records.map((r) => r.channel)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(records.every((r) => r.appliesAfterSeconds === 3)).toBe(true);
+    for (const r of records.slice(0, 3)) expect(r).toMatchObject({ rxMhz: expect.stringMatching(/^162\./), txMhz: null });
     expect(records[3]).toMatchObject({ channel: 4, rxMhz: '146.82', txMhz: '146.22', txTone: '82.5', name: 'BIG SKY' });
     expect(records[6]).toMatchObject({ channel: 7, rxMhz: '154.695', txMhz: null, bandwidth: 'narrow', name: 'SHERIFF' });
     for (const { appliesAfterSeconds: _, ...record } of records) {
@@ -280,8 +569,79 @@ describe('load', () => {
     radio.corruptWriteAt = 0x0000 + 5 * 16;
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
     expect(process.exitCode).toBe(5);
-    expect(errJson()).toMatchObject({ kind: 'device-state', message: 'channel 5 did not take the write' });
+    expect(errJson()).toMatchObject({
+      kind: 'device-state',
+      reason: 'verification-failed',
+      message: 'channel 5 did not take the write',
+      remedy: 'read channel 5, then rerun the write',
+      retry: 'after-remedy',
+      recordWritten: false,
+      slot: 5,
+    });
+    expect(errJson().written.map((w: { channel: number }) => w.channel)).toEqual([1, 2, 3, 4]);
     expect(stdout).toEqual([]);
+  });
+
+  it('lists the two verified channels in written when the third record write gets no ack', async () => {
+    const radio = new FakeRadio();
+    radio.refuseWriteAt = 0x0000 + 3 * 16;
+    await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(radio.writes).toEqual([0x0010, 0x1010, 0x0020, 0x1020, 0x0030]);
+    const err = errJson();
+    expect(err).toMatchObject({ kind: 'device-state', reason: 'write-unacknowledged', message: 'radio refused write at 0x30', retry: 'once', slot: 3 });
+    expect(err.written).toEqual([
+      { channel: 1, rxMhz: '162.4', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA 1' },
+      { channel: 2, rxMhz: '162.475', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA 2' },
+    ]);
+    expect(stdout).toEqual([]);
+  });
+
+  it('reports recordWritten when the third channel name does not take the write', async () => {
+    const radio = new FakeRadio();
+    radio.writesIgnoredBelow = 0x1000 + 3 * 16;
+    radio.writesIgnoredAbove = 0x1000 + 4 * 16;
+    await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    const err = errJson();
+    expect(err).toMatchObject({
+      reason: 'verification-failed',
+      message: 'channel 3 record written; name did not take the write',
+      remedy: 'read channel 3; rerun the write to fix the name',
+      recordWritten: true,
+      slot: 3,
+    });
+    expect(err.written.map((w: { channel: number }) => w.channel)).toEqual([1, 2]);
+  });
+
+  it.each([
+    ['a missing plan file', ['load', 'missing.json']],
+    ['no plan file', ['load']],
+    ['a bad plan entry', ['load', planFile({ channels: [{ channel: 200, rxMhz: 146.82 }] })]],
+  ])('carries an empty written list on %s', async (_what, argv) => {
+    const open = opener(new FakeRadio());
+    await run([...argv, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ kind: 'usage', written: [] });
+    expect(open.calls).toBe(0);
+    expect(stdout).toEqual([]);
+  });
+
+  it('reports recordWritten and the slot when the third channel name read times out', async () => {
+    const radio = new FakeRadio();
+    radio.silentReadAt = 0x1000 + 3 * 16;
+    await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
+    expect(process.exitCode).toBe(4);
+    const err = errJson();
+    expect(err).toMatchObject({ reason: 'serial-timeout', recordWritten: true, slot: 3 });
+    expect(err.written.map((w: { channel: number }) => w.channel)).toEqual([1, 2]);
+  });
+
+  it('carries an empty written list when the port does not open', async () => {
+    await run(['load', EXAMPLE_PLAN, '--json'], opener());
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'device-unavailable', written: [] });
+    expect(errJson()).not.toHaveProperty('slot');
   });
 
   it('prints one channel line per entry as text', async () => {

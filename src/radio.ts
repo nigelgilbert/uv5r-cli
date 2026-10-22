@@ -20,7 +20,7 @@ import {
   type SettingName,
   type Settings,
 } from './codec.ts';
-import { DeviceStateError } from './errors.ts';
+import { BaofengError, DeviceStateError, TransportError, withDetail } from './errors.ts';
 import { Session, hex, settle } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
@@ -88,7 +88,12 @@ export async function writeSettings(s: Session, patch: Partial<Record<SettingNam
 export async function verifySettingsBlock(s: Session, expected: Uint8Array): Promise<Settings> {
   const back = await readSettingsBlock(s);
   if (hex(back) !== hex(expected)) {
-    throw new DeviceStateError('settings block did not take the write', { wrote: hex(expected), read: hex(back) });
+    throw new DeviceStateError(
+      'verification-failed',
+      'settings block did not take the write',
+      { wrote: hex(expected), read: hex(back) },
+      { remedy: 'run uv5r settings to read the block, then rerun the write' },
+    );
   }
   return decodeSettings(back);
 }
@@ -149,8 +154,9 @@ export async function readChannel(s: Session, n: number): Promise<Channel | unde
 }
 
 /**
- * Write a channel record and its name; reads back both in the same session. Reads the old
- * record first so encodeChannel keeps its BCL, PTT-ID, S-code and scan settings.
+ * Write a channel record and read it back, then write its name and read that back, all in
+ * one session. Reads the old record first so encodeChannel keeps its BCL, PTT-ID, S-code and
+ * scan settings. Any error after the record verifies carries `recordWritten: true`.
  */
 export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Promise<Channel> {
   checkChannelNumber(n);
@@ -158,27 +164,67 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
   const mem = encodeChannel(spec, prior);
   const name = encodeName(spec.name ?? formatMhz(spec.rxHz));
   await s.writeBlock(CHANNEL_BASE + n * 16, mem);
-  await s.writeBlock(NAME_BASE + n * 16, name);
   const back = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
-  if (hex(back) !== hex(mem)) throw new DeviceStateError(`channel ${n} did not take the write`, { wrote: hex(mem), read: hex(back) });
-  const nameBack = await s.readBlock(NAME_BASE + n * 16, 0x10);
+  if (hex(back) !== hex(mem)) {
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} did not take the write`,
+      { wrote: hex(mem), read: hex(back), recordWritten: false },
+      { remedy: `read channel ${n}, then rerun the write` },
+    );
+  }
+  const nameBack = await afterRecord(() => writeAndReadBack(s, NAME_BASE + n * 16, name));
   if (hex(nameBack) !== hex(name)) {
-    throw new DeviceStateError(`channel ${n} name did not take the write`, { wrote: hex(name), read: hex(nameBack) });
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} record written; name did not take the write`,
+      { wrote: hex(name), read: hex(nameBack), recordWritten: true },
+      { remedy: `read channel ${n}; rerun the write to fix the name` },
+    );
   }
   return decodeChannel(back, nameBack)!;
 }
 
-/** Write 0xFF over a channel record and its name; reads back both in the same session. */
+/**
+ * Write 0xFF over a channel record and read it back, then over its name and read that back,
+ * all in one session. Any error after the record verifies carries `recordWritten: true`.
+ */
 export async function eraseChannel(s: Session, n: number): Promise<void> {
   checkChannelNumber(n);
   const blank = new Uint8Array(16).fill(0xff);
   await s.writeBlock(CHANNEL_BASE + n * 16, blank);
-  await s.writeBlock(NAME_BASE + n * 16, blank);
   const back = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
-  if (hex(back) !== hex(blank)) throw new DeviceStateError(`channel ${n} did not take the erase`, { wrote: hex(blank), read: hex(back) });
-  const nameBack = await s.readBlock(NAME_BASE + n * 16, 0x10);
+  if (hex(back) !== hex(blank)) {
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} did not take the erase`,
+      { wrote: hex(blank), read: hex(back), recordWritten: false },
+      { remedy: `read channel ${n}, then rerun the erase` },
+    );
+  }
+  const nameBack = await afterRecord(() => writeAndReadBack(s, NAME_BASE + n * 16, blank));
   if (hex(nameBack) !== hex(blank)) {
-    throw new DeviceStateError(`channel ${n} name did not take the erase`, { wrote: hex(blank), read: hex(nameBack) });
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} record erased; name did not take the erase`,
+      { wrote: hex(blank), read: hex(nameBack), recordWritten: true },
+      { remedy: `read channel ${n}; rerun the erase to clear the name` },
+    );
+  }
+}
+
+/** Write one 16-byte block at `addr` and return what reads back there. */
+async function writeAndReadBack(s: Session, addr: number, data: Uint8Array): Promise<Uint8Array> {
+  await s.writeBlock(addr, data);
+  return s.readBlock(addr, 0x10);
+}
+
+/** Run a step that follows a verified record write and add `recordWritten: true` to any error it throws. */
+async function afterRecord<T>(step: () => Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch (err) {
+    throw withDetail(err, { recordWritten: true });
   }
 }
 
@@ -216,10 +262,10 @@ export function imageSettingsBlock(image: Uint8Array): Uint8Array {
  * in address order, so the 0x0E40 write commits the staged settings block.
  */
 export async function restoreImage(s: Session, image: Uint8Array, onProgress?: (addr: number) => void): Promise<number> {
-  if (image.length < IMAGE_HEADER + 0x1800) throw new DeviceStateError(`image too short: ${image.length} bytes`);
+  if (image.length < IMAGE_HEADER + 0x1800) throw new DeviceStateError('image-incompatible', `image too short: ${image.length} bytes`, { bytes: image.length });
   const ident = s.startedIdent;
   if (hex(image.subarray(0, IMAGE_HEADER)) !== hex(ident.bytes)) {
-    throw new DeviceStateError('image ident does not match this radio', { image: hex(image.subarray(0, IMAGE_HEADER)), radio: hex(ident.bytes) });
+    throw new DeviceStateError('image-incompatible', 'image ident does not match this radio', { image: hex(image.subarray(0, IMAGE_HEADER)), radio: hex(ident.bytes) });
   }
   let blocks = 0;
   for (const [start, end] of RESTORE_RANGES) {
@@ -261,10 +307,12 @@ export async function verifyRestoredRanges(s: Session, image: Uint8Array): Promi
     }
   }
   if (mismatches.length > 0) {
-    throw new DeviceStateError(`restore did not take ${mismatches.length} blocks; first at ${mismatches[0]!.addr}`, {
-      mismatches: mismatches.length,
-      first: mismatches.slice(0, MISMATCHES_REPORTED),
-    });
+    throw new DeviceStateError(
+      'verification-failed',
+      `restore did not take ${mismatches.length} blocks; first at ${mismatches[0]!.addr}`,
+      { mismatches: mismatches.length, first: mismatches.slice(0, MISMATCHES_REPORTED) },
+      { remedy: 'rerun the restore; ask the human if the same blocks fail again' },
+    );
   }
   return blocks;
 }
@@ -272,13 +320,32 @@ export async function verifyRestoredRanges(s: Session, image: Uint8Array): Promi
 /** Signals that end a key early. */
 export const KEY_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
+/** Step of a key that failed: opening the port, raising PTT, holding it, or releasing it. */
+export type KeyPhase = 'open' | 'assert' | 'hold' | 'release';
+
 export interface HoldResult {
-  /** Seconds PTT stayed keyed, rounded to 0.1. */
+  /** True after setPtt(true) succeeded. */
+  pttAsserted: true;
+  /** Seconds PTT stayed asserted, rounded to 0.1. */
   seconds: number;
+  /** True after setPtt(false) succeeded. */
+  released: true;
   interrupted?: NodeJS.Signals;
 }
 
-/** Key PTT for `seconds`, stop early when `signals` emits SIGINT, SIGTERM or SIGHUP, and release PTT in both cases. */
+/** Message for a failed key, from what the port confirmed. */
+function keyFailureMessage(pttAsserted: boolean, released: boolean, cause: string): string {
+  if (released) return `PTT assertion unconfirmed: ${cause}; PTT released`;
+  const unplug = 'ask the human to unplug the AIOC to drop PTT';
+  if (pttAsserted) return `PTT rose and the release is unconfirmed: ${cause}; ${unplug}`;
+  return `PTT assertion and release unconfirmed: ${cause}; ${unplug}`;
+}
+
+/**
+ * Assert PTT for `seconds`, stop early when `signals` emits SIGINT, SIGTERM or SIGHUP, and
+ * release PTT in both cases. A failure in any step throws a TransportError whose detail
+ * carries `pttAsserted`, `released` and the `phase` that failed first.
+ */
 export async function holdPtt(t: Transport, seconds: number, signals: EventEmitter = process): Promise<HoldResult> {
   let interrupted: NodeJS.Signals | undefined;
   let wake = () => {};
@@ -291,26 +358,59 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
     signals.on(signal, handler);
     return [signal, handler] as const;
   });
+  let pttAsserted = false;
+  let released = false;
+  let phase: KeyPhase = 'assert';
+  let failure: unknown;
   let heldMs = 0;
   let timer: NodeJS.Timeout | undefined;
   try {
-    await t.setPtt(true);
-    const keyedAt = performance.now();
-    if (!interrupted) {
-      await new Promise<void>((resolve) => {
-        wake = resolve;
-        timer = setTimeout(resolve, seconds * 1000);
-      });
+    try {
+      await t.setPtt(true);
+      pttAsserted = true;
+      phase = 'hold';
+      const assertedAt = performance.now();
+      if (!interrupted) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          timer = setTimeout(resolve, seconds * 1000);
+        });
+      }
+      heldMs = performance.now() - assertedAt;
+    } catch (err) {
+      failure = err;
     }
-    heldMs = performance.now() - keyedAt;
-  } finally {
     clearTimeout(timer);
     try {
       await t.setPtt(false);
-    } finally {
-      for (const [signal, handler] of handlers) signals.off(signal, handler);
+      released = true;
+    } catch (err) {
+      if (failure === undefined) {
+        failure = err;
+        phase = 'release';
+      }
     }
+  } finally {
+    for (const [signal, handler] of handlers) signals.off(signal, handler);
   }
   const held = Math.round(heldMs / 100) / 10;
-  return interrupted ? { seconds: held, interrupted } : { seconds: held };
+  if (failure !== undefined) {
+    const cause = failure instanceof Error ? failure.message : String(failure);
+    const base = failure instanceof BaofengError ? failure.detail : {};
+    throw new TransportError(
+      'ptt-control-failed',
+      keyFailureMessage(pttAsserted, released, cause),
+      {
+        ...base,
+        pttAsserted,
+        released,
+        phase,
+        ...(pttAsserted ? { seconds: held } : {}),
+        ...(interrupted ? { interrupted } : {}),
+      },
+      { remedy: released ? 'report the error and ask the human to check the AIOC cable before keying again' : 'ask the human to unplug the AIOC to drop PTT', retry: 'no' },
+    );
+  }
+  const result: HoldResult = { pttAsserted: true, seconds: held, released: true };
+  return interrupted ? { ...result, interrupted } : result;
 }

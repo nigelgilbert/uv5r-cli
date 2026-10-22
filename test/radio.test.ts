@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../src/codec.ts';
+import { BaofengError } from '../src/errors.ts';
 import { Session } from '../src/protocol.ts';
 import { STATUS_NOTE, channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../src/radio.ts';
 import { FakeRadio } from './fake.ts';
@@ -25,7 +26,7 @@ describe('erase', () => {
     expect(await readChannel(s, 127)).toBeUndefined();
     expect(radio.eeprom.subarray(0x1000 + 127 * 16, 0x1000 + 128 * 16).every((b) => b === 0xff)).toBe(true);
   });
-  it('reports an acked but ignored name erase as a device-state error', async () => {
+  it('reports an acked but ignored name erase as a verification failure after the record erase', async () => {
     const radio = new FakeRadio();
     await tune(radio, 127, { rxHz: 435_725_000, name: 'JUNK' });
     radio.dropSession();
@@ -33,8 +34,20 @@ describe('erase', () => {
     radio.writesIgnoredAbove = 0x1000 + 128 * 16;
     await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
       kind: 'device-state',
-      message: 'channel 127 name did not take the erase',
-      detail: { wrote: expect.stringMatching(/^ff( ff){15}$/), read: expect.stringMatching(/^4a 55 4e 4b/) },
+      reason: 'verification-failed',
+      message: 'channel 127 record erased; name did not take the erase',
+      detail: { wrote: expect.stringMatching(/^ff( ff){15}$/), read: expect.stringMatching(/^4a 55 4e 4b/), recordWritten: true },
+    });
+  });
+  it('reports recordWritten when the name read-back times out after the record erase verified', async () => {
+    const radio = new FakeRadio();
+    await tune(radio, 127, { rxHz: 435_725_000, name: 'JUNK' });
+    radio.dropSession();
+    radio.silentReadAt = 0x1000 + 127 * 16;
+    await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
+      kind: 'timeout',
+      reason: 'serial-timeout',
+      detail: { recordWritten: true },
     });
   });
 });
@@ -57,7 +70,7 @@ describe('session', () => {
   it('raises device-state after two unanswered handshakes', async () => {
     const radio = new FakeRadio();
     radio.handshakesIgnored = 2;
-    await expect(new Session(radio).start()).rejects.toMatchObject({ kind: 'device-state' });
+    await expect(new Session(radio).start()).rejects.toMatchObject({ kind: 'device-state', reason: 'session-unavailable' });
   });
 });
 
@@ -77,19 +90,50 @@ describe('channels', () => {
     radio.writesIgnoredAbove = 0x2000;
     const s = new Session(radio);
     await s.start();
-    await expect(writeChannel(s, 5, { rxHz: 154_680_000 })).rejects.toMatchObject({ kind: 'device-state' });
+    await expect(writeChannel(s, 5, { rxHz: 154_680_000 })).rejects.toMatchObject({
+      kind: 'device-state',
+      reason: 'verification-failed',
+      message: 'channel 5 did not take the write',
+      detail: { recordWritten: false },
+    });
   });
-  it('reports an acked but ignored name write as a device-state error', async () => {
+  it('reports an acked but ignored name write as a verification failure after the record write', async () => {
     const radio = new FakeRadio();
     radio.writesIgnoredBelow = 0x1000 + 5 * 16;
     radio.writesIgnoredAbove = 0x1000 + 6 * 16;
     const s = new Session(radio);
     await s.start();
-    await expect(writeChannel(s, 5, { rxHz: 154_680_000, name: 'SHERIFF' })).rejects.toMatchObject({
+    const err = await writeChannel(s, 5, { rxHz: 154_680_000, name: 'SHERIFF' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BaofengError);
+    expect((err as BaofengError).toJSON()).toMatchObject({
       kind: 'device-state',
-      message: 'channel 5 name did not take the write',
+      reason: 'verification-failed',
+      message: 'channel 5 record written; name did not take the write',
+      remedy: 'read channel 5; rerun the write to fix the name',
+      retry: 'after-remedy',
+      recordWritten: true,
     });
     expect(radio.writes).toEqual([5 * 16, 0x1000 + 5 * 16]);
+  });
+  it('reports recordWritten when the name read-back times out after the record verified', async () => {
+    const radio = new FakeRadio();
+    radio.silentReadAt = 0x1000 + 5 * 16;
+    const s = new Session(radio);
+    await s.start();
+    const err = await writeChannel(s, 5, { rxHz: 154_680_000, name: 'SHERIFF' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BaofengError);
+    expect((err as BaofengError).toJSON()).toMatchObject({ kind: 'timeout', reason: 'serial-timeout', recordWritten: true });
+    expect([...radio.eeprom.subarray(5 * 16, 6 * 16)]).toEqual([...encodeChannel({ rxHz: 154_680_000 })]);
+    expect(radio.writes).toEqual([5 * 16, 0x1000 + 5 * 16]);
+  });
+  it('writes the name only after the record reads back', async () => {
+    const radio = new FakeRadio();
+    radio.writesIgnoredBelow = 0;
+    radio.writesIgnoredAbove = 0x2000;
+    const s = new Session(radio);
+    await s.start();
+    await expect(writeChannel(s, 5, { rxHz: 154_680_000 })).rejects.toMatchObject({ detail: { recordWritten: false } });
+    expect(radio.writes).toEqual([5 * 16]);
   });
   it('builds the channel payload with the documented keys in order', () => {
     const ch = decodeChannel(encodeChannel({ rxHz: 146_820_000, txHz: 146_220_000, txTone: parseTone('82.5') }), encodeName('RPT'))!;

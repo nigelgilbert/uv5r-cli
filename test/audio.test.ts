@@ -179,13 +179,13 @@ describe('listen', () => {
 
   it('reports a missing ffmpeg', async () => {
     ffmpegReturns({ code: 'ENOENT' }, '');
-    await expect(listen('AIOC Audio', 2)).rejects.toMatchObject({ kind: 'transport', message: expect.stringMatching(/ffmpeg not found on PATH/) });
+    await expect(listen('AIOC Audio', 2)).rejects.toMatchObject({ kind: 'transport', reason: 'dependency-missing', message: expect.stringMatching(/ffmpeg not found on PATH/) });
   });
   it('rejects a killed run even when astats output already arrived', async () => {
     const stderr = [STDERR, 'Input #0, avfoundation, from \':AIOC Audio\':', 'Exiting normally, received signal 15.'].join('\n');
     ffmpegReturns({ killed: true, signal: 'SIGTERM', code: undefined }, stderr);
     const err = await listen('AIOC Audio', 3).catch((e) => e);
-    expect(err).toMatchObject({ kind: 'transport', detail: { signal: 'SIGTERM' } });
+    expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { signal: 'SIGTERM' } });
     expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio": /);
     expect(err.message).toContain('Number_of_samples=48000.000000 | Input #0, avfoundation');
     expect(err.message).toMatch(/received signal 15\.$/);
@@ -197,7 +197,7 @@ describe('listen', () => {
   it('rejects a clean exit with fewer whole seconds than requested plus the dropped first second', async () => {
     ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-40', '-35'), frame(2, '-40', '-35'), frame(3, '-40', '-35', 12000)].join('\n'));
     const err = await listen('AIOC Audio', 3).catch((e) => e);
-    expect(err).toMatchObject({ kind: 'transport', detail: { captured: 3, requested: 4 } });
+    expect(err).toMatchObject({ kind: 'transport', reason: 'capture-incomplete', retry: 'once', detail: { captured: 3, requested: 4 } });
     expect(err.message).toMatch(/^ffmpeg captured 3 of 4 seconds from "AIOC Audio": /);
   });
   it('rejects an empty capture with the stderr tail', async () => {
@@ -274,12 +274,18 @@ describe('play', () => {
 
   it('reports a missing afplay as a transport error naming the file', async () => {
     execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('spawn afplay ENOENT'), { code: 'ENOENT' }), '', ''));
-    await expect(play('rx.wav', 3)).rejects.toMatchObject({ kind: 'transport', message: 'afplay not found on PATH; cannot play rx.wav', detail: { file: 'rx.wav' } });
+    await expect(play('rx.wav', 3)).rejects.toMatchObject({
+      kind: 'transport',
+      reason: 'dependency-missing',
+      message: 'afplay not found on PATH; cannot play rx.wav',
+      detail: { file: 'rx.wav' },
+    });
   });
   it('reports a non-zero afplay exit as a transport error naming the file', async () => {
     execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', "Error: AudioFileOpen failed ('dta?')\n"));
     await expect(play('rx.wav', 3)).rejects.toMatchObject({
       kind: 'transport',
+      reason: 'audio-process-failed',
       message: "afplay exited with code 1 playing rx.wav: Error: AudioFileOpen failed ('dta?')",
       detail: { file: 'rx.wav', code: 1 },
     });

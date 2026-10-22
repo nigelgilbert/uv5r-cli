@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { signalExitCode } from '../src/errors.ts';
+import { TransportError, signalExitCode } from '../src/errors.ts';
 import { KEY_SIGNALS, holdPtt } from '../src/radio.ts';
 import type { Transport } from '../src/transport.ts';
 import { FakeRadio } from './fake.ts';
@@ -56,7 +56,13 @@ describe('holdPtt', () => {
     expect(radio.ptt).toBe(false);
   });
 
-  it('throws the release error and removes its listeners', async () => {
+  it('reports pttAsserted, seconds and released on success', async () => {
+    const result = await holdPtt(new FakeRadio(), 0.1, new EventEmitter());
+    expect(Object.keys(result)).toEqual(['pttAsserted', 'seconds', 'released']);
+    expect(result).toMatchObject({ pttAsserted: true, released: true });
+  });
+
+  it('throws a transport error naming the release phase when the release fails after the assertion', async () => {
     const em = new EventEmitter();
     const radio: Transport = Object.assign(new FakeRadio(), {
       async setPtt(on: boolean): Promise<void> {
@@ -65,8 +71,41 @@ describe('holdPtt', () => {
     });
     const pending = holdPtt(radio, 5, em);
     setTimeout(() => em.emit('SIGINT'), 50);
-    await expect(pending).rejects.toThrow('release failed');
+    const err = await pending.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    const body = (err as TransportError).toJSON();
+    expect(body).toMatchObject({ kind: 'transport', pttAsserted: true, released: false, phase: 'release', interrupted: 'SIGINT' });
+    expect(body.message).toContain('PTT rose and the release is unconfirmed: release failed');
+    expect(body.message).toContain('unplug the AIOC');
+    expect(body.message).not.toMatch(/retry/i);
     expect(listeners(em)).toBe(0);
+  });
+
+  it('reports pttAsserted false and released false when both steps fail', async () => {
+    const em = new EventEmitter();
+    const radio: Transport = Object.assign(new FakeRadio(), {
+      async setPtt(on: boolean): Promise<void> {
+        throw new Error(on ? 'assert failed' : 'release failed');
+      },
+    });
+    const err = await holdPtt(radio, 5, em).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    const body = (err as TransportError).toJSON();
+    expect(body).toMatchObject({ pttAsserted: false, released: false, phase: 'assert' });
+    expect(body.message).toContain('assert failed');
+    expect(body.message).toContain('unplug the AIOC');
+    expect(listeners(em)).toBe(0);
+  });
+
+  it('reports released true when only the assertion fails', async () => {
+    const radio = new FakeRadio();
+    radio.setPtt = async (on: boolean) => {
+      if (on) throw new TransportError('ptt-control-failed', 'assert failed', { target: 'fake' });
+      radio.ptt = false;
+    };
+    const err = await holdPtt(radio, 5, new EventEmitter()).catch((e: unknown) => e);
+    expect((err as TransportError).toJSON()).toMatchObject({ target: 'fake', pttAsserted: false, released: true, phase: 'assert' });
+    expect((err as TransportError).message).not.toContain('unplug');
   });
 });
 
@@ -87,6 +126,6 @@ describe('key verb', () => {
     });
     expect(res.status).toBe(3);
     expect(res.stdout).toBe('');
-    expect(JSON.parse(res.stderr.trim())).toMatchObject({ kind: 'transport' });
+    expect(JSON.parse(res.stderr.trim())).toMatchObject({ kind: 'transport', retry: 'no', pttAsserted: false, released: false, phase: 'open' });
   });
 });

@@ -35,7 +35,9 @@ export async function findAioc(): Promise<string | undefined> {
 export async function resolveTarget(given: string | undefined): Promise<string> {
   if (given) return given;
   const found = await findAioc();
-  if (!found) throw new TransportError('no AIOC found; pass --target /dev/cu.usbmodemXXXX or set UV5R_TARGET');
+  if (!found) throw new TransportError('device-unavailable', 'no AIOC found; pass --target /dev/cu.usbmodemXXXX or set UV5R_TARGET', {}, {
+      remedy: 'ask the human to plug in the AIOC, or pass --target PATH',
+    });
   return found;
 }
 
@@ -63,17 +65,17 @@ export class SerialTransport implements Transport {
   private fail(message: string): void {
     if (this.closing || this.failure) return;
     if (DEBUG) process.stderr.write(`fail ${Date.now() % 100000} ${message}\n`);
-    this.failure = new TransportError(message, { target: this.target });
+    this.failure = new TransportError('serial-io-failed', message, { target: this.target });
   }
 
   static async open(path: string): Promise<SerialTransport> {
-    if (!existsSync(path)) throw new TransportError(`no device at ${path}`, { target: path });
+    if (!existsSync(path)) throw new TransportError('device-unavailable', `no device at ${path}`, { target: path }, { remedy: 'reseat the cable or pass --target with an existing path' });
     const port = new SerialPort({ path, baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, autoOpen: false, lock: true });
     await new Promise<void>((resolve, reject) => {
       port.open((err) => {
         if (!err) return resolve();
         if (/lock|busy|resource/i.test(err.message)) reject(new BusyError(`cannot open ${path}: ${err.message}`, { target: path }));
-        else reject(new TransportError(`cannot open ${path}: ${err.message}`, { target: path }));
+        else reject(new TransportError('device-unavailable', `cannot open ${path}: ${err.message}`, { target: path }, { remedy: 'check the path and its permissions, or pass --target' }));
       });
     });
     const t = new SerialTransport(path, port);
@@ -114,7 +116,7 @@ export class SerialTransport implements Transport {
     // Reject a key after a stored failure and send every release to the port.
     if (on && this.failure) return Promise.reject(this.failure);
     return new Promise((resolve, reject) => {
-      this.port.set({ dtr: on, rts: false }, (err) => (err ? reject(new TransportError(err.message, { target: this.target })) : resolve()));
+      this.port.set({ dtr: on, rts: false }, (err) => (err ? reject(new TransportError('ptt-control-failed', err.message, { target: this.target })) : resolve()));
     });
   }
 

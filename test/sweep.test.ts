@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -9,7 +9,7 @@ import { TransportError } from '../src/errors.ts';
 import { cli, type OpenTransport } from '../src/main.ts';
 import { readPlan } from '../src/plan.ts';
 import { KEY_SIGNALS } from '../src/radio.ts';
-import { captureName, runSweep, type DwellRecord } from '../src/sweep.ts';
+import { captureName, newProgress, runSweep, type DwellRecord, type SweepSteps } from '../src/sweep.ts';
 import { FakeRadio } from './fake.ts';
 
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
@@ -89,34 +89,55 @@ async function run(argv: string[], open: OpenTransport): Promise<void> {
   await done;
 }
 
-const SWEEP = ['sweep', EXAMPLE_PLAN, '--scratch', '0', '--check', '162.400', '--seconds', '2'];
+const SWEEP = ['sweep', EXAMPLE_PLAN, '--seconds', '2'];
 
-describe('sweep --scratch', () => {
-  it('writes each entry to the scratch slot in turn and prints one summary object', async () => {
+/** Replace stdin with a non-TTY stream and return it. */
+function stubStdin(): PassThrough {
+  const stdin = Object.assign(new PassThrough(), { isTTY: false });
+  vi.spyOn(process, 'stdin', 'get').mockReturnValue(stdin as unknown as typeof process.stdin);
+  return stdin;
+}
+
+/** Write `plan` to a temp file and return its path. */
+function planFile(plan: object): string {
+  const file = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'plan.json');
+  writeFileSync(file, JSON.stringify(plan));
+  return file;
+}
+
+describe('sweep', () => {
+  it('runs a 5 s check, then writes each entry into slot 0 and dwells 30 s, with no flags and piped stdin', async () => {
+    const stdin = stubStdin();
     const radio = new FakeRadio();
     const writesAtListen: number[][] = [];
+    let checkTxBytes: number[] = [];
     listenSequence([2, 0, 1, 0, 0, 0, 0]);
     const answer = listenMock.getMockImplementation()!;
     listenMock.mockImplementation(async (...args) => {
+      if (writesAtListen.length === 0) checkTxBytes = [...radio.eeprom.subarray(4, 8)];
       writesAtListen.push([...radio.writes]);
       return answer(...args);
     });
-    await run([...SWEEP, '--json'], opener(radio));
+    await run(['sweep', EXAMPLE_PLAN], opener(radio));
     expect(process.exitCode).toBe(0);
     // The check and each of the seven entries write the slot 0 record and name.
     expect(radio.writes).toEqual(Array.from({ length: 8 }, () => [0x0000, 0x1000]).flat());
     expect(writesAtListen.map((w) => w.length)).toEqual([2, 4, 6, 8, 10, 12, 14, 16]);
+    expect(checkTxBytes).toEqual([0xff, 0xff, 0xff, 0xff]);
     expect(listenMock.mock.calls[0]).toEqual(['AIOC Audio', 5, -50]);
-    for (const call of listenMock.mock.calls.slice(1)) expect(call).toEqual(['AIOC Audio', 2, -50, { out: undefined, play: false }]);
+    for (const call of listenMock.mock.calls.slice(1)) expect(call).toEqual(['AIOC Audio', 30, -50, { out: undefined, play: false }]);
+    expect(stdin.listenerCount('data') + stdin.listenerCount('readable')).toBe(0);
+    expect(stdin.readableFlowing).toBeNull();
     expect(stdout).toHaveLength(1);
     expect(outJson()).toEqual({
       swept: 7,
-      seconds: 2,
+      seconds: 30,
       active: [
-        { channel: 1, name: 'NOAA 1', rxMhz: '162.4', activeSeconds: 2 },
-        { channel: 3, name: 'NOAA 3', rxMhz: '162.55', activeSeconds: 1 },
+        { channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 },
+        { channel: 3, slot: 0, name: 'NOAA 3', requestedMhz: '162.55', activeSeconds: 1 },
       ],
       warnings: [],
+      slot0: { channel: 7, name: 'SHERIFF' },
     });
     stdout = [];
     radio.dropSession();
@@ -124,41 +145,62 @@ describe('sweep --scratch', () => {
     expect(outJson()).toMatchObject({ channel: 0, rxMhz: '154.695', txMhz: null, rxTone: '156.7', bandwidth: 'narrow', name: 'SHERIFF' });
   });
 
-  it('skips the check with --no-check', async () => {
+  it('writes each entry with its own TX setting', async () => {
     const radio = new FakeRadio();
-    listenMock.mockResolvedValue(heard(2, 0));
-    await run(['sweep', EXAMPLE_PLAN, '--scratch', '0', '--no-check', '--seconds', '2', '--json'], opener(radio));
-    expect(process.exitCode).toBe(0);
-    expect(listenMock).toHaveBeenCalledTimes(7);
-    expect(radio.writes).toHaveLength(14);
-    expect(outJson()).toEqual({ swept: 7, seconds: 2, active: [], warnings: [] });
-  });
-
-  it('dwells 30 s by default', async () => {
-    listenMock.mockResolvedValue(heard(30, 0));
-    await run(['sweep', EXAMPLE_PLAN, '--scratch', '0', '--no-check', '--json'], opener(new FakeRadio()));
-    expect(listenMock.mock.calls.map((c) => c[1])).toEqual(Array(7).fill(30));
-    expect(outJson()).toMatchObject({ seconds: 30 });
-  });
-
-  it('exits 5 on a silent check before writing any entry', async () => {
-    const radio = new FakeRadio();
-    listenMock.mockResolvedValue(heard(5, 0));
+    const txAtDwell: string[] = [];
+    listenMock.mockImplementation(async (_device, seconds, _floor, options) => {
+      if (options !== undefined) txAtDwell.push(Buffer.from(radio.eeprom.subarray(4, 8)).toString('hex'));
+      return heard(seconds, seconds);
+    });
     await run([...SWEEP, '--json'], opener(radio));
-    expect(process.exitCode).toBe(5);
-    expect(errJson()).toMatchObject({ kind: 'device-state', message: 'no audio on channel 0: set MR mode and select 0' });
-    expect(radio.writes).toEqual([0x0000, 0x1000]);
-    expect(stdout).toEqual([]);
+    expect(process.exitCode).toBe(0);
+    // Channel 4 is the 146.820 repeater with a 146.220 input; channel 7 is receive only.
+    expect(txAtDwell[3]).toBe('00206214');
+    expect(txAtDwell[6]).toBe('ffffffff');
+  });
+
+  it('sets the dwell with --seconds and keeps the check at 5 s', async () => {
+    listenMock.mockImplementation(async (_device, seconds) => heard(seconds, seconds));
+    await run([...SWEEP, '--json'], opener(new FakeRadio()));
+    expect(listenMock.mock.calls.map((c) => c[1])).toEqual([5, ...Array(7).fill(2)]);
+    expect(outJson()).toMatchObject({ seconds: 2 });
   });
 
   it.each([
-    ['neither --check nor --no-check', ['sweep', EXAMPLE_PLAN, '--scratch', '0'], '--no-check'],
-    ['both --check and --no-check', ['sweep', EXAMPLE_PLAN, '--scratch', '0', '--check', '162.400', '--no-check'], 'conflict'],
-    ['--no-check without --scratch', ['sweep', EXAMPLE_PLAN, '--no-check'], '--check and --no-check need --scratch N'],
-    ['--check without --scratch', ['sweep', EXAMPLE_PLAN, '--check', '162.400'], '--check and --no-check need --scratch N'],
-    ['--play without --out-dir', ['sweep', EXAMPLE_PLAN, '--scratch', '0', '--no-check', '--play'], '--out-dir'],
-    ['a fractional --seconds', ['sweep', EXAMPLE_PLAN, '--scratch', '0', '--no-check', '--seconds', '2.5'], '--seconds'],
-    ['a scratch slot past 127', ['sweep', EXAMPLE_PLAN, '--scratch', '128', '--no-check'], '128'],
+    ['3 of 5', 3, 5],
+    ['0 of 5', 0, 5],
+  ])('exits 5 on a check with %s active seconds and writes no plan entry', async (_what, active, exit) => {
+    const radio = new FakeRadio();
+    listenMock.mockResolvedValue(heard(5, active));
+    await run([...SWEEP, '--json'], opener(radio));
+    expect(process.exitCode).toBe(exit);
+    expect(radio.writes).toEqual([0x0000, 0x1000]);
+    expect(listenMock).toHaveBeenCalledTimes(1);
+    expect(errJson()).toMatchObject({
+      kind: 'device-state',
+      reason: 'audio-inactive',
+      remedy: 'ask the human to set MR mode and select slot 0',
+      retry: 'after-remedy',
+      phase: 'check',
+      slot: 0,
+      channel: null,
+      requestedMhz: '162.4',
+      activeSeconds: active,
+      written: [{ phase: 'check', slot: 0, requestedMhz: '162.4', channel: null }],
+    });
+    expect(errJson().message).toContain('VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency');
+    expect(stdout).toHaveLength(1);
+    expect(outJson()).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], slot0: { channel: null, name: '162.4' } });
+  });
+
+  it.each([
+    ['--scratch', ['sweep', EXAMPLE_PLAN, '--scratch', '0'], '--scratch'],
+    ['--check', ['sweep', EXAMPLE_PLAN, '--check', '162.400'], '--check'],
+    ['--no-check', ['sweep', EXAMPLE_PLAN, '--no-check'], '--no-check'],
+    ['--play without --out-dir', ['sweep', EXAMPLE_PLAN, '--play'], '--out-dir'],
+    ['a fractional --seconds', ['sweep', EXAMPLE_PLAN, '--seconds', '2.5'], '--seconds'],
+    ['a plan without checkMhz', ['sweep', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }] })], 'checkMhz'],
+    ['a checkMhz outside the band', ['sweep', planFile({ checkMhz: 300, channels: [{ channel: 1, rxMhz: 162.4 }] })], 'checkMhz'],
   ])('exits 2 on %s before opening the transport', async (_what, argv, text) => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
@@ -166,6 +208,12 @@ describe('sweep --scratch', () => {
     expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining(text) });
     expect(open.calls).toBe(0);
     expect(listenMock).not.toHaveBeenCalled();
+    expect(stdout).toEqual([]);
+  });
+
+  it('loads a plan without checkMhz', async () => {
+    await run(['load', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }] }), '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
   });
 
   it('writes one stderr line per entry with --verbose and leaves stdout as one object', async () => {
@@ -176,7 +224,8 @@ describe('sweep --scratch', () => {
     expect(lines).toHaveLength(7);
     const records = lines.map((line) => JSON.parse(line) as DwellRecord);
     expect(records.map((r) => r.channel)).toEqual(PLAN_CHANNELS);
-    expect(records[0]).toMatchObject({ channel: 1, name: 'NOAA 1', rxMhz: '162.4', activeSeconds: 2, active: [true, true], warnings: [] });
+    expect(records[0]).toMatchObject({ channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2, active: [true, true], warnings: [] });
+    expect(records[0]).not.toHaveProperty('rxMhz');
     expect(stdout).toHaveLength(1);
     expect(outJson()).toMatchObject({ swept: 7 });
   });
@@ -212,161 +261,184 @@ describe('sweep --scratch', () => {
     ]);
   });
 
+  it('keeps a finished dwell in the summary and runs onDwell before an afplay failure', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    listenSequence([2, 0, 0, 0, 0, 0, 0]);
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', 'bad file'));
+    await run([...SWEEP, '--out-dir', dir, '--play', '--verbose', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(3);
+    expect(outJson()).toMatchObject({ swept: 1, active: [{ channel: 1, activeSeconds: 2 }], slot0: { channel: 1, name: 'NOAA 1' } });
+    const lines = stderr.join('').trim().split('\n');
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ channel: 1, activeSeconds: 2 });
+    expect(JSON.parse(lines[1]!)).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', phase: 'play', slot: 0, channel: 1 });
+  });
+
+  it('swallows a playback that a SIGINT cuts short and prints the interrupted summary', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    listenSequence([2, 2, 0, 0, 0, 0, 0]);
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      process.emit('SIGINT');
+      cb(Object.assign(new Error('afplay stopped'), { signal: 'SIGINT' }), '', '');
+    });
+    await run([...SWEEP, '--out-dir', dir, '--play', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(130);
+    expect(stderr).toEqual([]);
+    expect(outJson()).toMatchObject({ swept: 1, interrupted: 'SIGINT', active: [{ channel: 1 }] });
+    expect(execFile).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a missing plan file', ['sweep', 'missing.json']],
+    ['no plan file', ['sweep']],
+    ['a plan without checkMhz', ['sweep', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }] })]],
+  ])('carries an empty written list and prints no summary on %s', async (_what, argv) => {
+    const open = opener(new FakeRadio());
+    await run([...argv, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ kind: 'usage', written: [] });
+    expect(stdout).toEqual([]);
+    expect(open.calls).toBe(0);
+  });
+
   it('tags each warning with its plan channel', async () => {
     let call = 0;
-    listenMock.mockImplementation(async (_device, seconds) => (call++ === 4 ? heard(seconds, 2, ['input clips: turn the volume knob down']) : heard(seconds, 1)));
+    listenMock.mockImplementation(async (_device, seconds) => (call++ === 4 ? heard(seconds, 2, ['input clips: turn the volume knob down']) : heard(seconds, seconds)));
     await run([...SWEEP, '--json'], opener(new FakeRadio()));
     expect(outJson()).toMatchObject({ warnings: ['channel 4: input clips: turn the volume knob down'] });
   });
 
-  it('prints the summary for the finished entries and exits 130 on SIGINT', async () => {
+  it('prints the summary with slot0 for the entry whose dwell a SIGINT cut short and exits 130', async () => {
     let call = 0;
     listenMock.mockImplementation(async (_device, seconds) => {
       if (call++ === 3) {
         process.emit('SIGINT');
-        throw new TransportError('ffmpeg stopped on SIGINT capturing from "AIOC Audio"');
+        throw new TransportError('audio-process-failed', 'ffmpeg stopped on SIGINT capturing from "AIOC Audio"');
       }
-      return heard(seconds, 1);
+      return heard(seconds, seconds);
     });
     const before = process.listenerCount('SIGINT');
     await run([...SWEEP, '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(130);
     expect(stdout).toHaveLength(1);
-    expect(outJson()).toMatchObject({ swept: 2, interrupted: 'SIGINT', active: [{ channel: 1 }, { channel: 2 }] });
+    expect(outJson()).toMatchObject({ swept: 2, interrupted: 'SIGINT', active: [{ channel: 1 }, { channel: 2 }], slot0: { channel: 3, name: 'NOAA 3' } });
     expect(process.listenerCount('SIGINT')).toBe(before);
   });
 
-  it('lists sweep in the help text', async () => {
-    await cli(['help']);
+  it('prints slot0 for the check record on a SIGINT during the check', async () => {
+    const radio = new FakeRadio();
+    listenMock.mockImplementation(async () => {
+      process.emit('SIGINT');
+      throw new TransportError('audio-process-failed', 'ffmpeg stopped on SIGINT capturing from "AIOC Audio"');
+    });
+    await run([...SWEEP, '--json'], opener(radio));
+    expect(process.exitCode).toBe(130);
+    expect(radio.writes).toEqual([0x0000, 0x1000]);
+    expect(outJson()).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], slot0: { channel: null, name: '162.4' }, interrupted: 'SIGINT' });
+  });
+
+  it('prints the summary with slot0 on stdout and the error on stderr when a dwell fails', async () => {
+    let call = 0;
+    listenMock.mockImplementation(async (_device, seconds) => {
+      if (call++ === 3) throw new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"');
+      return heard(seconds, seconds);
+    });
+    await run([...SWEEP, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(3);
+    expect(outJson()).toMatchObject({ swept: 2, slot0: { channel: 3, name: 'NOAA 3' } });
+    expect(outJson()).not.toHaveProperty('interrupted');
+    expect(errJson()).toMatchObject({ kind: 'transport', message: 'ffmpeg exited 1 capturing from "AIOC Audio"' });
+  });
+
+  it('prints one finished dwell on stdout and the verified writes on stderr when the second dwell fails', async () => {
+    let call = 0;
+    listenMock.mockImplementation(async (_device, seconds) => {
+      if (call++ === 2) throw new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"');
+      return heard(seconds, seconds);
+    });
+    await run([...SWEEP, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(3);
+    expect(stdout).toHaveLength(1);
+    expect(outJson()).toEqual({
+      swept: 1,
+      seconds: 2,
+      active: [{ channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 }],
+      warnings: [],
+      slot0: { channel: 2, name: 'NOAA 2' },
+    });
+    expect(errJson()).toEqual({
+      kind: 'transport',
+      reason: 'audio-process-failed',
+      message: 'ffmpeg exited 1 capturing from "AIOC Audio"',
+      remedy: 'check that --device names the AIOC input and the terminal has microphone access',
+      retry: 'after-remedy',
+      phase: 'dwell',
+      slot: 0,
+      channel: 2,
+      written: [
+        { phase: 'check', slot: 0, requestedMhz: '162.4', channel: null },
+        { phase: 'entry', slot: 0, requestedMhz: '162.4', channel: 1 },
+        { phase: 'entry', slot: 0, requestedMhz: '162.475', channel: 2 },
+      ],
+    });
+  });
+
+  it('prints slot0 null when an entry write fails', async () => {
+    const radio = new FakeRadio();
+    let call = 0;
+    listenMock.mockImplementation(async (_device, seconds) => {
+      // Corrupt every later slot 0 record write once the second entry's dwell starts.
+      if (call++ === 2) radio.corruptWriteAt = 0x0000;
+      return heard(seconds, seconds);
+    });
+    await run([...SWEEP, '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(outJson()).toMatchObject({ swept: 2, slot0: null });
+    expect(errJson()).toMatchObject({
+      kind: 'device-state',
+      reason: 'verification-failed',
+      message: 'channel 0 did not take the write',
+      phase: 'entry',
+      slot: 0,
+      channel: 3,
+      recordWritten: false,
+    });
+    expect((errJson().written as Array<{ channel: number | null }>).map((w) => w.channel)).toEqual([null, 1, 2]);
+  });
+
+  it('checks with the plan checkMhz', async () => {
+    const radio = new FakeRadio();
+    let checkRx = '';
+    listenMock.mockImplementation(async (_device, seconds) => {
+      if (checkRx === '') checkRx = Buffer.from(radio.eeprom.subarray(0, 4)).toString('hex');
+      return heard(seconds, seconds);
+    });
+    await run(['sweep', planFile({ checkMhz: 162.55, channels: [{ channel: 9, rxMhz: 162.4, name: 'WX' }] }), '--seconds', '2', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(checkRx).toBe('00502516');
+    expect(outJson()).toMatchObject({ swept: 1, slot0: { channel: 9, name: 'WX' } });
+  });
+
+  it('describes the one sweep mode in help sweep', async () => {
+    await cli(['help', 'sweep']);
     const help = stdout.join('');
     expect(help).toContain('sweep channels.json --seconds 30');
-    expect(help).toContain('sweep channels.json --scratch 0 --check 162.400');
-    expect(help).toContain('knob mode');
-    expect(help).toMatch(/--out-dir DIR .*sweep/);
-  });
-});
-
-const KNOB_PROMPT = /^turn the knob to channel (\d+) \((.+)\) and press Enter\n$/;
-
-/** Replace stdin with a stream; a TTY one answers each knob prompt on stderr with a line. */
-function stubStdin(isTTY: boolean): PassThrough {
-  const stdin = Object.assign(new PassThrough(), { isTTY });
-  vi.spyOn(process, 'stdin', 'get').mockReturnValue(stdin as unknown as typeof process.stdin);
-  vi.mocked(process.stderr.write).mockImplementation((chunk: string | Uint8Array) => {
-    stderr.push(String(chunk));
-    if (isTTY && KNOB_PROMPT.test(String(chunk))) setImmediate(() => stdin.write('\n'));
-    return true;
-  });
-  return stdin;
-}
-
-/** Return a fake with the example plan loaded through the CLI and its session dropped. */
-async function loadedRadio(): Promise<FakeRadio> {
-  const radio = new FakeRadio();
-  await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
-  expect(process.exitCode).toBe(0);
-  radio.dropSession();
-  stdout = [];
-  stderr = [];
-  process.exitCode = undefined;
-  return radio;
-}
-
-const prompts = () => stderr.filter((line) => KNOB_PROMPT.test(line));
-
-describe('sweep in knob mode', () => {
-  it('prompts once per entry, dwells after each Enter and prints one summary object', async () => {
-    const radio = await loadedRadio();
-    stubStdin(true);
-    const promptsAtListen: number[] = [];
-    listenMock.mockImplementation(async (_device, seconds) => {
-      promptsAtListen.push(prompts().length);
-      return heard(seconds, promptsAtListen.length === 2 ? 1 : 0);
-    });
-    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
-    expect(process.exitCode).toBe(0);
-    expect(prompts().map((line) => line.match(KNOB_PROMPT)!.slice(1))).toEqual([
-      ['1', 'NOAA 1'],
-      ['2', 'NOAA 2'],
-      ['3', 'NOAA 3'],
-      ['4', 'BIG SKY'],
-      ['5', '2M CALL'],
-      ['6', 'GMRS 20'],
-      ['7', 'SHERIFF'],
-    ]);
-    expect(promptsAtListen).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    for (const call of listenMock.mock.calls) expect(call).toEqual(['AIOC Audio', 2, -50, { out: undefined, play: false }]);
-    expect(stdout).toHaveLength(1);
-    expect(outJson()).toEqual({ swept: 7, seconds: 2, active: [{ channel: 2, name: 'NOAA 2', rxMhz: '162.475', activeSeconds: 1 }], warnings: [] });
+    expect(help).toContain('checkMhz');
+    expect(help).toMatch(/--out-dir DIR +keep each capture/);
+    for (const word of ['knob', '--scratch', '--check', '--no-check']) expect(help).not.toContain(word);
   });
 
-  it('leaves the radio memory byte-identical', async () => {
-    const radio = await loadedRadio();
-    const before = Uint8Array.from(radio.eeprom);
-    const writes = radio.writes.length;
-    stubStdin(true);
-    listenMock.mockResolvedValue(heard(2, 1));
-    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
-    expect(process.exitCode).toBe(0);
-    expect(radio.writes).toHaveLength(writes);
-    expect(Buffer.from(radio.eeprom).equals(Buffer.from(before))).toBe(true);
-  });
-
-  it('exits 5 before any prompt when a slot differs from the plan, naming the channel, both records and load', async () => {
-    const radio = await loadedRadio();
-    await run(['tune', '146.550', '--channel', '5', '--name', '2M CALL', '--json'], opener(radio));
-    expect(process.exitCode).toBe(0);
-    radio.dropSession();
-    stdout = [];
-    process.exitCode = undefined;
-    stubStdin(true);
-    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
-    expect(process.exitCode).toBe(5);
-    expect(prompts()).toEqual([]);
-    expect(listenMock).not.toHaveBeenCalled();
-    expect(stdout).toEqual([]);
-    const plan = { channel: 5, rxMhz: '146.52', txMhz: '146.52', txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '2M CALL' };
-    const body = errJson();
-    expect(body).toMatchObject({ kind: 'device-state', channel: 5, plan, radio: { ...plan, rxMhz: '146.55', txMhz: '146.55' }, differ: [5] });
-    expect(body.message).toMatch(/^channel 5 differs from the plan: plan \{.*"rxMhz":"146.52".*\}, radio \{.*"rxMhz":"146.55".*\}; run uv5r load .*channels.example.json to write the plan$/);
-  });
-
-  it('exits 5 on an empty slot', async () => {
-    const radio = new FakeRadio();
-    stubStdin(true);
-    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
-    expect(process.exitCode).toBe(5);
-    expect(errJson()).toMatchObject({ channel: 1, radio: { channel: 1, empty: true }, differ: PLAN_CHANNELS });
-    expect(prompts()).toEqual([]);
-  });
-
-  it('exits 2 naming --scratch on piped stdin before opening the transport', async () => {
-    stubStdin(false);
-    const open = opener(new FakeRadio());
-    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], open);
-    expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining('--scratch N') });
-    expect(open.calls).toBe(0);
-  });
-
-  it('ends the wait at a prompt on SIGINT and prints the summary so far', async () => {
-    const radio = await loadedRadio();
-    const stdin = stubStdin(true);
-    vi.mocked(process.stderr.write).mockImplementation((chunk: string | Uint8Array) => {
-      stderr.push(String(chunk));
-      if (KNOB_PROMPT.test(String(chunk))) setImmediate(() => (prompts().length < 3 ? stdin.write('\n') : process.emit('SIGINT')));
-      return true;
-    });
-    listenMock.mockImplementation(async (_device, seconds) => heard(seconds, 1));
-    await run(['sweep', EXAMPLE_PLAN, '--seconds', '2', '--json'], opener(radio));
-    expect(process.exitCode).toBe(130);
-    expect(outJson()).toMatchObject({ swept: 2, interrupted: 'SIGINT' });
+  it('leaves knob mode and its flags out of the overview', async () => {
+    await cli(['help']);
+    const help = stdout.join('');
+    for (const word of ['knob', '--scratch', '--check', '--no-check']) expect(help).not.toContain(word);
   });
 });
 
 describe('runSweep', () => {
   const entries = readPlan(EXAMPLE_PLAN).entries;
   const options = { device: 'AIOC Audio', seconds: 2, floorDbfs: -50, play: false };
+  const idle: SweepSteps = { check: async () => {}, prepare: async () => {} };
 
   it('stops after the dwell in progress when a signal arrives and removes its handlers', async () => {
     const signals = new EventEmitter();
@@ -376,7 +448,7 @@ describe('runSweep', () => {
       return heard(seconds, 1);
     });
     const records: DwellRecord[] = [];
-    const summary = await runSweep(entries, async () => {}, options, (r) => records.push(r), signals);
+    const summary = await runSweep(entries, idle, options, (r) => records.push(r), newProgress(), signals);
     expect(summary).toMatchObject({ swept: 2, interrupted: 'SIGTERM' });
     expect(records.map((r) => r.channel)).toEqual([1, 2]);
     expect(KEY_SIGNALS.reduce((n, s) => n + signals.listenerCount(s), 0)).toBe(0);
@@ -385,18 +457,31 @@ describe('runSweep', () => {
   it('ends the wait in prepare when a signal arrives', async () => {
     const signals = new EventEmitter();
     listenMock.mockResolvedValue(heard(2, 0));
-    const summary = await runSweep(
-      entries,
-      async (_entry, stop) => {
+    const steps: SweepSteps = {
+      check: async () => {},
+      prepare: async (_entry, _progress, stop) => {
         signals.emit('SIGHUP');
         await stop.stopped;
       },
-      options,
-      () => {},
-      signals,
-    );
-    expect(summary).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], interrupted: 'SIGHUP' });
+    };
+    const summary = await runSweep(entries, steps, options, () => {}, newProgress(), signals);
+    expect(summary).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], slot0: null, interrupted: 'SIGHUP' });
     expect(listenMock).not.toHaveBeenCalled();
+  });
+
+  it('runs no entry when the check throws and leaves the dwells in progress', async () => {
+    const prepare = vi.fn(async () => {});
+    const progress = newProgress();
+    const steps: SweepSteps = {
+      check: async (p) => {
+        p.slot0 = { channel: null, name: '162.4' };
+        throw new TransportError('audio-process-failed', 'ffmpeg exited 1');
+      },
+      prepare,
+    };
+    await expect(runSweep(entries, steps, options, () => {}, progress, new EventEmitter())).rejects.toThrow('ffmpeg exited 1');
+    expect(prepare).not.toHaveBeenCalled();
+    expect(progress).toEqual({ dwells: [], slot0: { channel: null, name: '162.4' }, written: [] });
   });
 });
 

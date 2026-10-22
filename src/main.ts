@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
-import { CHECK_SECONDS, checkChannel } from './check.ts';
+import { CHECK_SECONDS, MIN_CHECK_SECONDS, checkChannel } from './check.ts';
 import {
   SETTING_NAMES,
   checkBand,
@@ -18,8 +18,9 @@ import {
   type SettingName,
   type Settings,
 } from './codec.ts';
-import { BaofengError, EXIT, UsageError, errorKind, exitCodeFor, signalExitCode } from './errors.ts';
+import { BaofengError, EXIT, REASONS, RETRY, UnexpectedError, UsageError, exitCodeFor, signalExitCode, withDetail } from './errors.ts';
 import { readPlan } from './plan.ts';
+import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type ExitCase, type FlagDoc, type VerbDoc } from './help.ts';
 import { SETTLE_MS } from './protocol.ts';
 import {
   channelPayload,
@@ -27,6 +28,7 @@ import {
   eraseChannel,
   IMAGE_HEADER,
   RESTORE_RANGES,
+  STATUS_NOTE,
   holdPtt,
   imageSettingsBlock,
   readChannel,
@@ -41,9 +43,10 @@ import {
   writeChannel,
   writeSettings,
   type ChannelResult,
+  type HoldResult,
   type RadioStatus,
 } from './radio.ts';
-import { SWEEP_SECONDS, knobSlot, readLines, runSweep, scratchSlot, verifyPlanSlots, type DwellRecord, type SweepSummary } from './sweep.ts';
+import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type DwellRecord, type Slot0, type SweepSummary } from './sweep.ts';
 import { SerialTransport, resolveTarget, type Transport } from './transport.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
@@ -54,97 +57,483 @@ interface Invocation extends ParsedArgs {
   open: OpenTransport;
 }
 
-interface Verb {
-  summary: string;
-  usage: string;
+interface Verb extends VerbDoc {
   /** Most positionals the verb takes after its name. */
   positionals: number;
   run: (args: Invocation) => Promise<number>;
 }
 
-const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'rx-only', 'force', 'play', 'no-check', 'verbose']);
-const COMMON = ['json', 'text', 'target'];
-const TUNE_FLAGS = ['channel', 'offset', 'tone', 'rx-tone', 'narrow', 'low-power', 'rx-only', 'name'];
 const MAX_KEY_SECONDS = 60;
 const MAX_LISTEN_SECONDS = 600;
+const MIN_FLOOR_DBFS = -100;
+const MAX_FLOOR_DBFS = 0;
 const DEFAULT_AUDIO_DEVICE = 'AIOC Audio';
 /** Seconds after the command ends until the radio reloads and applies a write. */
 const APPLIES_AFTER_SECONDS = SETTLE_MS / 1000;
 /** Bytes a restore image needs to cover its header and every restore range. */
 const MIN_IMAGE_BYTES = IMAGE_HEADER + Math.max(...RESTORE_RANGES.map(([, end]) => end));
 
+/** The one statement of how `--channel` relates to what the radio receives; help, README.md and SKILL.md carry it word for word. */
+export const CHANNEL_RULE =
+  '`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. ' +
+  'The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.';
+
+/** Operating rules `help` prints for an agent that reads no other doc. */
+const RULES = {
+  checkFirst:
+    'Run `uv5r check 162.400 --channel 0` once per session before tuning slot 0, with a NOAA frequency that carries audio at the location. ' +
+    'Exit 0 means audio above the floor after writing slot 0, consistent with the radio receiving slot 0. ' +
+    'Exit 5 lists the causes; ask the human to set MR mode and select slot 0, then check again.',
+  scratchSlot: 'Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0. `tune` and `load` write any slot.',
+  channel: CHANNEL_RULE,
+  oneVerb: 'Run one verb at a time. Do not open, cat, screen or stty the serial port.',
+  clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.',
+  speaker:
+    'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or sweep --out-dir DIR --play.',
+};
+
+const OUTPUT_RULE = 'JSON on stdout when piped or with --json, text on a terminal or with --text; errors go to stderr in the same format';
+
+/** What each exit code means; the error's reason and remedy fields say what to do next. */
+const EXIT_CODES: Record<string, string> = {
+  '0': 'ok: the result is on stdout',
+  '1': 'unexpected: an error the CLI has no kind for',
+  '2': 'usage: bad input; argument errors exit before the port opens',
+  '3': 'transport: no device, a serial error, or an ffmpeg or afplay failure',
+  '4': 'timeout: no ack or a short read',
+  '5': 'device-state: no handshake, a bad reply, a refused write, a failed verification, an image ident mismatch or a check under 80% active seconds',
+  '6': 'busy: another process holds the serial port',
+  '128+signal': 'interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary',
+};
+
+const ERROR_GUIDANCE =
+  'A failed command prints one error object on stderr with kind, reason, message, remedy, retry and detail fields when output is JSON, piped or with --json. ' +
+  'On a terminal it prints the message and a remedy line as text. ' +
+  'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
+  'load and sweep errors add written, the fully verified writes in order. ' +
+  'An exit of 128 plus a signal number prints the result on stdout with interrupted and no error.';
+
+/** The errors section of `help --json`: the error format, each reason with its exit code, and the retry values. */
+const ERRORS_HELP = {
+  format: ERROR_GUIDANCE,
+  reasons: Object.fromEntries(Object.entries(REASONS).map(([reason, doc]) => [reason, `exit ${exitCodeFor(doc.kind)}: ${doc.means}`])),
+  retry: RETRY,
+};
+
+const JSON_FLAG: FlagDoc = { name: 'json', help: 'print JSON; the default when stdout is not a terminal' };
+const TEXT_FLAG: FlagDoc = { name: 'text', help: 'print text; the default on a terminal' };
+const TARGET_FLAG: FlagDoc = { name: 'target', value: 'PATH', help: 'serial device', default: 'UV5R_TARGET, else the AIOC found by USB id 1209:7388' };
+const OUTPUT_FLAGS = [JSON_FLAG, TEXT_FLAG];
+const COMMON_FLAGS = [...OUTPUT_FLAGS, TARGET_FLAG];
+const CHANNEL_FLAG: FlagDoc = { name: 'channel', value: 'N', required: true, help: 'memory slot to write, 0..127; see the channel rule in uv5r help' };
+const RX_TONE_FLAG: FlagDoc = { name: 'rx-tone', value: 'HZ', default: 'none', help: 'RX tone in the --tone forms; none is carrier squelch' };
+const NARROW_FLAG: FlagDoc = { name: 'narrow', help: '12.5 kHz bandwidth; wide without it' };
+const LOW_POWER_FLAG: FlagDoc = { name: 'low-power', help: 'low TX power' };
+const NAME_FLAG: FlagDoc = { name: 'name', value: 'TEXT', default: 'the frequency', help: 'channel name: printable ASCII, uppercased, cut to 7 characters' };
+const DEVICE_FLAG: FlagDoc = { name: 'device', value: 'NAME', default: DEFAULT_AUDIO_DEVICE, help: 'avfoundation audio input by name or index' };
+const FLOOR_FLAG: FlagDoc = {
+  name: 'floor',
+  value: 'DBFS',
+  default: DEFAULT_FLOOR_DBFS,
+  help: `a second is active when its RMS is above DBFS, ${MIN_FLOOR_DBFS}..${MAX_FLOOR_DBFS}`,
+};
+
+const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'receive frequency in MHz (154.680), Hz (154680000) or exponent form, in 136-174 or 400-520 MHz, in 10 Hz steps' };
+const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
+
+const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
+const AUDIO_READY = 'ffmpeg is on PATH and the terminal has microphone access.';
+const APPLIES = `The radio reloads and applies the write about ${APPLIES_AFTER_SECONDS} s after the command ends.`;
+
+const EXIT_USAGE: ExitCase = { code: 2, when: EXIT_CODES['2']! };
+const EXIT_TRANSPORT: ExitCase = { code: 3, when: 'no device at the target, or a serial error' };
+const EXIT_TIMEOUT: ExitCase = { code: 4, when: 'no ack or a short read' };
+const EXIT_BUSY: ExitCase = { code: 6, when: 'another process holds the serial port' };
+
+/** Return the exit cases of a verb that runs one clone session. */
+function sessionExits(ok: string, deviceState: string): ExitCase[] {
+  return [{ code: 0, when: ok }, EXIT_USAGE, EXIT_TRANSPORT, EXIT_TIMEOUT, { code: 5, when: deviceState }, EXIT_BUSY];
+}
+
+const CHANNEL_RECORD = { rxMhz: '154.68', txMhz: '154.68', txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
+const SETTINGS_EXAMPLE = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'name', mdfb: 'name' };
+const LISTEN_EXAMPLE = {
+  device: DEFAULT_AUDIO_DEVICE,
+  seconds: 5,
+  rmsDbfs: [-21.3, -24.8, -19.6, -30.2, -22.7],
+  zeroSeconds: 0,
+  meanRmsDbfs: -23.7,
+  peakDbfs: -4.1,
+  active: [true, true, true, true, true],
+  activeSeconds: 5,
+  warnings: [],
+};
+
 const verbs: Record<string, Verb> = {
-  status: { summary: 'Print firmware, work mode, stored channel numbers, squelch, voice, beep, abr and the active record', usage: 'status', positionals: 0, run: statusVerb },
-  tune: { summary: 'Write a frequency into the channel the radio shows', usage: 'tune 154.680 --channel 5 --tone 82.5', positionals: 1, run: tuneVerb },
+  status: {
+    summary: 'Print firmware, work mode, stored channel numbers, squelch, voice, beep, abr and the active record',
+    example: 'uv5r status',
+    args: [],
+    flags: COMMON_FLAGS,
+    effects: [
+      'Read the ident, the menu settings, the stored channel A/B numbers and the record of the stored active channel in one clone session.',
+      'channelA and channelB come from EEPROM and may differ from the display; note says so.',
+    ],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: false, note: 'reads only' },
+    result: { firmware: 'HN5RV011', workmode: 'channel', channelA: 0, channelB: 0, squelch: 3, voice: 'eng', beep: 'on', abr: 5, channel: 0, ...CHANNEL_RECORD, note: STATUS_NOTE },
+    exits: sessionExits('printed the status', 'no handshake or a bad reply'),
+    positionals: 0,
+    run: statusVerb,
+  },
+  tune: {
+    summary: 'Write a frequency into memory slot N and read it back',
+    example: 'uv5r tune 154.680 --channel 5 --tone 82.5',
+    args: [FREQ_ARG],
+    flags: [
+      CHANNEL_FLAG,
+      { name: 'offset', value: 'MHZ', default: 0, help: 'signed repeater offset in 10 Hz steps, as in -0.6; conflicts with --rx-only' },
+      { name: 'tone', value: 'HZ', default: 'none', help: 'TX tone: CTCSS from the standard table (82.5), DCS (D023, D023I) or none' },
+      RX_TONE_FLAG,
+      NARROW_FLAG,
+      LOW_POWER_FLAG,
+      { name: 'rx-only', help: 'receive only; writes no TX frequency; conflicts with --offset' },
+      NAME_FLAG,
+      ...COMMON_FLAGS,
+    ],
+    effects: [
+      'Write the channel record and name of slot N in one clone session and read both back.',
+      'Keep BCL, PTT-ID, S-code and scan of an existing record. An empty slot gets BCL off, PTT-ID 0, S-code 0 and scan on.',
+      APPLIES,
+    ],
+    preconditions: [RADIO_READY, CHANNEL_RULE, 'Before tuning slot 0, run the check rule that uv5r help lists.'],
+    writesToRadio: { writes: true, note: 'the channel record and name of slot N' },
+    result: { channel: 5, ...CHANNEL_RECORD, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
+    exits: sessionExits('written and read back', 'no handshake, a bad reply, or a record or name that reads back different'),
+    positionals: 1,
+    run: tuneVerb,
+  },
   check: {
-    summary: 'Write a live frequency into channel N, wait for the reload and listen; exit 5 on silence',
-    usage: 'check 162.400 --channel 0',
+    summary: 'Write a receive-only frequency into slot N, wait for the reload and listen; exit 5 unless 80% of the seconds are active',
+    example: 'uv5r check 162.400 --channel 0',
+    args: [FREQ_ARG],
+    flags: [
+      CHANNEL_FLAG,
+      RX_TONE_FLAG,
+      NARROW_FLAG,
+      LOW_POWER_FLAG,
+      { name: 'rx-only', help: 'accepted; check writes a receive-only record either way' },
+      NAME_FLAG,
+      { name: 'seconds', value: 'S', default: CHECK_SECONDS, help: `listen time, whole number ${MIN_CHECK_SECONDS}..${MAX_LISTEN_SECONDS}` },
+      DEVICE_FLAG,
+      FLOOR_FLAG,
+      ...COMMON_FLAGS,
+    ],
+    effects: [
+      'Write FREQ into slot N as a receive-only record and read it back. --offset and --tone exit 2.',
+      `Wait ${APPLIES_AFTER_SECONDS} s for the reload, then capture --seconds of receive audio with the listen pipeline.`,
+      'Pass when at least 80% of the seconds are active, rounded up: 4 of 5.',
+      'A pass means audio above the floor after writing slot N, consistent with the radio receiving slot N. The received frequency stays unverified.',
+      'Once the write succeeds, slot N keeps the receive-only record, also after a capture failure. A failure before or during the write leaves the slot state unknown.',
+    ],
+    preconditions: [RADIO_READY, AUDIO_READY, 'The human has set MR mode and selected slot N.', 'FREQ carries audio at the location, such as a NOAA weather transmitter.'],
+    writesToRadio: { writes: true, note: 'a receive-only record and name in slot N; nothing restores the old record' },
+    result: { slot: 0, requestedMhz: '162.4', ...LISTEN_EXAMPLE },
+    exits: [
+      { code: 0, when: 'at least 80% of the seconds active' },
+      EXIT_USAGE,
+      { code: 3, when: 'no device, a serial error, or an ffmpeg failure or short capture' },
+      EXIT_TIMEOUT,
+      {
+        code: 5,
+        when: 'fewer than 80% of the seconds active: the message lists the causes and the error carries the result fields; also no handshake, a bad reply or a failed read-back',
+      },
+      EXIT_BUSY,
+    ],
     positionals: 1,
     run: checkVerb,
   },
-  load: { summary: 'Write every channel of a plan file and read each back', usage: 'load channels.json', positionals: 1, run: loadVerb },
-  read: { summary: 'Print one channel record', usage: 'read 5', positionals: 1, run: readVerb },
-  erase: { summary: 'Clear one channel record and its name', usage: 'erase 127', positionals: 1, run: eraseVerb },
-  key: { summary: 'Key the transmitter for S seconds', usage: 'key --seconds 2', positionals: 0, run: keyVerb },
-  dump: { summary: 'Save the full memory image', usage: 'dump --out radio.img', positionals: 0, run: dumpVerb },
-  restore: { summary: 'Write the main memory of an image back', usage: 'restore radio.img --force', positionals: 1, run: restoreVerb },
-  settings: { summary: 'Print the menu settings, or set fields', usage: 'settings voice eng beep on', positionals: Infinity, run: settingsVerb },
+  load: {
+    summary: 'Write every channel of a plan file and read each back',
+    example: 'uv5r load channels.json',
+    args: [{ name: 'PLAN', help: 'plan JSON with name, notes, checkMhz and a channels array; README.md "Plan fields" lists the entry fields' }],
+    flags: COMMON_FLAGS,
+    effects: [
+      'Check every entry before the port opens.',
+      'Write each entry to its own slot in one clone session and read each back. Slots absent from the plan keep their records and names.',
+      'Check checkMhz and write nothing for it.',
+      APPLIES,
+    ],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: true, note: 'the record and name of each plan slot' },
+    result: [{ channel: 1, rxMhz: '162.4', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
+    exits: [
+      { code: 0, when: 'every entry written and read back' },
+      { code: 2, when: 'a bad or unknown field, a channel outside 0..127 or a channel listed twice; the message and the channel and field details name the entry' },
+      EXIT_TRANSPORT,
+      EXIT_TIMEOUT,
+      { code: 5, when: 'no handshake, a bad reply, or a channel that did not take the write; the error carries slot and written, the channels verified before it' },
+      EXIT_BUSY,
+    ],
+    positionals: 1,
+    run: loadVerb,
+  },
+  read: {
+    summary: 'Print one channel record',
+    example: 'uv5r read 5',
+    args: [SLOT_ARG],
+    flags: COMMON_FLAGS,
+    effects: ['Read the record and name of slot N. An empty slot returns {"channel": N, "empty": true}.'],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: false, note: 'reads only' },
+    result: { channel: 5, ...CHANNEL_RECORD },
+    exits: sessionExits('printed the record', 'no handshake or a bad reply'),
+    positionals: 1,
+    run: readVerb,
+  },
+  erase: {
+    summary: 'Clear one channel record and its name',
+    example: 'uv5r erase 127',
+    args: [SLOT_ARG],
+    flags: COMMON_FLAGS,
+    effects: ['Write 0xFF over the record and name of slot N and read both back.', APPLIES],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: true, note: '0xFF over the record and name of slot N' },
+    result: { channel: 127, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
+    exits: sessionExits('erased and read back', 'no handshake, a bad reply, or a slot that reads back different'),
+    positionals: 1,
+    run: eraseVerb,
+  },
+  key: {
+    summary: 'Raise PTT for S seconds on the channel the radio display shows; ask the human what the display shows before keying',
+    example: 'uv5r key --seconds 2',
+    args: [],
+    flags: [{ name: 'seconds', value: 'S', required: true, help: `hold time, 0 < S <= ${MAX_KEY_SECONDS}` }, ...COMMON_FLAGS],
+    effects: [
+      'Raise PTT (DTR high, RTS low) for S seconds, then release it. The result reports the measured hold.',
+      'Transmit on the channel the radio display shows. The CLI cannot read the displayed channel; a receive-only slot radiates nothing.',
+      'Ctrl-C, SIGTERM or SIGHUP releases PTT, adds interrupted to the result and exits 128 plus the signal number.',
+    ],
+    preconditions: [
+      RADIO_READY,
+      'Ask the human what the display shows.',
+      'Key only when the human asked and the frequency is one they may transmit on.',
+    ],
+    writesToRadio: { writes: false, note: 'raises PTT only, which transmits on a TX-capable channel' },
+    result: { pttAsserted: true, seconds: 2.003, released: true },
+    exits: [
+      { code: 0, when: 'PTT asserted and released' },
+      EXIT_USAGE,
+      {
+        code: 3,
+        when: 'no device, a serial error or a PTT control failure; the error carries pttAsserted, released and phase, which is open when the port did not open. When released is false, ask the human to unplug the AIOC',
+      },
+      EXIT_BUSY,
+      { code: '128+signal', when: 'interrupted by a signal; PTT released' },
+    ],
+    positionals: 0,
+    run: keyVerb,
+  },
+  dump: {
+    summary: 'Save the full memory image',
+    example: 'uv5r dump --out radio.img',
+    args: [],
+    flags: [{ name: 'out', value: 'FILE', default: 'uv5r-YYYY-MM-DDTHH-MM-SS.img', help: 'image path' }, ...COMMON_FLAGS],
+    effects: ['Read the full memory image in CHIRP layout in one clone session, about 14 s, and write it to FILE.'],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: false, note: 'reads only; writes FILE on disk' },
+    result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011' },
+    exits: sessionExits('image written to FILE', 'no handshake or a bad reply').map((e) => (e.code === 2 ? { code: 2, when: `${e.when}; also FILE not writable` } : e)),
+    positionals: 0,
+    run: dumpVerb,
+  },
+  restore: {
+    summary: 'Write the main memory of an image back',
+    example: 'uv5r restore radio.img --force',
+    args: [{ name: 'IMAGE', help: `image from uv5r dump, at least ${MIN_IMAGE_BYTES} bytes` }],
+    flags: [{ name: 'force', required: true, help: 'confirm the bulk write' }, ...COMMON_FLAGS],
+    effects: [
+      'Write channels, names and settings from IMAGE, about 30 s.',
+      'In a fresh session, read back the settings block, the channel records 0x0000..0x07FF and the names 0x1000..0x17FF and compare them with IMAGE.',
+    ],
+    preconditions: [RADIO_READY, 'IMAGE comes from a radio with the same ident.'],
+    writesToRadio: { writes: true, note: 'channels, names and settings from IMAGE' },
+    result: { file: 'radio.img', blocks: 382, verifiedBlocks: 64, settings: SETTINGS_EXAMPLE },
+    exits: sessionExits(
+      'written and verified',
+      'no handshake, a bad reply, an ident mismatch, or a block that reads back different; the message names the first address',
+    ).map((e) => (e.code === 2 ? { code: 2, when: `${e.when}; also no --force, an unreadable IMAGE or a short one` } : e)),
+    positionals: 1,
+    run: restoreVerb,
+  },
+  settings: {
+    summary: 'Print the menu settings, or set fields',
+    example: 'uv5r settings voice eng beep on',
+    args: [{ name: 'FIELD VALUE ...', optional: true, help: 'pairs to set, by radio menu index or by name; fields lists them' }],
+    flags: COMMON_FLAGS,
+    effects: [
+      'With no pairs, read the eight fields.',
+      'With pairs, write and commit the settings block, wait for the reload, then read it back in a fresh session.',
+      'Squelch applies as soon as the session ends.',
+    ],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: true, note: 'the menu settings block, only when given FIELD VALUE pairs' },
+    result: SETTINGS_EXAMPLE,
+    exits: sessionExits('printed the settings', 'no handshake, a bad reply, or a block that reads back different'),
+    fields: Object.fromEntries(SETTING_NAMES.map((name) => [name, settingValues(name)])),
+    positionals: Infinity,
+    run: settingsVerb,
+  },
   listen: {
     summary: 'Capture receive audio from the AIOC and report dBFS, active, activeSeconds and warnings',
-    usage: 'listen --seconds 5 --out rx.wav --play',
+    example: 'uv5r listen --seconds 5 --out rx.wav --play',
+    args: [],
+    flags: [
+      { name: 'seconds', value: 'S', required: true, help: `capture time, whole number 1..${MAX_LISTEN_SECONDS}` },
+      DEVICE_FLAG,
+      FLOOR_FLAG,
+      { name: 'out', value: 'FILE', help: 'write the capture as a 48 kHz mono WAV and report out' },
+      { name: 'play', help: 'play the --out file through afplay after the capture; needs --out' },
+      ...OUTPUT_FLAGS,
+    ],
+    effects: [
+      'Capture receive audio with ffmpeg at 48 kHz mono and drop the first captured second.',
+      'Report rmsDbfs per second, meanRmsDbfs, peakDbfs, zeroSeconds, active, activeSeconds and warnings.',
+      'A second is active when its RMS is above the floor. A second of digital zero reads null.',
+    ],
+    preconditions: [AUDIO_READY],
+    writesToRadio: { writes: false, note: 'opens no serial port' },
+    result: { ...LISTEN_EXAMPLE, out: 'rx.wav' },
+    exits: [
+      { code: 0, when: 'captured' },
+      EXIT_USAGE,
+      { code: 3, when: 'ffmpeg missing or failed, a short capture, or an afplay failure' },
+    ],
     positionals: 0,
     run: listenVerb,
   },
   sweep: {
-    summary: 'Listen S seconds on each plan channel, prompting for the knob or writing each into --scratch N, and report the active ones',
-    usage: 'sweep channels.json --seconds 30',
+    summary: 'Check slot 0 with the plan checkMhz, then write each plan entry into slot 0, listen S seconds and report the active ones',
+    example: 'uv5r sweep channels.json --seconds 30',
+    args: [{ name: 'PLAN', help: 'plan JSON with a top-level checkMhz' }],
+    flags: [
+      { name: 'seconds', value: 'S', default: SWEEP_SECONDS, help: `dwell per entry, whole number 1..${MAX_LISTEN_SECONDS}` },
+      { name: 'out-dir', value: 'DIR', help: 'keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR' },
+      { name: 'play', help: 'play each active capture after its dwell; needs --out-dir' },
+      DEVICE_FLAG,
+      FLOOR_FLAG,
+      { name: 'verbose', help: 'write one JSON line per entry to stderr as each dwell ends' },
+      ...COMMON_FLAGS,
+    ],
+    effects: [
+      `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. A failed check exits 5 before any plan entry is written.`,
+      `For each entry in plan order, write it into slot 0 with its own TX setting, wait ${APPLIES_AFTER_SECONDS} s for the reload and capture --seconds.`,
+      'Print one summary on stdout: swept, seconds, active, warnings and slot0.',
+      'slot0 is {channel, name} of the last verified entry write, {channel: null, name} after only the check write, or null when unknown. Slot 0 keeps it after the run.',
+      'Read nothing from stdin.',
+    ],
+    preconditions: [RADIO_READY, AUDIO_READY, 'The human has set MR mode and selected slot 0.', 'The plan checkMhz carries audio at the location.'],
+    writesToRadio: { writes: true, note: 'slot 0, once for the check and once per plan entry; the last write stays' },
+    result: {
+      swept: 7,
+      seconds: SWEEP_SECONDS,
+      active: [{ channel: 1, slot: 0, name: 'NOAA', requestedMhz: '162.4', activeSeconds: 30 }],
+      warnings: [],
+      slot0: { channel: 7, name: 'SHERIFF' },
+    },
+    exits: [
+      { code: 0, when: 'every entry swept' },
+      { code: 2, when: `${EXIT_CODES['2']}; also a plan without checkMhz` },
+      { code: 3, when: 'no device, a serial error, or an ffmpeg or afplay failure; stdout holds the summary so far and the error carries written' },
+      { code: 4, when: 'no ack or a short read; stdout holds the summary so far and the error carries written' },
+      { code: 5, when: 'the check failed or a write did not take; stdout holds the summary so far and the error carries written' },
+      EXIT_BUSY,
+      { code: '128+signal', when: 'interrupted by a signal; the summary adds interrupted' },
+    ],
     positionals: 1,
     run: sweepVerb,
   },
 };
 
+const BOOLEAN_FLAGS = new Set(['help', 'version', ...Object.values(verbs).flatMap((v) => v.flags.filter((f) => !f.value).map((f) => f.name))]);
+/** Flags `uv5r` takes with no verb. */
+const TOP_FLAGS = ['help', 'version', 'json', 'text'];
+
+/** Return the flags `verb` takes, as the verbs table lists them. */
+function flagNames(verb: string): string[] {
+  return verbs[verb]!.flags.map((f) => f.name);
+}
+
+function isVerb(name: string): boolean {
+  return Object.hasOwn(verbs, name);
+}
+
+/** Return a short error for an unknown verb or help subject, with the verb list and the help command. */
+function unknownVerb(what: string, name: string): UsageError {
+  return new UsageError(`${what} ${JSON.stringify(name.slice(0, 40))}; verbs: ${Object.keys(verbs).join(', ')}; run uv5r help VERB`);
+}
+
+function packageVersion(): string {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string };
+  return pkg.version ?? 'unknown';
+}
+
 function helpText(): string {
   const width = Math.max(...Object.keys(verbs).map((v) => v.length));
-  const rows = Object.entries(verbs).map(([name, v]) => `  ${name.padEnd(width)}  ${v.summary}: ${v.usage}`);
   return [
-    'usage: uv5r <verb> [options]',
+    'usage: uv5r VERB [ARGS] [FLAGS]',
     '',
     'verbs:',
-    ...rows,
+    ...Object.entries(verbs).map(([name, v]) => `  ${name.padEnd(width)}  ${v.summary}`),
+    `  ${'help'.padEnd(width)}  Print this overview; help VERB prints one verb`,
     '',
-    'options:',
-    '  --json             print JSON (default when stdout is not a terminal)',
-    '  --text             print text',
-    '  --target PATH      serial device (default: UV5R_TARGET, else the AIOC found by USB id)',
-    '  --channel N        tune, check: channel to write, 0..127, as shown on the radio display (required)',
-    '  --offset MHZ       tune: repeater offset, signed: --offset -0.6',
-    '  --tone HZ          tune: TX CTCSS in Hz (82.5), DCS (D023, D023I) or none',
-    '  --rx-tone HZ       tune: RX tone; default none (carrier squelch)',
-    '  --narrow           tune: 12.5 kHz bandwidth (default wide)',
-    '  --low-power        tune: low TX power',
-    '  --rx-only          tune: receive only, TX inhibited; conflicts with --offset',
-    '  --name TEXT        tune: channel name, 7 chars (default the frequency)',
-    `  check              takes the tune flags, --device and --floor; --seconds S sets the listen time (default ${CHECK_SECONDS})`,
-    `  --seconds S        key: hold time, 0 < S <= ${MAX_KEY_SECONDS}; listen: capture time, whole number 1..${MAX_LISTEN_SECONDS} (required)`,
-    '  --out FILE         dump: output path (default uv5r-YYYY-MM-DDTHH-MM-SS.img); listen: write the capture as a 48 kHz mono WAV and report out',
-    '  --force            restore: confirm a bulk write',
-    `  --device NAME      listen: avfoundation audio device (default ${DEFAULT_AUDIO_DEVICE})`,
-    `  --floor DBFS       listen: a second is active when its RMS is above DBFS (default ${DEFAULT_FLOOR_DBFS}); sets active and activeSeconds`,
-    '  --play             listen: play the --out file through afplay after the capture; needs --out',
-    '  sweep              without --scratch: knob mode; reads every plan slot, exits 5 when one differs from the plan,',
-    '                     then prompts on stderr to turn the knob to each channel and waits for Enter; writes nothing; needs a terminal on stdin',
-    '  --scratch N        sweep: write each plan entry into slot N instead, 0..127, as in: sweep channels.json --scratch 0 --check 162.400',
-    '  --check MHZ        sweep --scratch: run check on the scratch slot with MHZ before the loop; silence exits 5',
-    '  --no-check         sweep --scratch: skip the check; one of --check and --no-check is required with --scratch',
-    `  sweep              --seconds S sets the dwell per entry (default ${SWEEP_SECONDS}); takes --device, --floor and --play`,
-    '  --out-dir DIR      sweep: keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR; --play needs it',
-    '  --verbose          sweep: write one JSON line per entry to stderr as each dwell ends',
+    'run uv5r help VERB for flags, defaults, effects, a result example and exit cases',
+    'run uv5r help --json or uv5r help VERB --json for the same as JSON; uv5r --version prints the version',
     '',
-    'settings fields, set by radio menu index or by name:',
-    ...SETTING_NAMES.map((name) => `  ${name.padEnd(8)} ${settingValues(name)}`),
+    'rules:',
+    ...Object.values(RULES).map((rule) => `  - ${rule}`),
     '',
-    'exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport, 4 timeout, 5 device-state, 6 busy, 128+signal key or sweep interrupted',
+    `output: ${OUTPUT_RULE}`,
+    '',
+    `errors: ${ERROR_GUIDANCE}`,
+    '',
+    `exit codes: ${Object.keys(EXIT_CODES)
+      .map((code) => `${code} ${code === '128+signal' ? 'key or sweep interrupted' : EXIT_CODES[code]!.split(':')[0]}`)
+      .join(', ')}`,
   ].join('\n');
+}
+
+function helpJson(): Record<string, unknown> {
+  return {
+    schemaVersion: HELP_SCHEMA_VERSION,
+    name: 'uv5r',
+    version: packageVersion(),
+    usage: 'uv5r VERB [ARGS] [FLAGS]',
+    output: OUTPUT_RULE,
+    rules: RULES,
+    errors: ERRORS_HELP,
+    exitCodes: EXIT_CODES,
+    verbs: Object.fromEntries(Object.entries(verbs).map(([name, v]) => [name, verbJson(name, v)])),
+  };
+}
+
+/** Print the overview, or one verb's entry; JSON only with an explicit --json. */
+function printHelp(flags: Map<string, string | true>, verb: string | undefined): void {
+  const json = flags.get('json') === true;
+  if (verb === undefined) process.stdout.write(`${json ? JSON.stringify(helpJson()) : helpText()}\n`);
+  else {
+    const doc = verbs[verb]!;
+    process.stdout.write(`${json ? JSON.stringify({ schemaVersion: HELP_SCHEMA_VERSION, ...verbJson(verb, doc) }) : verbText(verb, doc)}\n`);
+  }
+}
+
+/** Return --floor, or the default, and throw UsageError outside -100..0. */
+function floorFlag(flags: Map<string, string | true>, example: string): number {
+  const floor = numberFlag(flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
+  if (floor < MIN_FLOOR_DBFS || floor > MAX_FLOOR_DBFS) {
+    throw new UsageError(`--floor takes ${MIN_FLOOR_DBFS}..${MAX_FLOOR_DBFS} dBFS; got ${floor}, as in: ${example} --floor -40`, { flag: 'floor' });
+  }
+  return floor;
 }
 
 /** Pick JSON for --json or a non-terminal stdout, and text for --text or a terminal. */
@@ -234,17 +623,17 @@ function settingsPatch(positionals: string[]): Partial<Record<SettingName, numbe
 }
 
 async function statusVerb(args: Invocation): Promise<number> {
-  checkFlags('status', args.flags, COMMON);
+  checkFlags('status', args.flags, flagNames('status'));
   const status = await withTransport(args, (t) => withSession(t, readStatus));
   print(args, status, () => statusText(status));
   return EXIT.ok;
 }
 
 async function tuneVerb(args: Invocation): Promise<number> {
-  checkFlags('tune', args.flags, [...COMMON, ...TUNE_FLAGS]);
+  checkFlags('tune', args.flags, flagNames('tune'));
   const freq = args.positionals[0];
   if (!freq) throw new UsageError('tune needs a frequency in MHz, as in: tune 154.680 --channel 5');
-  if (!args.flags.has('channel')) throw new UsageError('tune needs --channel N: read the channel number off the radio display, as in: tune 154.680 --channel 5');
+  if (!args.flags.has('channel')) throw new UsageError('tune needs --channel N, the memory slot to write, as in: tune 154.680 --channel 0; run uv5r help tune for the channel rule');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
   const spec = channelSpec(freq, args.flags);
@@ -255,23 +644,28 @@ async function tuneVerb(args: Invocation): Promise<number> {
 }
 
 async function checkVerb(args: Invocation): Promise<number> {
-  checkFlags('check', args.flags, [...COMMON, ...TUNE_FLAGS, 'seconds', 'device', 'floor']);
+  for (const flag of ['offset', 'tone']) {
+    if (args.flags.has(flag)) {
+      throw new UsageError(`check writes a receive-only record and takes no --${flag}; drop it, as in: check 162.400 --channel 0`, { flag });
+    }
+  }
+  checkFlags('check', args.flags, flagNames('check'));
   const freq = args.positionals[0];
   if (!freq) throw new UsageError('check needs a frequency in MHz, as in: check 162.400 --channel 0');
-  if (!args.flags.has('channel')) throw new UsageError('check needs --channel N: read the channel number off the radio display, as in: check 162.400 --channel 0');
+  if (!args.flags.has('channel')) throw new UsageError('check needs --channel N, as in: check 162.400 --channel 0');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
   const spec = channelSpec(freq, args.flags);
   const seconds = numberFlag(args.flags, 'seconds') ?? CHECK_SECONDS;
-  if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
-    throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
+  if (!Number.isInteger(seconds) || seconds < MIN_CHECK_SECONDS || seconds > MAX_LISTEN_SECONDS) {
+    throw new UsageError(`check --seconds takes a whole number ${MIN_CHECK_SECONDS}..${MAX_LISTEN_SECONDS}; got ${seconds}`, { flag: 'seconds' });
   }
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
-  const floorDbfs = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
+  const floorDbfs = floorFlag(args.flags, 'uv5r check 162.400 --channel 0');
   const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device, seconds, floorDbfs }));
   print(args, result, () =>
     [
-      `ch ${result.channel}: rx ${result.rxMhz}`,
+      `slot ${result.slot}: requested ${result.requestedMhz}`,
       `active     ${result.activeSeconds} of ${result.active.length} s above ${floorDbfs} dBFS`,
       `timeline   ${result.active.map((on) => (on ? '#' : '.')).join('')}`,
       ...result.warnings.map((w) => `warning    ${w}`),
@@ -281,24 +675,32 @@ async function checkVerb(args: Invocation): Promise<number> {
 }
 
 async function loadVerb(args: Invocation): Promise<number> {
-  checkFlags('load', args.flags, COMMON);
-  const file = args.positionals[0];
-  if (!file) throw new UsageError('load needs a plan file, as in: load channels.json');
-  const plan = readPlan(file);
-  const written = await withTransport(args, (t) =>
-    withSession(t, async (s) => {
-      const records: ChannelResult[] = [];
-      for (const { channel, spec } of plan.entries) records.push(channelPayload(channel, await writeChannel(s, channel, spec)));
-      return records;
-    }),
-  );
+  checkFlags('load', args.flags, flagNames('load'));
+  const written: ChannelResult[] = [];
+  let slot: number | undefined;
+  try {
+    const file = args.positionals[0];
+    if (!file) throw new UsageError('load needs a plan file, as in: load channels.json');
+    const plan = readPlan(file);
+    await withTransport(args, (t) =>
+      withSession(t, async (s) => {
+        for (const { channel, spec } of plan.entries) {
+          slot = channel;
+          written.push(channelPayload(channel, await writeChannel(s, channel, spec)));
+        }
+      }),
+    );
+  } catch (err) {
+    // Name the slot that failed and the channels verified before it.
+    throw withDetail(err, { ...(slot === undefined ? {} : { slot }), written });
+  }
   const result = written.map((record) => ({ ...record, appliesAfterSeconds: APPLIES_AFTER_SECONDS }));
   print(args, result, () => result.map(channelText).join('\n'));
   return EXIT.ok;
 }
 
 async function readVerb(args: Invocation): Promise<number> {
-  checkFlags('read', args.flags, COMMON);
+  checkFlags('read', args.flags, flagNames('read'));
   const numText = args.positionals[0];
   if (numText === undefined) throw new UsageError('read needs a channel number 0..127, as in: read 5');
   const n = parseDecimal(numText, 'channel');
@@ -310,7 +712,7 @@ async function readVerb(args: Invocation): Promise<number> {
 }
 
 async function eraseVerb(args: Invocation): Promise<number> {
-  checkFlags('erase', args.flags, COMMON);
+  checkFlags('erase', args.flags, flagNames('erase'));
   const numText = args.positionals[0];
   if (numText === undefined) throw new UsageError('erase needs a channel number 0..127, as in: erase 127');
   const n = parseDecimal(numText, 'channel');
@@ -322,17 +724,25 @@ async function eraseVerb(args: Invocation): Promise<number> {
 }
 
 async function keyVerb(args: Invocation): Promise<number> {
-  checkFlags('key', args.flags, [...COMMON, 'seconds']);
+  checkFlags('key', args.flags, flagNames('key'));
   if (!args.flags.has('seconds')) throw new UsageError(`key needs --seconds S (max ${MAX_KEY_SECONDS}), as in: key --seconds 2`);
   const seconds = numberFlag(args.flags, 'seconds')!;
   if (seconds <= 0 || seconds > MAX_KEY_SECONDS) throw new UsageError(`--seconds takes 0 < S <= ${MAX_KEY_SECONDS}; got ${seconds}`);
-  const held = await withTransport(args, (t) => holdPtt(t, seconds));
+  let held: HoldResult;
+  try {
+    held = await withTransport(args, (t) => holdPtt(t, seconds));
+  } catch (err) {
+    const error = withDetail(err, {});
+    // Report an error from before holdPtt ran with PTT unconfirmed and no retry advice.
+    if (!('pttAsserted' in error.detail)) error.attach({ pttAsserted: false, released: false, phase: 'open' }, { retry: 'no' });
+    throw error;
+  }
   const signal = held.interrupted;
   if (signal) {
-    print(args, { keyed: true, seconds: held.seconds, interrupted: signal, released: true }, () => `keyed for ${held.seconds} s; interrupted by ${signal}; PTT released`);
+    print(args, held, () => `PTT asserted for ${held.seconds} s; interrupted by ${signal}; PTT released`);
     return signalExitCode(signal);
   }
-  print(args, { keyed: true, seconds: held.seconds }, () => `keyed for ${held.seconds} s`);
+  print(args, held, () => `PTT asserted for ${held.seconds} s; PTT released`);
   return EXIT.ok;
 }
 
@@ -343,7 +753,7 @@ function defaultDumpName(now = new Date()): string {
 }
 
 async function dumpVerb(args: Invocation): Promise<number> {
-  checkFlags('dump', args.flags, [...COMMON, 'out']);
+  checkFlags('dump', args.flags, flagNames('dump'));
   const out = stringFlag(args.flags, 'out') ?? defaultDumpName();
   const json = wantsJson(args.flags);
   const result = await withTransport(args, (t) =>
@@ -354,7 +764,7 @@ async function dumpVerb(args: Invocation): Promise<number> {
       try {
         writeFileSync(out, image);
       } catch (err) {
-        throw new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out });
+        throw new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
       }
       return { out, bytes: image.length, firmware: s.startedIdent.firmware };
     }),
@@ -364,7 +774,7 @@ async function dumpVerb(args: Invocation): Promise<number> {
 }
 
 async function restoreVerb(args: Invocation): Promise<number> {
-  checkFlags('restore', args.flags, [...COMMON, 'force']);
+  checkFlags('restore', args.flags, flagNames('restore'));
   const file = args.positionals[0];
   if (!file) throw new UsageError('restore needs an image file');
   if (!args.flags.get('force')) throw new UsageError('restore rewrites channels and settings; pass --force to confirm');
@@ -398,7 +808,7 @@ async function restoreVerb(args: Invocation): Promise<number> {
 }
 
 async function settingsVerb(args: Invocation): Promise<number> {
-  checkFlags('settings', args.flags, COMMON);
+  checkFlags('settings', args.flags, flagNames('settings'));
   const patch = settingsPatch(args.positionals);
   const result = await withTransport(args, async (t) => {
     if (Object.keys(patch).length === 0) return withSession(t, readSettings);
@@ -410,14 +820,14 @@ async function settingsVerb(args: Invocation): Promise<number> {
 }
 
 async function listenVerb(args: Invocation): Promise<number> {
-  checkFlags('listen', args.flags, ['json', 'text', 'seconds', 'device', 'floor', 'out', 'play']);
+  checkFlags('listen', args.flags, flagNames('listen'));
   if (!args.flags.has('seconds')) throw new UsageError(`listen needs --seconds S (max ${MAX_LISTEN_SECONDS}), as in: listen --seconds 5`);
   const seconds = numberFlag(args.flags, 'seconds')!;
   if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
     throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
   }
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
-  const floor = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
+  const floor = floorFlag(args.flags, 'uv5r listen --seconds 5');
   const out = stringFlag(args.flags, 'out');
   const play = args.flags.get('play') === true;
   if (play && out === undefined) throw new UsageError('--play needs --out FILE, as in: listen --seconds 5 --out rx.wav --play');
@@ -441,83 +851,102 @@ async function listenVerb(args: Invocation): Promise<number> {
   return EXIT.ok;
 }
 
+function slot0Text(slot0: Slot0 | null): string {
+  if (slot0 === null) return 'unknown';
+  return slot0.channel === null ? `check record ${slot0.name}` : `ch ${slot0.channel} ${slot0.name}`;
+}
+
 function sweepText(s: SweepSummary): string {
   return [
     `swept      ${s.swept} entries, ${s.seconds} s each${s.interrupted ? `; interrupted by ${s.interrupted}` : ''}`,
-    ...s.active.map((a) => `active     ch ${a.channel} ${a.name} rx ${a.rxMhz}: ${a.activeSeconds} s${a.out === undefined ? '' : ` ${a.out}`}`),
+    ...s.active.map((a) => `active     ch ${a.channel} ${a.name} requested ${a.requestedMhz}: ${a.activeSeconds} s${a.out === undefined ? '' : ` ${a.out}`}`),
     ...s.warnings.map((w) => `warning    ${w}`),
+    `slot 0     ${slot0Text(s.slot0)}`,
   ].join('\n');
 }
 
 async function sweepVerb(args: Invocation): Promise<number> {
-  checkFlags('sweep', args.flags, [...COMMON, 'scratch', 'check', 'no-check', 'seconds', 'device', 'floor', 'out-dir', 'play', 'verbose']);
-  const file = args.positionals[0];
-  if (!file) throw new UsageError('sweep needs a plan file, as in: sweep channels.json --seconds 30');
-  const n = args.flags.has('scratch') ? numberFlag(args.flags, 'scratch')! : undefined;
-  if (n !== undefined) checkChannelNumber(n);
-  const checkText = stringFlag(args.flags, 'check');
-  const noCheck = args.flags.get('no-check') === true;
-  if (n === undefined && (checkText !== undefined || noCheck)) {
-    throw new UsageError(`--check and --no-check need --scratch N; knob mode reads the plan slots instead, as in: sweep ${file} --seconds 30`);
-  }
-  if (checkText !== undefined && noCheck) throw new UsageError('--check and --no-check conflict; pass one');
-  if (n !== undefined && checkText === undefined && !noCheck) {
-    throw new UsageError(`sweep --scratch needs --check MHZ to confirm the radio is on slot ${n}, or --no-check, as in: sweep ${file} --scratch ${n} --check 162.400`);
-  }
-  const checkSpec = checkText === undefined ? undefined : channelSpec(checkText, new Map([['rx-only', true]]));
-  const seconds = numberFlag(args.flags, 'seconds') ?? SWEEP_SECONDS;
-  if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
-    throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
-  }
-  const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
-  const floorDbfs = numberFlag(args.flags, 'floor') ?? DEFAULT_FLOOR_DBFS;
-  const outDir = stringFlag(args.flags, 'out-dir');
-  const play = args.flags.get('play') === true;
-  if (play && outDir === undefined) throw new UsageError('--play needs --out-dir DIR, as in: sweep channels.json --out-dir rx --play');
-  const verbose = args.flags.get('verbose') === true;
-  if (n === undefined && !process.stdin.isTTY) {
-    throw new UsageError(`knob mode waits for Enter on a terminal and stdin is not one; pass --scratch N to sweep unattended, as in: sweep ${file} --scratch 0 --check 162.400`);
-  }
-  const plan = readPlan(file);
-  if (outDir !== undefined) {
-    try {
-      mkdirSync(outDir, { recursive: true });
-    } catch (err) {
-      throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
-    }
-  }
-  const options = { device, seconds, floorDbfs, outDir, play };
-  const onDwell = (record: DwellRecord) => {
-    if (verbose) process.stderr.write(`${JSON.stringify(record)}\n`);
-  };
+  checkFlags('sweep', args.flags, flagNames('sweep'));
+  const progress = newProgress();
+  let seconds = SWEEP_SECONDS;
+  let transportAsked = false;
   let summary: SweepSummary;
-  if (n === undefined) {
-    // Close the port after the read since knob mode never writes.
-    await withTransport(args, (t) => withSession(t, (s) => verifyPlanSlots(s, plan.entries, file)));
-    const lines = readLines(process.stdin);
-    try {
-      summary = await runSweep(plan.entries, knobSlot(lines, (text) => process.stderr.write(text)), options, onDwell);
-    } finally {
-      lines.close();
+  try {
+    const file = args.positionals[0];
+    if (!file) throw new UsageError('sweep needs a plan file, as in: sweep channels.json --seconds 30');
+    seconds = numberFlag(args.flags, 'seconds') ?? SWEEP_SECONDS;
+    if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
+      throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
     }
-  } else {
-    summary = await withTransport(args, async (t) => {
-      if (checkSpec) await checkChannel(t, n, checkSpec, { device, seconds: CHECK_SECONDS, floorDbfs });
-      return runSweep(plan.entries, scratchSlot(t, n), options, onDwell);
-    });
+    const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+    const floorDbfs = floorFlag(args.flags, 'uv5r sweep channels.json');
+    const outDir = stringFlag(args.flags, 'out-dir');
+    const play = args.flags.get('play') === true;
+    if (play && outDir === undefined) throw new UsageError('--play needs --out-dir DIR, as in: sweep channels.json --out-dir rx --play');
+    const verbose = args.flags.get('verbose') === true;
+    const plan = readPlan(file);
+    if (plan.checkHz === undefined) {
+      throw new UsageError(`${file} has no checkMhz; add a top-level "checkMhz" with a NOAA frequency that carries audio at the location, as in: "checkMhz": 162.400`, {
+        file,
+        field: 'checkMhz',
+      });
+    }
+    const checkSpec: ChannelSpec = { rxHz: plan.checkHz, txHz: undefined, rxOnly: true, txTone: { kind: 'none' }, rxTone: { kind: 'none' }, wide: true, lowPower: false };
+    if (outDir !== undefined) {
+      try {
+        mkdirSync(outDir, { recursive: true });
+      } catch (err) {
+        throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
+      }
+    }
+    const options = { device, seconds, floorDbfs, outDir, play };
+    const onDwell = (record: DwellRecord) => {
+      if (verbose) process.stderr.write(`${JSON.stringify(record)}\n`);
+    };
+    transportAsked = true;
+    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device, floorDbfs }), options, onDwell, progress));
+  } catch (err) {
+    if (transportAsked) {
+      // Print the finished dwells and slot 0 on stdout; cli prints the error with the verified writes on stderr.
+      const partial = summarize(progress, seconds);
+      print(args, partial, () => sweepText(partial));
+    }
+    throw withDetail(err, { written: progress.written });
   }
   print(args, summary, () => sweepText(summary));
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;
 }
 
 async function main(args: Invocation): Promise<number> {
-  if (!args.verb || args.verb === 'help' || args.flags.get('help')) {
-    process.stdout.write(`${helpText()}\n`);
+  if (!args.verb) {
+    for (const name of args.flags.keys()) {
+      if (!TOP_FLAGS.includes(name)) throw new UsageError(`unknown option --${name}; run uv5r help`, { flag: name });
+    }
+    if (args.flags.get('version')) {
+      const version = packageVersion();
+      process.stdout.write(`${args.flags.get('json') === true ? JSON.stringify({ version }) : version}\n`);
+      return EXIT.ok;
+    }
+    printHelp(args.flags, undefined);
     return EXIT.ok;
   }
-  const verb = Object.hasOwn(verbs, args.verb) ? verbs[args.verb] : undefined;
-  if (!verb) throw new UsageError(`unknown verb ${JSON.stringify(args.verb)}\n${helpText()}`);
-  checkPositionals(args.verb, args.positionals, verb.positionals, verb.usage);
+  if (args.verb === 'help') {
+    checkFlags('help', args.flags, ['help', 'json', 'text']);
+    checkPositionals('help', args.positionals, 1, 'uv5r help VERB');
+    const subject = args.positionals[0];
+    if (subject !== undefined && !isVerb(subject)) throw unknownVerb('unknown help subject', subject);
+    printHelp(args.flags, subject);
+    return EXIT.ok;
+  }
+  if (!isVerb(args.verb)) throw unknownVerb('unknown verb', args.verb);
+  const verb = verbs[args.verb]!;
+  if (args.flags.get('help')) {
+    checkFlags(args.verb, args.flags, [...flagNames(args.verb), 'help']);
+    checkPositionals(args.verb, args.positionals, verb.positionals, verb.example);
+    printHelp(args.flags, args.verb);
+    return EXIT.ok;
+  }
+  checkPositionals(args.verb, args.positionals, verb.positionals, verb.example);
   return verb.run(args);
 }
 
@@ -526,17 +955,17 @@ async function main(args: Invocation): Promise<number> {
  * The process exits on its own once stdout and stderr drain, so piped output arrives whole.
  */
 export async function cli(argv: string[], open: OpenTransport = openSerial): Promise<void> {
-  let flags = new Map<string, string | true>();
+  // Read --json and --text from argv so an error from parseArgs keeps the requested format.
+  let flags = new Map<string, string | true>(['json', 'text'].filter((name) => argv.includes(`--${name}`)).map((name) => [name, true]));
   try {
     const args = parseArgs(argv, BOOLEAN_FLAGS);
     flags = args.flags;
     process.exitCode = await main({ ...args, open });
   } catch (err) {
-    const kind = errorKind(err);
-    const body = err instanceof BaofengError ? err.toJSON() : { kind, message: err instanceof Error ? err.message : String(err) };
-    if (wantsJson(flags)) process.stderr.write(`${JSON.stringify(body)}\n`);
-    else process.stderr.write(`uv5r: ${body.message}\n`);
-    process.exitCode = exitCodeFor(kind);
+    const error = err instanceof BaofengError ? err : new UnexpectedError(err instanceof Error ? err.message : String(err));
+    if (wantsJson(flags)) process.stderr.write(`${JSON.stringify(error)}\n`);
+    else process.stderr.write(`uv5r: ${error.message}\nremedy: ${error.remedy} (retry: ${error.retry})\n`);
+    process.exitCode = exitCodeFor(error.kind);
   }
 }
 

@@ -7,6 +7,10 @@ import type { Transport } from './transport.ts';
 
 /** Seconds `check` listens when the caller gives no length. */
 export const CHECK_SECONDS = 5;
+/** Fewest seconds `check` listens; the 80% rule needs at least 4 active of 5. */
+export const MIN_CHECK_SECONDS = 5;
+/** Share of captured seconds a passing check has active. */
+export const CHECK_ACTIVE_SHARE = 0.8;
 
 export interface CheckOptions {
   /** avfoundation audio input to capture from. */
@@ -17,19 +21,46 @@ export interface CheckOptions {
   floorDbfs: number;
 }
 
-export type CheckResult = { channel: number; rxMhz: string } & ListenResult;
+export type CheckResult = { slot: number; requestedMhz: string } & ListenResult;
+
+/** Return `spec` as a receive-only record with no TX frequency. */
+export function receiveOnly(spec: ChannelSpec): ChannelSpec {
+  return { ...spec, rxOnly: true, txHz: undefined };
+}
+
+/** Return the active seconds a capture of `seconds` needs to pass a check. */
+export function neededSeconds(seconds: number): number {
+  return Math.ceil(CHECK_ACTIVE_SHARE * seconds);
+}
 
 /**
- * Prove the radio is parked on slot `n` in MR mode. Write `spec` into slot `n` in one
- * clone session, wait for the radio to reload, then listen. Return the listen result with
- * `channel` and `rxMhz` when any second is active. Throw a DeviceStateError on silence,
- * since a radio in VFO mode or on another slot never plays the written frequency.
+ * Judge a capture taken after writing `spec` into slot `n`. Return it with `slot` and
+ * `requestedMhz` when at least 80% of its seconds are active. Throw a DeviceStateError
+ * that lists the causes otherwise. A pass means audio above the floor after writing slot
+ * `n`, consistent with the radio receiving slot `n`; the received frequency stays unverified.
+ */
+export function judgeCheck(n: number, spec: ChannelSpec, heard: ListenResult): CheckResult {
+  const result = { slot: n, requestedMhz: formatMhz(spec.rxHz), ...heard };
+  const total = heard.active.length;
+  const needed = neededSeconds(total);
+  if (total > 0 && heard.activeSeconds >= needed) return result;
+  throw new DeviceStateError(
+    'audio-inactive',
+    `slot ${n}: ${heard.activeSeconds} of ${total} s active after writing ${result.requestedMhz} MHz, check needs ${needed}; ` +
+      `causes: VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency; ` +
+      `ask the human to set MR mode and select slot ${n}`,
+    result,
+    { remedy: `ask the human to set MR mode and select slot ${n}` },
+  );
+}
+
+/**
+ * Write `spec` into slot `n` as a receive-only record in one clone session, wait for the
+ * reload, then listen and judge the capture with judgeCheck. Slot `n` keeps the
+ * receive-only record after the call, also when the capture fails.
  */
 export async function checkChannel(t: Transport, n: number, spec: ChannelSpec, options: CheckOptions): Promise<CheckResult> {
-  await withSession(t, (s) => writeChannel(s, n, spec));
+  await withSession(t, (s) => writeChannel(s, n, receiveOnly(spec)));
   await settle();
-  const heard = await listen(options.device, options.seconds, options.floorDbfs);
-  const result = { channel: n, rxMhz: formatMhz(spec.rxHz), ...heard };
-  if (result.activeSeconds > 0) return result;
-  throw new DeviceStateError(`no audio on channel ${n}: set MR mode and select ${n}`, result);
+  return judgeCheck(n, spec, await listen(options.device, options.seconds, options.floorDbfs));
 }

@@ -5,147 +5,56 @@ description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and t
 
 # uv5r
 
-`tune` writes a frequency into the memory channel given by `--channel`. The radio applies
-it about 3 s after the command ends.
+Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
-Run commands from the repo root. `uv5r` below means `node src/main.ts`.
+## Find help
+
+- `uv5r help` lists the verbs, the operating rules and the exit codes.
+- `uv5r help VERB` prints a verb's flags, defaults, effects, preconditions, result example
+  and exit cases. `uv5r help VERB --json` prints the same as JSON.
+- Read `uv5r help VERB --json` before the first run of a verb in a session.
 
 ## Operating rules
 
 - Do not open, `cat`, `screen` or `stty` the serial port.
-- Run one verb at a time.
-- Start every task with `uv5r status`.
-- Exit 2 means bad input. Read `message` and fix the command.
-- Exit 3 means a transport error. Read `kind` and `message` before choosing a remedy.
-  - No AIOC found or no device at the path: ask the human to reseat the cable, or pass
-    `--target`.
-  - Serial error: ask the human to reseat the cable.
-  - ffmpeg missing from PATH: run `brew install ffmpeg`.
-  - ffmpeg failed or timed out: read `message` and check `--device`.
-  - Short capture: retry `listen` once, then check the AIOC audio device is listed.
-  - afplay missing or failed: read `message`; the WAV at `file` is still on disk.
-- Exit 4 means a timeout: no ack or a short read. Retry the verb once, then ask the human
-  to check the radio is on.
-- Exit 5 means the radio did not answer, gave a bad reply, refused a write, failed
-  verification, or holds a different ident than the image. Read `message` and the detail
-  fields first. Check the input, such as the image file, before asking the human to check
-  the radio is on and the cable is seated.
-- Exit 6 means the port is busy. Another process such as CHIRP or a terminal holds it. Ask
-  the human to close it.
-- Before changing what the radio is parked on, run `uv5r check 162.400 --channel 0` once
-  per session with a NOAA weather frequency that carries audio at the location. Exit 0
-  means the radio is in MR mode on slot 0; call it N. On exit 5, ask the human to set MR
-  mode and read the channel number off the display. Call it N, run
-  `uv5r check 162.400 --channel N` and pass `--channel N` to `tune`.
-- Writing a plan or any other slot uses that slot's own number.
-- Write a plan file with one `uv5r load PLAN.json`. Exit 2 names the channel and field to
-  fix in the plan. Exit 5 names the channel that did not take the write.
+- Run one verb at a time. Start a task with `uv5r status`.
+- `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
+- Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0.
+  `tune` and `load` write any slot.
+- Run `uv5r check 162.400 --channel 0` once per session before tuning slot 0, with a NOAA
+  frequency that carries audio at the location. Exit 0 means audio above the floor after
+  writing slot 0, consistent with the radio receiving slot 0. Exit 5 lists the causes: VFO
+  mode, another slot selected, volume knob down, plug unseated, quiet frequency. Ask the
+  human to set MR mode and select slot 0, then check again.
+- After a `check` write, the slot keeps the receive-only record. After `sweep`, slot 0
+  keeps the write that `slot0` names; `null` means unknown. Nothing restores slot 0.
+- Ask the human to set MR mode and select slot 0 before a sweep, then run
+  `uv5r sweep channels.json --seconds 30 --out-dir rx --play`.
+- Write a plan to its own slots with one `uv5r load PLAN.json`.
 - Write public-safety listening channels with `--rx-only`.
-- Trust the display for the active channel. `status` channelA and channelB come from
-  EEPROM and may differ from it.
-- Run verbs back to back. The CLI retries the handshake once.
-- Output is JSON when piped. `--json` is optional.
-- `key` transmits on whatever the radio is tuned to. Key only when the human asked and the
-  frequency is one they may transmit on.
+- Trust the display for the active channel. `status` reads `channelA` and `channelB` from
+  EEPROM.
+- The radio speaker is silent while the AIOC is plugged in. The human hears receive audio
+  only through `uv5r listen --seconds 5 --out FILE --play` or
+  `uv5r sweep PLAN --out-dir DIR --play`.
+- The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for
+  the handshake retry.
+- On the `input clips` warning, ask the human to turn the volume knob down, then listen
+  again.
+- `key` raises PTT on the channel the radio display shows. The CLI cannot read that
+  channel, and a receive-only slot radiates nothing. Key only when the human asked and the
+  frequency is one they may transmit on, after asking the human what the display shows.
 
-## Verbs
+## On a failed command
 
-```sh
-uv5r status
-uv5r tune 154.680 --channel 5
-uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
-uv5r tune 462.5625 --channel 5 --narrow --low-power
-uv5r tune 154.695 --channel 7 --narrow --rx-only --name "SHERIFF"
-uv5r check 162.400 --channel 0
-uv5r load channels.json
-uv5r read 5
-uv5r erase 127
-uv5r key --seconds 2
-uv5r dump --out radio.img
-uv5r restore radio.img --force
-uv5r settings
-uv5r settings voice eng beep on
-uv5r listen --seconds 5
-uv5r listen --seconds 5 --out rx.wav --play
-uv5r listen --seconds 5 --floor -40
-uv5r sweep channels.json --seconds 30
-uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx --play --verbose
-```
-
-`status` reports `squelch`, `voice`, `beep` and `abr`. Reports say `voice off` or `beep off`
-mutes receive audio on this firmware family; set them back with `settings` before chasing
-audio elsewhere. `listen` reports dBFS from the AIOC. The bare AIOC floor at 1x gain reads about
--66; open-squelch static reads well above -30. A floor reading with squelch 0 means the
-volume knob is down or the 2.5 mm plug is short of its contact. `peakDbfs` above 0 means
-the knob is too high and the input clips; aim for static around -20 to -12. Seconds of digital zero come back as `null`
-in `rmsDbfs` and count in `zeroSeconds`. Denied microphone permission for the terminal is
-one cause.
-
-`listen` drops the first captured second, which holds a capture-start burst, from every
-field. `active` lists one true or false per second, aligned with `rmsDbfs`, and
-`activeSeconds` counts the true entries. A second is active when its RMS is above -50 dBFS.
-`--floor DBFS` sets another threshold. `warnings` holds
-`input clips: turn the volume knob down` when more than 1 percent of samples sit at full
-scale. Ask the human to turn the knob down, then listen again.
-
-To let the human hear what came in, run `listen --out FILE --play`. `--out` writes the
-analysed seconds as a 48 kHz mono WAV and the result carries `out`. `--play` plays it
-through `afplay` after the capture and needs `--out`.
-
-`check` writes the frequency into slot N like `tune`, waits 3 s for the reload, listens
-5 s and returns the `listen` fields plus `channel` and `rxMhz`. It takes the `tune` flags,
-`--device`, `--floor` and `--seconds`. Silence exits 5 with
-`no audio on channel N: set MR mode and select N`.
-
-## Sweep a plan
-
-Run one `sweep` to listen across a plan. It replaces the per-channel shell loop of
-`tune`, `read 0` and `listen` from the 2026-10-18 run. `sweep` has two modes.
-
-### Knob mode: the plan is loaded and a human turns the knob
-
-```sh
-uv5r load channels.json
-uv5r sweep channels.json --seconds 30 --out-dir rx --play
-```
-
-- Knob mode writes nothing to the radio. It reads every plan slot first. Exit 5 names the
-  channel that differs and carries `plan` and `radio` records. Run `uv5r load
-  channels.json`, then rerun the sweep.
-- At each entry it prints `turn the knob to channel N (NAME) and press Enter` on stderr
-  and waits. The radio stays in MR mode for the whole run.
-- Knob mode needs a terminal on stdin. A Bash tool call has piped stdin and exits 2. Give
-  the human the command to run in their own terminal and read the summary they paste back,
-  or use scratch mode.
-
-### Scratch mode: no human at the knob
-
-```sh
-uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 30 --out-dir rx --play --verbose
-```
-
-- `--scratch 0` writes each plan entry into slot 0 in turn. Use the N that `check` proved.
-- `--check 162.400` runs `check` on slot N before the loop. Exit 5 means the radio is off
-  slot N; follow the `check` rule above, then rerun with `--scratch N`. Pass `--no-check`
-  when `check` already passed on N this session. One of the two is required with
-  `--scratch` and exits 2 without it.
-- Each entry adds about 3 s of write and reload to the dwell.
-- Slot N holds the last plan entry afterwards. Run `uv5r load channels.json` to put the
-  plan in its own slots.
-
-### Both modes
-
-- `--seconds` sets the dwell per entry, default 30. `afplay` time adds to it for an active
-  capture.
-- `--out-dir rx` keeps one WAV per entry, such as `rx/ch07-2026-10-18T00-15-00.wav`.
-  `--play` plays the active ones after their dwell and needs `--out-dir`.
-- `--verbose` writes one JSON line per entry to stderr as each dwell ends. Read it to
-  follow a long sweep.
-- stdout is one object: `swept`, `seconds`, `active` and `warnings`. Each `active` item has
-  `channel`, `name`, `rxMhz`, `activeSeconds` and `out`. Each warning starts with
-  `channel N:`.
-- Ctrl-C ends the loop. The summary still prints for the finished entries, with
-  `interrupted`, and the exit code is 130.
-
-Frequencies in MHz, 136-174 or 400-520. Tones: `82.5`, `D023`, `D023I`, `none`.
-`scenarios/big-sky-2026-10.json` holds the Big Sky channel list and sweep windows.
+- A failed command prints one error object on stderr with `kind`, `reason`, `message`,
+  `remedy`, `retry` and detail fields when output is JSON, piped or with `--json`, and the
+  message plus a remedy line as text on a terminal. An exit of 128 plus a signal number
+  prints the result on stdout with `interrupted` and no error. Act on `reason`, `remedy`
+  and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
+- `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun the
+  same command once. `after-remedy`: rerun after doing the remedy.
+- `load` and `sweep` errors carry `written`, the fully verified writes in order.
+  `recordWritten: true` means the record took the write and the name is unverified.
+- A `key` error carries `pttAsserted`, `released` and `phase`. When `released` is false,
+  ask the human to unplug the AIOC. After a failed key, report and wait for the human.

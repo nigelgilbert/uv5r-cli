@@ -77,53 +77,87 @@ describe('check', () => {
     listenMock.mockImplementation(async () => {
       writesAtListen = [...radio.writes];
       listenAt = Date.now();
-      return heard([false, true, true, false, true]);
+      return heard([true, true, false, true, true]);
     });
-    await run(['check', '162.400', '--channel', '0', '--rx-only', '--json'], opener(radio));
+    await run(['check', '162.400', '--channel', '0', '--json'], opener(radio));
     expect(process.exitCode).toBe(0);
     expect(writesAtListen).toEqual([0x0000, 0x1000]);
     expect(listenAt - lastSerialAt).toBeGreaterThanOrEqual(SETTLE_MS);
     expect(listenMock).toHaveBeenCalledWith('AIOC Audio', 5, -50);
-    expect(outJson()).toMatchObject({ channel: 0, rxMhz: '162.4', activeSeconds: 3, active: [false, true, true, false, true] });
+    const out = outJson();
+    expect(out).toMatchObject({ slot: 0, requestedMhz: '162.4', activeSeconds: 4, active: [true, true, false, true, true] });
+    expect(out).not.toHaveProperty('channel');
+    expect(out).not.toHaveProperty('rxMhz');
+  });
+
+  it.each([
+    [[true, true, true, true, false], 0],
+    [[true, false, true, false, true], 5],
+    [[true, true, true, true, true, true, true, true, false, false], 0],
+    [[true, true, true, true, true, true, true, false, false, false], 5],
+  ])('needs 80%% of the seconds active: %j exits %i', async (active, exit) => {
+    listenMock.mockResolvedValue(heard(active));
+    await run(['check', '162.400', '--channel', '0', '--seconds', String(active.length), '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(exit);
   });
 
   it('passes --seconds, --device and --floor to listen', async () => {
-    listenMock.mockResolvedValue(heard([true, true]));
-    await run(['check', '162.400', '--channel', '3', '--seconds', '2', '--device', '1', '--floor', '-40', '--json'], opener(new FakeRadio()));
+    listenMock.mockResolvedValue(heard([true, true, true, true, true, true]));
+    await run(['check', '162.400', '--channel', '3', '--seconds', '6', '--device', '1', '--floor', '-40', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
-    expect(listenMock).toHaveBeenCalledWith('1', 2, -40);
-    expect(outJson()).toMatchObject({ channel: 3, rxMhz: '162.4', activeSeconds: 2 });
+    expect(listenMock).toHaveBeenCalledWith('1', 6, -40);
+    expect(outJson()).toMatchObject({ slot: 3, requestedMhz: '162.4', activeSeconds: 6 });
   });
 
-  it('exits 5 with the MR mode message when the channel is silent', async () => {
-    listenMock.mockResolvedValue(heard([false, false, false, false, false]));
+  it('writes a receive-only record whatever tune flags it gets', async () => {
+    const radio = new FakeRadio();
+    listenMock.mockResolvedValue(heard([true, true, true, true, true]));
+    await run(['check', '162.400', '--channel', '0', '--low-power', '--narrow', '--name', 'WX', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    stdout = [];
+    radio.dropSession();
+    await run(['read', '0', '--json'], opener(radio));
+    expect(outJson()).toMatchObject({ channel: 0, rxMhz: '162.4', txMhz: null, bandwidth: 'narrow', name: 'WX' });
+  });
+
+  it('exits 5 listing the causes when too few seconds are active', async () => {
+    listenMock.mockResolvedValue(heard([true, false, true, false, true]));
     await run(['check', '162.400', '--channel', '0', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(5);
     expect(errJson()).toMatchObject({
       kind: 'device-state',
-      message: 'no audio on channel 0: set MR mode and select 0',
-      channel: 0,
-      rxMhz: '162.4',
-      activeSeconds: 0,
+      reason: 'audio-inactive',
+      remedy: 'ask the human to set MR mode and select slot 0',
+      retry: 'after-remedy',
+      message:
+        'slot 0: 3 of 5 s active after writing 162.4 MHz, check needs 4; causes: VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency; ask the human to set MR mode and select slot 0',
+      slot: 0,
+      requestedMhz: '162.4',
+      activeSeconds: 3,
     });
     expect(stdout).toEqual([]);
   });
 
   it.each([
-    [['check', '--channel', '0']],
-    [['check', '162.400']],
-    [['check', '162.400', '--channel', '0', '--seconds', '2.5']],
-  ])('exits 2 on %j before opening the transport', async (argv) => {
+    [['check', '--channel', '0'], 'frequency'],
+    [['check', '162.400'], '--channel'],
+    [['check', '162.400', '--channel', '0', '--seconds', '2.5'], '--seconds'],
+    [['check', '162.400', '--channel', '0', '--seconds', '1'], '5..600'],
+    [['check', '162.400', '--channel', '0', '--seconds', '4'], '5..600'],
+    [['check', '162.400', '--channel', '0', '--seconds', '601'], '5..600'],
+    [['check', '162.400', '--channel', '0', '--offset', '0.6'], '--offset'],
+    [['check', '162.400', '--channel', '0', '--tone', '82.5'], '--tone'],
+  ])('exits 2 on %j before opening the transport', async (argv, text) => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson().kind).toBe('usage');
+    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining(text) });
     expect(open.calls).toBe(0);
     expect(listenMock).not.toHaveBeenCalled();
   });
 
-  it('lists check in the help text', async () => {
-    await cli(['help']);
+  it('prints the check example in help check', async () => {
+    await cli(['help', 'check']);
     expect(stdout.join('')).toContain('check 162.400 --channel 0');
   });
 });

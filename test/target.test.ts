@@ -17,7 +17,7 @@ describe('resolveTarget', () => {
   });
 
   it('rejects with a transport error when no AIOC is found', async () => {
-    await expect(resolveTarget(undefined)).rejects.toMatchObject({ kind: 'transport' });
+    await expect(resolveTarget(undefined)).rejects.toMatchObject({ kind: 'transport', reason: 'device-unavailable' });
   });
 
   it('returns the discovered AIOC port or its callout twin', async () => {

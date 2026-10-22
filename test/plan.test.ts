@@ -53,6 +53,24 @@ describe('parsePlan', () => {
     expect(() => parsePlan({ channels: [{ channel: 2, rxMhz: 146.52 }, { channel: 2, rxMhz: 146.52 }] })).toThrow('plan channel 2: listed twice');
   });
 
+  it('reads checkMhz as checkHz and leaves it out when absent', () => {
+    expect(parsePlan({ checkMhz: 162.55, channels: [{ channel: 1, rxMhz: 162.4 }] }).checkHz).toBe(162_550_000);
+    expect(parsePlan({ checkMhz: '162.400', channels: [{ channel: 1, rxMhz: 162.4 }] }).checkHz).toBe(162_400_000);
+    expect(parsePlan({ channels: [{ channel: 1, rxMhz: 162.4 }] })).not.toHaveProperty('checkHz');
+  });
+
+  it.each([[300], [162.400005], ['loud'], [true]])('rejects checkMhz %j naming checkMhz', (checkMhz) => {
+    let err: unknown;
+    try {
+      parsePlan({ checkMhz, channels: [{ channel: 1, rxMhz: 162.4 }] });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(UsageError);
+    expect((err as UsageError).message).toMatch(/^plan checkMhz: /);
+    expect((err as UsageError).detail).toMatchObject({ field: 'checkMhz' });
+  });
+
   it('rejects a plan with no channels array', () => {
     expect(() => parsePlan({ name: 'x' })).toThrow(UsageError);
   });

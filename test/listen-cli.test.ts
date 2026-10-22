@@ -65,15 +65,24 @@ describe('listen --out and --play', () => {
     ]);
   });
 
+  it('accepts --floor at both ends of -100..0', async () => {
+    for (const floor of ['-100', '0']) {
+      stdout = [];
+      await cli(['listen', '--seconds', '3', '--floor', floor, '--json']);
+      expect(process.exitCode).toBe(0);
+      expect(outJson()).toMatchObject({ seconds: 3 });
+    }
+  });
+
   it('leaves out off the JSON result without --out', async () => {
     await cli(['listen', '--seconds', '3', '--json']);
     expect(outJson()).not.toHaveProperty('out');
   });
 
-  it('names --out and --play in the help text', async () => {
-    await cli(['help']);
+  it('names --out and --play in help listen', async () => {
+    await cli(['help', 'listen']);
     const help = stdout.join('');
-    expect(help).toMatch(/--out FILE .*listen: write the capture as a 48 kHz mono WAV/);
-    expect(help).toMatch(/--play .*needs --out/);
+    expect(help).toMatch(/--out FILE +write the capture as a 48 kHz mono WAV/);
+    expect(help).toMatch(/--play +play .*needs --out/);
   });
 });

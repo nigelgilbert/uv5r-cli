@@ -227,12 +227,19 @@ export function play(file: string, seconds: number): Promise<void> {
         return;
       }
       if (e.code === 'ENOENT') {
-        reject(new TransportError(`afplay not found on PATH; cannot play ${file}`, { file }));
+        reject(new TransportError('dependency-missing', `afplay not found on PATH; cannot play ${file}`, { file }, { remedy: 'drop --play; the WAV at file is on disk' }));
         return;
       }
       const tail = stderrTail(stderr);
       const how = e.killed && e.signal ? `timed out after ${timeoutMs / 1000}s` : e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
-      reject(new TransportError(`afplay ${how} playing ${file}${tail ? `: ${tail}` : ''}`, { file, code: e.code ?? null, signal: e.signal ?? null }));
+      reject(
+        new TransportError(
+          'audio-process-failed',
+          `afplay ${how} playing ${file}${tail ? `: ${tail}` : ''}`,
+          { file, code: e.code ?? null, signal: e.signal ?? null },
+          { remedy: 'drop --play and rerun; the WAV at file is on disk' },
+        ),
+      );
     });
   });
 }
@@ -244,14 +251,14 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
     execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
       const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null }) | null;
       if (e?.code === 'ENOENT') {
-        reject(new TransportError('ffmpeg not found on PATH; install it with brew install ffmpeg'));
+        reject(new TransportError('dependency-missing', 'ffmpeg not found on PATH; install it with brew install ffmpeg', {}, { remedy: 'run brew install ffmpeg' }));
         return;
       }
       const tail = stderrTail(stderr);
       const suffix = tail ? `: ${tail}` : '';
       if (e) {
         const how = e.killed && e.signal ? `timed out after ${timeoutMs / 1000}s` : e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
-        reject(new TransportError(`ffmpeg ${how} capturing from ${JSON.stringify(device)}${suffix}`, { device, code: e.code ?? null, signal: e.signal ?? null }));
+        reject(new TransportError('audio-process-failed', `ffmpeg ${how} capturing from ${JSON.stringify(device)}${suffix}`, { device, code: e.code ?? null, signal: e.signal ?? null }));
         return;
       }
       const levels = parseAstats(stderr);
@@ -259,7 +266,7 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
       const captured = wholeSeconds(levels);
       const needed = seconds + 1;
       if (captured < needed) {
-        reject(new TransportError(`ffmpeg captured ${captured} of ${needed} seconds from ${JSON.stringify(device)}${suffix}`, { device, captured, requested: needed }));
+        reject(new TransportError('capture-incomplete', `ffmpeg captured ${captured} of ${needed} seconds from ${JSON.stringify(device)}${suffix}`, { device, captured, requested: needed }));
         return;
       }
       resolve(summarize(device, seconds, levels, floorDbfs));
