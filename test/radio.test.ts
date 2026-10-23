@@ -106,7 +106,6 @@ describe('channels', () => {
     const err = await writeChannel(s, 5, { rxHz: 154_680_000, name: 'SHERIFF' }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BaofengError);
     expect((err as BaofengError).toJSON()).toMatchObject({
-      kind: 'device-state',
       reason: 'verification-failed',
       message: 'channel 5 record written; name did not take the write',
       remedy: 'read channel 5; rerun the write to fix the name',
@@ -122,7 +121,7 @@ describe('channels', () => {
     await s.start();
     const err = await writeChannel(s, 5, { rxHz: 154_680_000, name: 'SHERIFF' }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BaofengError);
-    expect((err as BaofengError).toJSON()).toMatchObject({ kind: 'timeout', reason: 'serial-timeout' });
+    expect((err as BaofengError).toJSON()).toMatchObject({ reason: 'serial-timeout' });
     expect((err as BaofengError).detail).not.toHaveProperty('recordWritten');
     expect([...radio.eeprom.subarray(5 * 16, 6 * 16)]).toEqual([...encodeChannel({ rxHz: 154_680_000 })]);
     expect(radio.writes).toEqual([5 * 16, 0x1000 + 5 * 16]);

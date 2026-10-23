@@ -74,7 +74,7 @@ describe('holdPtt', () => {
     const err = await pending.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     const body = (err as TransportError).toJSON();
-    expect(body).toMatchObject({ kind: 'transport', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT', interrupted: 'SIGINT' });
+    expect(body).toMatchObject({ reason: 'ptt-control-failed', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT', interrupted: 'SIGINT' });
     expect(body).not.toHaveProperty('phase');
     expect(body).not.toHaveProperty('pttAsserted');
     expect(body).not.toHaveProperty('released');
@@ -134,7 +134,7 @@ describe('key verb', () => {
     expect(res.status).toBe(3);
     expect(res.stdout).toBe('');
     const err = JSON.parse(res.stderr.trim());
-    expect(err).toMatchObject({ kind: 'transport', reason: 'device-unavailable', retry: 'after-remedy' });
+    expect(err).toMatchObject({ reason: 'device-unavailable', retry: 'after-remedy' });
     expect(err).not.toHaveProperty('pttAsserted');
     expect(err).not.toHaveProperty('released');
     expect(err).not.toHaveProperty('phase');

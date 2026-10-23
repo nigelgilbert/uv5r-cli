@@ -76,8 +76,8 @@ the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` 
 as JSON.
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. A failed
-command prints nothing on stdout and one error object on stderr with `kind`, `reason`,
-`message`, `remedy`, `retry` and detail fields when output is JSON, piped or with `--json`.
+command prints nothing on stdout and one error object on stderr with `reason`, `message`,
+`remedy`, `retry` and detail fields when output is JSON, piped or with `--json`.
 On a terminal it prints the message and a remedy line as text. An exit of 128 plus a signal
 number prints the result on stdout with `interrupted` and no error. Act on `reason`,
 `remedy` and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.

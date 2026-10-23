@@ -105,7 +105,7 @@ const EXIT_CODES: Record<string, string> = {
 };
 
 const ERROR_GUIDANCE =
-  'A failed command prints one error object on stderr with kind, reason, message, remedy, retry and detail fields when output is JSON, piped or with --json. ' +
+  'A failed command prints one error object on stderr with reason, message, remedy, retry and detail fields when output is JSON, piped or with --json. ' +
   'On a terminal it prints the message and a remedy line as text. ' +
   'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
   'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +

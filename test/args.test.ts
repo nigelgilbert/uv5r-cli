@@ -49,8 +49,8 @@ describe('cli', () => {
       encoding: 'utf8',
     });
     expect(r.status).toBe(2);
-    const body = JSON.parse(r.stderr.trim()) as { kind: string; message: string };
-    expect(body.kind).toBe('usage');
+    const body = JSON.parse(r.stderr.trim()) as { reason: string; message: string };
+    expect(body.reason).toBe('invalid-argument');
     expect(body.message).toBe('--force takes no value');
   });
 });

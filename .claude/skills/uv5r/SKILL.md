@@ -47,9 +47,9 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
 ## On a failed command
 
-- A failed command prints nothing on stdout and one error object on stderr with `kind`,
-  `reason`, `message`, `remedy`, `retry` and detail fields when output is JSON, piped or
-  with `--json`, and the message plus a remedy line as text on a terminal. An exit of 128
+- A failed command prints nothing on stdout and one error object on stderr with `reason`,
+  `message`, `remedy`, `retry` and detail fields when output is JSON, piped or with
+  `--json`, and the message plus a remedy line as text on a terminal. An exit of 128
   plus a signal number prints the result on stdout with `interrupted` and no error. Act on
   `reason`, `remedy` and `retry`; `uv5r help --json` lists each reason and retry value
   under `errors`.

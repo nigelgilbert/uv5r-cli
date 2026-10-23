@@ -91,7 +91,7 @@ describe('cli exit status', () => {
   it('sets exitCode 2 on a usage error and leaves process.exit alone', async () => {
     await cli(['read', '5', '6', '--json'], opener());
     expect(process.exitCode).toBe(2);
-    expect(errJson().kind).toBe('usage');
+    expect(errJson().reason).toBe('invalid-argument');
     expect(exit).not.toHaveBeenCalled();
   });
 
@@ -101,7 +101,7 @@ describe('cli exit status', () => {
     };
     await cli(['status', '--json'], open);
     expect(process.exitCode).toBe(1);
-    expect(errJson()).toEqual({ kind: 'unexpected', reason: 'unexpected-error', message: 'boom', remedy: 'report the message to the human', retry: 'no' });
+    expect(errJson()).toEqual({ reason: 'unexpected-error', message: 'boom', remedy: 'report the message to the human', retry: 'no' });
   });
 
   it('prints the remedy and retry value under the message as text on a terminal', async () => {
@@ -113,7 +113,7 @@ describe('cli exit status', () => {
   it('sets exitCode 3 on a transport error and leaves process.exit alone', async () => {
     await cli(['status', '--json'], opener());
     expect(process.exitCode).toBe(3);
-    expect(errJson().kind).toBe('transport');
+    expect(errJson().reason).toBe('device-unavailable');
     expect(exit).not.toHaveBeenCalled();
   });
 });
@@ -262,7 +262,7 @@ describe('help', () => {
     const open = opener(new FakeRadio());
     await cli([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson().kind).toBe('usage');
+    expect(errJson().reason).toBe('invalid-argument');
     expect(stdout).toEqual([]);
     expect(open.calls).toBe(0);
   });
@@ -306,7 +306,7 @@ describe('repeated flags', () => {
   it('prints the duplicate-flag error as JSON on a terminal when --json was given', async () => {
     await onTerminal(() => cli(['status', '--json', '--json'], opener(new FakeRadio())));
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', reason: 'invalid-argument', message: '--json given twice; pass it once' });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: '--json given twice; pass it once' });
   });
 
   it('prints a parse error as text on a terminal', async () => {
@@ -319,7 +319,7 @@ describe('repeated flags', () => {
     const open = opener(new FakeRadio());
     await cli(['status', '--text', '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining('unknown option --text') });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining('unknown option --text') });
     expect(open.calls).toBe(0);
   });
 
@@ -327,7 +327,7 @@ describe('repeated flags', () => {
     const open = opener(new FakeRadio());
     await cli(['tune', '154.68', '--channel', '1', '--channel', '2', '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', message: '--channel given twice; pass it once', flag: 'channel' });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: '--channel given twice; pass it once', flag: 'channel' });
     expect(open.calls).toBe(0);
   });
 });
@@ -386,7 +386,7 @@ describe('tune input checks', () => {
     const open = opener(new FakeRadio());
     await cli(['tune', '146.82', '--channel', '5', '--name', 'CAFÉ', '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson().kind).toBe('usage');
+    expect(errJson().reason).toBe('invalid-argument');
     expect(open.calls).toBe(0);
   });
 });
@@ -405,7 +405,7 @@ describe('listen input checks', () => {
     const open = opener(new FakeRadio());
     await cli([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', flag: 'floor', message: expect.stringContaining('--floor takes -100..0 dBFS') });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', flag: 'floor', message: expect.stringContaining('--floor takes -100..0 dBFS') });
     expect(open.calls).toBe(0);
   });
 
@@ -456,7 +456,7 @@ describe('restore verification', () => {
     radio.writesIgnoredAbove = 0x1800;
     await run(['restore', FIXTURE, '--force', '--json'], opener(radio));
     expect(process.exitCode).toBe(5);
-    expect(errJson()).toMatchObject({ kind: 'device-state', message: 'restore did not take 128 blocks; first at 0x1000' });
+    expect(errJson()).toMatchObject({ reason: 'verification-failed', message: 'restore did not take 128 blocks; first at 0x1000' });
     expect(stdout).toEqual([]);
   });
 });
@@ -492,7 +492,7 @@ describe('key output', () => {
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     const err = errJson();
-    expect(err).toMatchObject({ kind: 'transport', reason: 'ptt-control-failed', retry: 'no' });
+    expect(err).toMatchObject({ reason: 'ptt-control-failed', retry: 'no' });
     expect(err).not.toHaveProperty('phase');
     expect(err).not.toHaveProperty('pttAsserted');
     expect(err).not.toHaveProperty('released');
@@ -507,7 +507,7 @@ describe('key output', () => {
     };
     await cli(['key', '--seconds', '0.1', '--json'], opener(radio));
     expect(process.exitCode).toBe(3);
-    expect(errJson()).toMatchObject({ kind: 'transport', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT' });
+    expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT' });
     expect(errJson()).not.toHaveProperty('pttAsserted');
     expect(errJson()).not.toHaveProperty('released');
   });
@@ -517,7 +517,7 @@ describe('key output', () => {
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     const err = errJson();
-    expect(err).toMatchObject({ kind: 'transport', reason: 'device-unavailable', remedy: REASONS['device-unavailable'].remedy, retry: 'after-remedy' });
+    expect(err).toMatchObject({ reason: 'device-unavailable', remedy: REASONS['device-unavailable'].remedy, retry: 'after-remedy' });
     expect(err).not.toHaveProperty('pttAsserted');
     expect(err).not.toHaveProperty('released');
     expect(err).not.toHaveProperty('phase');
@@ -629,7 +629,7 @@ describe('load', () => {
     const open = opener(new FakeRadio());
     await run(['load', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }, entry] }), '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', channel: entry.channel, field });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', channel: entry.channel, field });
     expect(errJson().message).toContain(prefix);
     expect(open.calls).toBe(0);
   });
@@ -640,7 +640,6 @@ describe('load', () => {
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
     expect(process.exitCode).toBe(5);
     expect(errJson()).toMatchObject({
-      kind: 'device-state',
       reason: 'verification-failed',
       message: 'channel 5 did not take the write',
       remedy: 'read channel 5, then rerun the write',
@@ -659,7 +658,7 @@ describe('load', () => {
     expect(process.exitCode).toBe(5);
     expect(radio.writes).toEqual([0x0010, 0x1010, 0x0020, 0x1020, 0x0030]);
     const err = errJson();
-    expect(err).toMatchObject({ kind: 'device-state', reason: 'write-unacknowledged', message: 'radio refused write at 0x30', retry: 'once', slot: 3 });
+    expect(err).toMatchObject({ reason: 'write-unacknowledged', message: 'radio refused write at 0x30', retry: 'once', slot: 3 });
     expect(err).not.toHaveProperty('written');
     expect(stdout).toEqual([]);
   });
@@ -689,7 +688,7 @@ describe('load', () => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage' });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument' });
     expect(errJson()).not.toHaveProperty('slot');
     expect(errJson()).not.toHaveProperty('written');
     expect(open.calls).toBe(0);

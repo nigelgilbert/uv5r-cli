@@ -188,7 +188,6 @@ describe('sweep', () => {
     expect(radio.writes).toEqual([0x0000, 0x1000]);
     expect(listenMock).toHaveBeenCalledTimes(1);
     expect(errJson()).toMatchObject({
-      kind: 'device-state',
       reason: 'audio-inactive',
       remedy: 'ask the human to set MR mode and select slot 0',
       retry: 'after-remedy',
@@ -219,7 +218,7 @@ describe('sweep', () => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining(text) });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining(text) });
     expect(open.calls).toBe(0);
     expect(listenMock).not.toHaveBeenCalled();
     expect(stdout).toEqual([]);
@@ -256,7 +255,7 @@ describe('sweep', () => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage' });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument' });
     expect(errJson()).not.toHaveProperty('summary');
     expect(errJson()).not.toHaveProperty('written');
     expect(stdout).toEqual([]);
@@ -318,7 +317,7 @@ describe('sweep', () => {
     await run([...SWEEP, '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
-    expect(errJson()).toMatchObject({ kind: 'transport', message: 'ffmpeg exited 1 capturing from "AIOC Audio"', summary: { swept: 2, slot0: { channel: 3, name: 'NOAA 3' } } });
+    expect(errJson()).toMatchObject({ reason: 'audio-process-failed', message: 'ffmpeg exited 1 capturing from "AIOC Audio"', summary: { swept: 2, slot0: { channel: 3, name: 'NOAA 3' } } });
     expect(errJson().summary).not.toHaveProperty('interrupted');
   });
 
@@ -348,7 +347,6 @@ describe('sweep', () => {
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     expect(errJson()).toEqual({
-      kind: 'transport',
       reason: 'audio-process-failed',
       message: 'ffmpeg exited 1 capturing from "AIOC Audio"',
       remedy: 'check that --device names the AIOC input and the terminal has microphone access',
@@ -378,7 +376,6 @@ describe('sweep', () => {
     expect(process.exitCode).toBe(5);
     expect(stdout).toEqual([]);
     expect(errJson()).toMatchObject({
-      kind: 'device-state',
       reason: 'verification-failed',
       message: 'channel 0 did not take the write',
       phase: 'entry',

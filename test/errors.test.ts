@@ -51,15 +51,15 @@ describe('error reasons', () => {
     ['UnexpectedError', new UnexpectedError('boom'), 'unexpected-error', 'unexpected', 1],
   ] as const)('gives a %s a reason, a remedy and a retry value in toJSON', (_name, err, reason, kind, exit) => {
     const body = err.toJSON();
-    expect(body).toMatchObject({ kind, reason, message: err.message, remedy: REASONS[reason].remedy, retry: REASONS[reason].retry });
+    expect(body).toMatchObject({ reason, message: err.message, remedy: REASONS[reason].remedy, retry: REASONS[reason].retry });
     expect(REASON_ENUM).toContain(body.reason);
+    expect(body).not.toHaveProperty('kind');
     expect(exitCodeFor(err.kind)).toBe(exit);
   });
 
   it('takes a remedy and retry value for one site and keeps the detail fields', () => {
     const err = new DeviceStateError('verification-failed', 'channel 5 record written; name did not take the write', { wrote: 'aa', read: 'ff' }, { remedy: 'read channel 5', retry: 'no' });
     expect(err.toJSON()).toEqual({
-      kind: 'device-state',
       reason: 'verification-failed',
       message: 'channel 5 record written; name did not take the write',
       remedy: 'read channel 5',
@@ -75,6 +75,6 @@ describe('error reasons', () => {
     expect(err.toJSON()).toMatchObject({ reason: 'serial-timeout', addr: 0, slot: 3 });
     const wrapped = withDetail(new RangeError('boom'), { slot: 3 });
     expect(wrapped).toBeInstanceOf(BaofengError);
-    expect(wrapped.toJSON()).toEqual({ kind: 'unexpected', reason: 'unexpected-error', message: 'boom', remedy: REASONS['unexpected-error'].remedy, retry: 'no', slot: 3 });
+    expect(wrapped.toJSON()).toEqual({ reason: 'unexpected-error', message: 'boom', remedy: REASONS['unexpected-error'].remedy, retry: 'no', slot: 3 });
   });
 });

@@ -123,7 +123,6 @@ describe('check', () => {
     await run(['check', '162.400', '--channel', '0', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(5);
     expect(errJson()).toMatchObject({
-      kind: 'device-state',
       reason: 'audio-inactive',
       remedy: 'ask the human to set MR mode and select slot 0',
       retry: 'after-remedy',
@@ -152,7 +151,7 @@ describe('check', () => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining(text) });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining(text) });
     expect(open.calls).toBe(0);
     expect(listenMock).not.toHaveBeenCalled();
   });

@@ -204,7 +204,7 @@ export class BaofengError extends Error {
   }
 
   toJSON(): Record<string, unknown> {
-    return { kind: this.kind, reason: this.reason, message: this.message, remedy: this.remedy, retry: this.retry, ...this.detail };
+    return { reason: this.reason, message: this.message, remedy: this.remedy, retry: this.retry, ...this.detail };
   }
 }
 

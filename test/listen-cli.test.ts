@@ -37,13 +37,13 @@ afterEach(() => {
 });
 
 const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unknown>;
-const errJson = () => JSON.parse(stderr.join('').trim()) as { kind: string; message: string };
+const errJson = () => JSON.parse(stderr.join('').trim()) as { reason: string; message: string };
 
 describe('listen --out and --play', () => {
   it('exits 2 naming --out when --play comes without it, before running ffmpeg', async () => {
     await cli(['listen', '--seconds', '3', '--play', '--json']);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining('--out') });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining('--out') });
     expect(execFile).not.toHaveBeenCalled();
   });
 

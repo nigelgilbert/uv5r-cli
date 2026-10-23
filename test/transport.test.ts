@@ -65,7 +65,6 @@ describe('SerialTransport', () => {
     const err = await SerialTransport.open('/dev/uv5r-nonexistent').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     expect((err as TransportError).toJSON()).toEqual({
-      kind: 'transport',
       reason: 'device-unavailable',
       message: 'no device at /dev/uv5r-nonexistent',
       remedy: 'reseat the cable or pass --target with an existing path',
