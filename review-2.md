@@ -72,23 +72,25 @@ In priority order.
 
 ### 6. Drop the EEPROM channel fields from `status`
 
-Location: [src/main.ts:173](src/main.ts#L173), [src/radio.ts:28-38](src/radio.ts#L28-L38). Predates this PR.
+Location: [src/radio.ts:28-39](src/radio.ts#L28-L39), [src/radio.ts:129-145](src/radio.ts#L129-L145), [src/main.ts:172-183](src/main.ts#L172-L183).
 
 `channelA`, `channelB`, the active record and `note` come with a warning not to trust them. SKILL.md repeats it. A small model reads the number anyway.
 
-Cut: remove the four fields and the SKILL.md rule about them. Check whether `workmode` comes from the same EEPROM read; if it does, cut it too.
+Cut: remove the four fields and the SKILL.md rule about them. `workmode` comes from the same EEPROM state page. Cut it too unless a bench test shows it tracks the VFO/MR button.
 
 ### 7. Drop `sweep --play` and `sweep --floor`
 
-Location: [src/main.ts:422](src/main.ts#L422).
+Location: [src/main.ts:408-410](src/main.ts#L408-L410).
 
-`--floor` lets a model lower the threshold until a quiet sweep looks active, the same hole item 4 closes on `check`. `--play` ties itself to `--out-dir` and to `afplay`. The human can play the WAVs in `--out-dir` after the run. Keep `--play` and `--floor` on `listen` for diagnostics.
+`--floor` lets a model lower the threshold until a quiet sweep looks active. `check` has no `--floor` for the same reason. `--play` ties itself to `--out-dir` and to `afplay`. The human can play the WAVs in `--out-dir` after the run. Keep `--play` and `--floor` on `listen` for diagnostics.
 
-Cut: remove both flags. Rewrite the SKILL.md rule that names `sweep --out-dir DIR --play` to point at the WAVs in `--out-dir`.
+Cut: remove both flags. Rewrite the SKILL.md rules that name `sweep --out-dir DIR --play` to point at the WAVs in `--out-dir`.
 
-Removes: review #8.
+Removes: [review.md](review.md) #8.
 
 ### 8. Shrink per-verb `exits` in the help JSON
+
+Location: [src/main.ts:147-154](src/main.ts#L147-L154).
 
 The global exit table and the runtime `remedy` cover the shared cases. SKILL.md tells the agent to read `help VERB --json` before each verb, so the length costs context every session.
 
@@ -96,34 +98,12 @@ Cut: keep only verb-specific notes in each verb's `exits`. A verb-specific twist
 
 ### 9. Drop `--text`
 
-Location: [src/main.ts:124](src/main.ts#L124).
+Location: [src/main.ts:123](src/main.ts#L123).
 
 The terminal default and `--json` cover both audiences.
 
 ### 10. Drop `kind` from the error JSON
 
-Location: [src/errors.ts:207](src/errors.ts#L207).
+Location: [src/errors.ts:206](src/errors.ts#L206).
 
 The exit code and `reason` already carry it.
-
-## Keep
-
-- `restore --force`, the `tune` flags and `key --seconds`.
-- The MHz, Hz and exponent frequency forms. A wrong form fails as out of band before the port opens.
-- `slot` in the sweep records. It names the physical memory apart from the plan `channel`.
-
-## Effect on review.md
-
-| Finding | After this review |
-| --- | --- |
-| #1 `key` acquisition failures | removed by item 1 |
-| #2 `help` and `--version` piped | stays |
-| #3 two `written` schemas | removed by item 2 |
-| #4 exit-6 sweep summary | removed by item 3 |
-| #5 `help help` | stays |
-| #6 error-contract docs | shrinks to the exit-2 wording and the `key` usage-error fields |
-| #7 `check` capture context | stays |
-| #8 `afplay` preflight | removed by item 7 |
-| #9, #10 nits | stay |
-
-About 60 test assertions reference `written`, `recordWritten` or `phase`. Items 1 and 2 include updating them.
