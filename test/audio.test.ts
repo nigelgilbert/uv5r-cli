@@ -279,6 +279,8 @@ describe('play', () => {
       reason: 'dependency-missing',
       message: 'afplay not found on PATH; cannot play rx.wav',
       detail: { file: 'rx.wav' },
+      remedy: 'the capture is saved at file; ask the human to play it; do not capture again',
+      retry: 'no',
     });
   });
   it('reports a non-zero afplay exit as a transport error naming the file', async () => {
@@ -288,6 +290,8 @@ describe('play', () => {
       reason: 'audio-process-failed',
       message: "afplay exited with code 1 playing rx.wav: Error: AudioFileOpen failed ('dta?')",
       detail: { file: 'rx.wav', code: 1 },
+      remedy: 'the capture is saved at file; ask the human to play it; do not capture again',
+      retry: 'no',
     });
   });
   it('passes the file to afplay with a timeout past its length', async () => {

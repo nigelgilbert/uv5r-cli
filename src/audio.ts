@@ -216,6 +216,9 @@ export async function listen(device: string, seconds: number, floorDbfs = DEFAUL
   return { ...result, out };
 }
 
+/** Guidance for a failed afplay, since a rerun with the same --out records over the saved capture. */
+const PLAYBACK_FAILED = { remedy: 'the capture is saved at file; ask the human to play it; do not capture again', retry: 'no' } as const;
+
 /** Run afplay on `file`, a WAV of about `seconds`, and resolve when playback ends. */
 export function play(file: string, seconds: number): Promise<void> {
   const timeoutMs = (seconds + 15) * 1000;
@@ -227,7 +230,7 @@ export function play(file: string, seconds: number): Promise<void> {
         return;
       }
       if (e.code === 'ENOENT') {
-        reject(new TransportError('dependency-missing', `afplay not found on PATH; cannot play ${file}`, { file }, { remedy: 'drop --play; the WAV at file is on disk' }));
+        reject(new TransportError('dependency-missing', `afplay not found on PATH; cannot play ${file}`, { file }, PLAYBACK_FAILED));
         return;
       }
       const tail = stderrTail(stderr);
@@ -237,7 +240,7 @@ export function play(file: string, seconds: number): Promise<void> {
           'audio-process-failed',
           `afplay ${how} playing ${file}${tail ? `: ${tail}` : ''}`,
           { file, code: e.code ?? null, signal: e.signal ?? null },
-          { remedy: 'drop --play and rerun; the WAV at file is on disk' },
+          PLAYBACK_FAILED,
         ),
       );
     });

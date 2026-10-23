@@ -18,6 +18,9 @@ export interface Plan {
   entries: PlanEntry[];
 }
 
+/** Top-level fields a plan takes. */
+const PLAN_FIELDS = ['name', 'notes', 'checkMhz', 'channels'];
+
 /** Entry fields a plan takes; each one except `notes` maps onto one `tune` flag. */
 const ENTRY_FIELDS = ['channel', 'rxMhz', 'offsetMhz', 'tone', 'rxTone', 'narrow', 'lowPower', 'rxOnly', 'name', 'notes'];
 
@@ -50,7 +53,13 @@ export function readPlan(file: string): Plan {
 
 /** Validate a parsed plan object and build one ChannelSpec per entry. */
 export function parsePlan(json: unknown): Plan {
-  if (!isObject(json) || !Array.isArray(json.channels)) throw new UsageError('a plan is an object with a channels array');
+  if (!isObject(json)) throw new UsageError('a plan is an object with a channels array');
+  const unknown = Object.keys(json).find((name) => !PLAN_FIELDS.includes(name));
+  if (unknown !== undefined) throw new UsageError(`plan ${unknown}: unknown top-level field; top-level fields: ${PLAN_FIELDS.join(', ')}`, { field: unknown });
+  for (const name of ['name', 'notes']) {
+    if (json[name] !== undefined && typeof json[name] !== 'string') throw new UsageError(`plan ${name}: needs a string; got ${JSON.stringify(json[name])}`, { field: name });
+  }
+  if (!Array.isArray(json.channels)) throw new UsageError('a plan is an object with a channels array');
   if (json.channels.length === 0) throw new UsageError('the plan has no channels');
   const checkHz = json.checkMhz === undefined ? undefined : parseCheckMhz(json.checkMhz);
   const seen = new Set<number>();

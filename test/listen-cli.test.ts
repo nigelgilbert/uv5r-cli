@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unknown>;
-const errJson = () => JSON.parse(stderr.join('').trim()) as { reason: string; message: string };
+const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, unknown>;
 
 describe('listen --out and --play', () => {
   it('exits 2 naming --out when --play comes without it, before running ffmpeg', async () => {
@@ -79,6 +79,28 @@ describe('listen --out and --play', () => {
     expect(outJson()).not.toHaveProperty('out');
   });
 
+  it('exits 2 on --out - before running ffmpeg', async () => {
+    await cli(['listen', '--seconds', '3', '--out', '-', '--json']);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', flag: 'out', message: expect.stringContaining('--out takes a file path') });
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  it('exits 3 with retry no and a remedy that keeps the capture when afplay fails', async () => {
+    execFile.mockImplementation((file, _args, _opts, cb) =>
+      file === 'afplay' ? cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', '') : cb(null, '', stderrFrames(4)),
+    );
+    await cli(['listen', '--seconds', '3', '--out', 'rx.wav', '--play', '--json']);
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({
+      reason: 'audio-process-failed',
+      file: 'rx.wav',
+      remedy: 'the capture is saved at file; ask the human to play it; do not capture again',
+      retry: 'no',
+    });
+    expect(stdout).toEqual([]);
+  });
+
   it('names --out and --play in help listen', async () => {
     const tty = process.stdout.isTTY;
     process.stdout.isTTY = true;
@@ -88,7 +110,7 @@ describe('listen --out and --play', () => {
       process.stdout.isTTY = tty;
     }
     const help = stdout.join('');
-    expect(help).toMatch(/--out FILE +write the capture as a 48 kHz mono WAV/);
+    expect(help).toMatch(/--out FILE +write the capture as a 48 kHz mono WAV and report out; overwrites FILE/);
     expect(help).toMatch(/--play +play .*needs --out/);
   });
 });
