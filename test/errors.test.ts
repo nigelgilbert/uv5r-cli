@@ -26,6 +26,7 @@ const REASON_ENUM = [
   'verification-failed',
   'image-incompatible',
   'audio-inactive',
+  'squelch-open',
   'invalid-argument',
   'device-busy',
   'serial-timeout',
@@ -33,7 +34,7 @@ const REASON_ENUM = [
 ];
 
 describe('error reasons', () => {
-  it('lists the sixteen reasons of the enum, each with a kind, a meaning, a remedy and a retry value', () => {
+  it('lists the seventeen reasons of the enum, each with a kind, a meaning, a remedy and a retry value', () => {
     expect(Object.keys(REASONS)).toEqual(REASON_ENUM);
     for (const doc of Object.values(REASONS)) {
       expect(doc.means.length).toBeGreaterThan(0);

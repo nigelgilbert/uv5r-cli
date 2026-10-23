@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, closeSync, constants as fsConstants, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
-import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
+import { DEFAULT_FLOOR_DBFS, checkFfmpeg, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
 import {
   SETTING_NAMES,
@@ -109,7 +109,10 @@ const ERROR_GUIDANCE =
   'On a terminal it prints the message and a remedy line as text. ' +
   'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
   'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +
-  'An exit of 128 plus a signal number prints the result on stdout with interrupted and no error.';
+  'An error inside the sweep loop adds phase (check, entry or dwell), slot (0) and channel (the plan channel, null during the check). ' +
+  'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +
+  'On SIGINT, SIGTERM or SIGHUP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
+  'A failed PTT release after the signal exits 3 with interrupted in the error. Other verbs end on a signal with no output.';
 
 /** The errors section of `help --json`: the error format, each reason with its exit code, and the retry values. */
 const ERRORS_HELP = {
@@ -128,6 +131,10 @@ const NARROW_FLAG: FlagDoc = { name: 'narrow', help: '12.5 kHz bandwidth; wide w
 const LOW_POWER_FLAG: FlagDoc = { name: 'low-power', help: 'low TX power' };
 const NAME_FLAG: FlagDoc = { name: 'name', value: 'TEXT', default: 'the frequency', help: 'channel name: printable ASCII, uppercased, cut to 7 characters' };
 const DEVICE_FLAG: FlagDoc = { name: 'device', value: 'NAME', default: DEFAULT_AUDIO_DEVICE, help: 'avfoundation audio input by name or index' };
+const CAPTURE_DEVICE_FLAG: FlagDoc = {
+  ...DEVICE_FLAG,
+  help: 'avfoundation audio input by name or index; name the AIOC input, since any input with sound above the floor passes the check',
+};
 const FLOOR_FLAG: FlagDoc = {
   name: 'floor',
   value: 'DBFS',
@@ -140,6 +147,8 @@ const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
 
 const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
 const AUDIO_READY = 'ffmpeg is on PATH and the terminal has microphone access.';
+const CAPTURE_READY = ['--device names the AIOC input.', 'Squelch is above 0; uv5r status reports it.'];
+const FFMPEG_FIRST = 'Run ffmpeg -version before the port opens. A missing or failing ffmpeg exits 3 with nothing written.';
 const APPLIES = `The radio reloads and applies the write about ${APPLIES_AFTER_SECONDS} s after the command ends.`;
 
 const CHANNEL_RECORD = { rxMhz: '154.68', txMhz: '154.68', txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
@@ -201,21 +210,23 @@ const verbs: Record<string, Verb> = {
     summary: 'Write a receive-only frequency into slot N, wait for the reload and listen; exit 5 unless 80% of the seconds are active',
     example: 'uv5r check 162.400 --channel 0',
     args: [FREQ_ARG],
-    flags: [CHANNEL_FLAG, DEVICE_FLAG, ...COMMON_FLAGS],
+    flags: [CHANNEL_FLAG, CAPTURE_DEVICE_FLAG, ...COMMON_FLAGS],
     effects: [
-      'Write FREQ into slot N as a receive-only record and read it back. --offset and --tone exit 2.',
+      FFMPEG_FIRST,
+      'Read the squelch setting. Squelch 0 exits 5 with squelch-open before the write.',
+      'In the same clone session, write FREQ into slot N as a receive-only record and read it back. --offset and --tone exit 2.',
       `Wait ${APPLIES_AFTER_SECONDS} s for the reload, then capture ${CHECK_SECONDS} s of receive audio with the listen pipeline.`,
       `A second is active when its RMS is above ${DEFAULT_FLOOR_DBFS} dBFS.`,
       'Pass when at least 80% of the seconds are active, rounded up: 4 of 5.',
       'A pass means audio above the floor after writing slot N, consistent with the radio receiving slot N. The received frequency stays unverified.',
-      'Once the write succeeds, slot N keeps the receive-only record, also after a capture failure. A failure before or during the write leaves the slot state unknown.',
+      'Once the write succeeds, slot N keeps the receive-only record, also after a capture failure. A capture error then carries slot and requestedMhz. A failure during the write leaves the slot state unknown.',
     ],
-    preconditions: [RADIO_READY, AUDIO_READY, 'The human has set MR mode and selected slot N.', 'FREQ carries audio at the location, such as a NOAA weather transmitter.'],
+    preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot N.', 'FREQ carries audio at the location, such as a NOAA weather transmitter.'],
     writesToRadio: { writes: true, note: 'a receive-only record and name in slot N; nothing restores the old record' },
     result: { slot: 0, requestedMhz: '162.4', ...LISTEN_EXAMPLE },
     exits: [
       { code: 3, when: 'a short capture' },
-      { code: 5, when: 'fewer than 80% of the seconds active; the message lists the causes and the error carries the result fields' },
+      { code: 5, when: 'squelch 0, before the write; or fewer than 80% of the seconds active, where the message lists the causes and the error carries the result fields' },
     ],
     positionals: 1,
     run: checkVerb,
@@ -280,7 +291,8 @@ const verbs: Record<string, Verb> = {
     effects: [
       'Raise PTT (DTR high, RTS low) for S seconds, then release it. The result reports the measured hold.',
       'Transmit on the channel the radio display shows. The CLI cannot read the displayed channel; a receive-only slot radiates nothing.',
-      'Ctrl-C, SIGTERM or SIGHUP releases PTT, adds interrupted to the result and exits 128 plus the signal number.',
+      'Once the port is open, Ctrl-C, SIGTERM or SIGHUP releases PTT, adds interrupted to the result and exits 128 plus the signal number.',
+      'A failed PTT release after the signal exits 3 with interrupted in the error.',
     ],
     preconditions: [
       RADIO_READY,
@@ -376,23 +388,28 @@ const verbs: Record<string, Verb> = {
     args: [{ name: 'PLAN', help: 'plan JSON with a top-level checkMhz' }],
     flags: [
       { name: 'seconds', value: 'S', default: SWEEP_SECONDS, help: `dwell per entry, whole number 1..${MAX_LISTEN_SECONDS}` },
-      { name: 'out-dir', value: 'DIR', help: 'keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR' },
-      DEVICE_FLAG,
+      { name: 'out-dir', value: 'DIR', help: 'keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR; an unwritable DIR exits 2 before the port opens' },
+      CAPTURE_DEVICE_FLAG,
       ...COMMON_FLAGS,
     ],
     effects: [
-      `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. A check under 80% active seconds exits 5. Any check failure stops before a plan entry is written.`,
+      FFMPEG_FIRST,
+      `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. Squelch 0 or a check under 80% active seconds exits 5. Any check failure stops before a plan entry is written.`,
       `For each entry in plan order, write it into slot 0 with its own TX setting, wait ${APPLIES_AFTER_SECONDS} s for the reload and capture --seconds.`,
       `A second is active when its RMS is above ${DEFAULT_FLOOR_DBFS} dBFS.`,
-      'Print one summary on stdout on success or on a signal: swept, seconds, active, warnings and slot0. A failure puts it in the error as summary.',
+      'Print one summary on stdout on success or on a signal: swept, seconds, device, active, warnings and slot0. A failure puts it in the error as summary.',
+      'warnings holds the check warnings prefixed with check: and each dwell warning prefixed with its plan channel.',
       'slot0 is {channel, name} of the last verified entry write, {channel: null, name} after only the check write, or null when unknown. Slot 0 keeps it after the run.',
+      'active[].name is the plan name. slot0.name is the name the radio holds, uppercased and cut to 7 characters. Match the two on channel.',
+      'On SIGINT, SIGTERM or SIGHUP, stop the capture in progress, print the summary with interrupted and exit 128 plus the signal number.',
       'Read nothing from stdin.',
     ],
-    preconditions: [RADIO_READY, AUDIO_READY, 'The human has set MR mode and selected slot 0.', 'The plan checkMhz carries audio at the location.'],
+    preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot 0.', 'The plan checkMhz carries audio at the location.'],
     writesToRadio: { writes: true, note: 'slot 0, once for the check and once per plan entry; the last write stays' },
     result: {
       swept: 7,
       seconds: SWEEP_SECONDS,
+      device: DEFAULT_AUDIO_DEVICE,
       active: [{ channel: 1, slot: 0, name: 'NOAA', requestedMhz: '162.4', activeSeconds: 30 }],
       warnings: [],
       slot0: { channel: 7, name: 'SHERIFF' },
@@ -604,6 +621,7 @@ async function checkVerb(args: Invocation): Promise<number> {
   // Pass no flags so the spec takes the defaults: no RX tone, wide, high power, named by frequency.
   const spec = channelSpec(freq, new Map());
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  await checkFfmpeg();
   const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device }));
   print(args, result, () =>
     [
@@ -803,6 +821,7 @@ function slot0Text(slot0: Slot0 | null): string {
 function sweepText(s: SweepSummary): string {
   return [
     `swept      ${s.swept} entries, ${s.seconds} s each${s.interrupted ? `; interrupted by ${s.interrupted}` : ''}`,
+    `device     ${s.device}`,
     ...s.active.map((a) => `active     ch ${a.channel} ${a.name} requested ${a.requestedMhz}: ${a.activeSeconds} s${a.out === undefined ? '' : ` ${a.out}`}`),
     ...s.warnings.map((w) => `warning    ${w}`),
     `slot 0     ${slot0Text(s.slot0)}`,
@@ -813,6 +832,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
   checkFlags('sweep', args.flags, flagNames('sweep'));
   const progress = newProgress();
   let seconds = SWEEP_SECONDS;
+  let device = DEFAULT_AUDIO_DEVICE;
   let transportAsked = false;
   let summary: SweepSummary;
   try {
@@ -822,7 +842,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
     if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
       throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
     }
-    const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+    device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
     const outDir = stringFlag(args.flags, 'out-dir');
     const plan = readPlan(file);
     if (plan.checkHz === undefined) {
@@ -831,20 +851,26 @@ async function sweepVerb(args: Invocation): Promise<number> {
         field: 'checkMhz',
       });
     }
-    const checkSpec: ChannelSpec = { rxHz: plan.checkHz, txHz: undefined, rxOnly: true, txTone: { kind: 'none' }, rxTone: { kind: 'none' }, wide: true, lowPower: false };
+    const checkSpec: ChannelSpec = { rxHz: plan.checkHz };
     if (outDir !== undefined) {
       try {
         mkdirSync(outDir, { recursive: true });
       } catch (err) {
         throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
       }
+      try {
+        accessSync(outDir, fsConstants.W_OK | fsConstants.X_OK);
+      } catch (err) {
+        throw new UsageError(`cannot write to ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir }, { remedy: 'pass --out-dir with a writable directory' });
+      }
     }
+    await checkFfmpeg();
     const options = { device, seconds, outDir };
     transportAsked = true;
     summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device }), options, progress));
   } catch (err) {
     // Add the finished dwells and slot 0 to the error once the port was asked for.
-    throw withDetail(err, transportAsked ? { summary: summarize(progress, seconds) } : {});
+    throw withDetail(err, transportAsked ? { summary: summarize(progress, { seconds, device }) } : {});
   }
   print(args, summary, () => sweepText(summary));
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listen, type ListenResult } from '../src/audio.ts';
+import { TransportError } from '../src/errors.ts';
 import { cli, type OpenTransport } from '../src/main.ts';
 import { SETTLE_MS } from '../src/protocol.ts';
 import { FakeRadio } from './fake.ts';
 
+const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
+vi.mock('node:child_process', () => ({ execFile }));
 vi.mock('../src/audio.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/audio.ts')>()), listen: vi.fn() }));
 
 const listenMock = vi.mocked(listen);
@@ -14,6 +17,8 @@ let stderr: string[];
 beforeEach(() => {
   stdout = [];
   stderr = [];
+  execFile.mockReset();
+  execFile.mockImplementation((_file, _args, _opts, cb) => cb(null, '', ''));
   vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => stdout.push(String(chunk)) > 0);
   vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => stderr.push(String(chunk)) > 0);
   vi.useFakeTimers();
@@ -154,6 +159,47 @@ describe('check', () => {
     expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining(text) });
     expect(open.calls).toBe(0);
     expect(listenMock).not.toHaveBeenCalled();
+  });
+
+  it('exits 5 with squelch-open before the write when squelch is 0', async () => {
+    const radio = new FakeRadio();
+    radio.eeprom[0x0e20] = 0;
+    await run(['check', '162.400', '--channel', '0', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({ reason: 'squelch-open', remedy: 'run uv5r settings squelch 3', retry: 'after-remedy', slot: 0, squelch: 0 });
+    expect(radio.writes).toEqual([]);
+    expect(listenMock).not.toHaveBeenCalled();
+    expect(stdout).toEqual([]);
+  });
+
+  it.each([
+    ['a missing ffmpeg', { code: 'ENOENT' }, 3, 'dependency-missing'],
+    ['a failing ffmpeg', { code: 1 }, 3, 'audio-process-failed'],
+  ])('exits 3 on %s before opening the transport', async (_what, err, exit, reason) => {
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('ffmpeg failed'), err), '', ''));
+    const open = opener(new FakeRadio());
+    await run(['check', '162.400', '--channel', '0', '--json'], open);
+    expect(process.exitCode).toBe(exit);
+    expect(errJson()).toMatchObject({ reason });
+    expect(execFile.mock.calls[0]!.slice(0, 2)).toEqual(['ffmpeg', ['-version']]);
+    expect(open.calls).toBe(0);
+    expect(listenMock).not.toHaveBeenCalled();
+  });
+
+  it('adds slot and requestedMhz to a capture error after the write', async () => {
+    const radio = new FakeRadio();
+    listenMock.mockRejectedValue(new TransportError('capture-incomplete', 'ffmpeg captured 3 of 6 seconds from "AIOC Audio"', { device: 'AIOC Audio', captured: 3, requested: 6 }));
+    await run(['check', '162.400', '--channel', '4', '--json'], opener(radio));
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'capture-incomplete', slot: 4, requestedMhz: '162.4', captured: 3, requested: 6 });
+    expect(radio.writes).toEqual([0x0040, 0x1040]);
+  });
+
+  it('names the AIOC input and squelch above 0 in help check', async () => {
+    await cli(['help', 'check', '--json']);
+    const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; help: string }[] };
+    expect(help.preconditions).toEqual(expect.arrayContaining(['--device names the AIOC input.', 'Squelch is above 0; uv5r status reports it.']));
+    expect(help.flags.find((f) => f.flag === '--device')!.help).toContain('name the AIOC input');
   });
 
   it('prints the check example in help check', async () => {
