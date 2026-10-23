@@ -77,7 +77,7 @@ flag clearing. Those match knob and key use and need no repair.
 
 - A 16-byte read at 0x0E10, 0x0E20, 0x0E30 or 0x0E40 returns the 0x0E40 record. A 64-byte
   read at 0x0E00 returns the true layout. `dumpImage` uses 64-byte reads, so dumps are
-  correct. `readStatus` reads 0x0E40 with 16 bytes and gets the right record by luck.
+  correct. `readStatus` reads 0x0E40 with 64 bytes.
 - A 16-byte write at 0x0E20 or 0x0E30 is acked and ignored. Verified by writing the fixture
   bytes, reading back in the same session and again in a fresh session.
 - `restoreImage` writes 0x0E00 to 0x1800 in 16-byte blocks. In the settings region those

@@ -372,7 +372,7 @@ const verbs: Record<string, Verb> = {
       ...COMMON_FLAGS,
     ],
     effects: [
-      `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. A failed check exits 5 before any plan entry is written.`,
+      `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. A check under 80% active seconds exits 5. Any check failure stops before a plan entry is written.`,
       `For each entry in plan order, write it into slot 0 with its own TX setting, wait ${APPLIES_AFTER_SECONDS} s for the reload and capture --seconds.`,
       `A second is active when its RMS is above ${DEFAULT_FLOOR_DBFS} dBFS.`,
       'Print one summary on stdout on success or on a signal: swept, seconds, active, warnings and slot0. A failure puts it in the error as summary.',
