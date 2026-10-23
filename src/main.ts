@@ -194,7 +194,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY, CHANNEL_RULE, 'Before tuning slot 0, run the check rule that uv5r help lists.'],
     writesToRadio: { writes: true, note: 'the channel record and name of slot N' },
     result: { channel: 5, ...CHANNEL_RECORD, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
-    exits: [{ code: 5, when: 'a record or name that reads back different' }],
+    exits: [],
     positionals: 1,
     run: tuneVerb,
   },
@@ -237,7 +237,6 @@ const verbs: Record<string, Verb> = {
     result: [{ channel: 1, rxMhz: '162.4', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
     exits: [
       { code: 2, when: 'a bad or unknown field, a channel outside 0..127 or a channel listed twice; the message and the channel and field details name the entry' },
-      { code: 5, when: 'a record or name that reads back different; the error carries slot, the channel that failed' },
     ],
     positionals: 1,
     run: loadVerb,

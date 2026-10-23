@@ -128,7 +128,7 @@ describe('help', () => {
     expect(tune.preconditions).toContain(CHANNEL_RULE);
     expect(tune.writesToRadio).toEqual({ writes: true, note: expect.any(String) });
     expect(tune.result).toMatchObject({ channel: 5, rxMhz: '154.68', appliesAfterSeconds: 3 });
-    expect(tune.exits).toEqual([{ code: 5, when: 'a record or name that reads back different' }]);
+    expect(tune.exits).toEqual([]);
   });
 
   it('lists only the verb-specific exit cases in help VERB --json', async () => {
