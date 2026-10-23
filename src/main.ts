@@ -20,7 +20,7 @@ import {
 } from './codec.ts';
 import { BaofengError, EXIT, REASONS, RETRY, UnexpectedError, UsageError, exitCodeFor, signalExitCode, withDetail } from './errors.ts';
 import { readPlan } from './plan.ts';
-import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type ExitCase, type FlagDoc, type VerbDoc } from './help.ts';
+import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SETTLE_MS } from './protocol.ts';
 import {
   channelPayload,
@@ -143,16 +143,6 @@ const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
 const AUDIO_READY = 'ffmpeg is on PATH and the terminal has microphone access.';
 const APPLIES = `The radio reloads and applies the write about ${APPLIES_AFTER_SECONDS} s after the command ends.`;
 
-const EXIT_USAGE: ExitCase = { code: 2, when: EXIT_CODES['2']! };
-const EXIT_TRANSPORT: ExitCase = { code: 3, when: 'no device at the target, or a serial error' };
-const EXIT_TIMEOUT: ExitCase = { code: 4, when: 'no ack or a short read' };
-const EXIT_BUSY: ExitCase = { code: 6, when: 'another process holds the serial port' };
-
-/** Return the exit cases of a verb that runs one clone session. */
-function sessionExits(ok: string, deviceState: string): ExitCase[] {
-  return [{ code: 0, when: ok }, EXIT_USAGE, EXIT_TRANSPORT, EXIT_TIMEOUT, { code: 5, when: deviceState }, EXIT_BUSY];
-}
-
 const CHANNEL_RECORD = { rxMhz: '154.68', txMhz: '154.68', txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
 const SETTINGS_EXAMPLE = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'name', mdfb: 'name' };
 const LISTEN_EXAMPLE = {
@@ -177,7 +167,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only' },
     result: { firmware: 'HN5RV011', workmode: 'channel', squelch: 3, voice: 'eng', beep: 'on', abr: 5 },
-    exits: sessionExits('printed the status', 'no handshake or a bad reply'),
+    exits: [],
     positionals: 0,
     run: statusVerb,
   },
@@ -204,7 +194,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY, CHANNEL_RULE, 'Before tuning slot 0, run the check rule that uv5r help lists.'],
     writesToRadio: { writes: true, note: 'the channel record and name of slot N' },
     result: { channel: 5, ...CHANNEL_RECORD, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
-    exits: sessionExits('written and read back', 'no handshake, a bad reply, or a record or name that reads back different'),
+    exits: [{ code: 5, when: 'a record or name that reads back different' }],
     positionals: 1,
     run: tuneVerb,
   },
@@ -225,15 +215,8 @@ const verbs: Record<string, Verb> = {
     writesToRadio: { writes: true, note: 'a receive-only record and name in slot N; nothing restores the old record' },
     result: { slot: 0, requestedMhz: '162.4', ...LISTEN_EXAMPLE },
     exits: [
-      { code: 0, when: 'at least 80% of the seconds active' },
-      EXIT_USAGE,
-      { code: 3, when: 'no device, a serial error, or an ffmpeg failure or short capture' },
-      EXIT_TIMEOUT,
-      {
-        code: 5,
-        when: 'fewer than 80% of the seconds active: the message lists the causes and the error carries the result fields; also no handshake, a bad reply or a failed read-back',
-      },
-      EXIT_BUSY,
+      { code: 3, when: 'an ffmpeg failure or a short capture' },
+      { code: 5, when: 'fewer than 80% of the seconds active; the message lists the causes and the error carries the result fields' },
     ],
     positionals: 1,
     run: checkVerb,
@@ -253,12 +236,8 @@ const verbs: Record<string, Verb> = {
     writesToRadio: { writes: true, note: 'the record and name of each plan slot' },
     result: [{ channel: 1, rxMhz: '162.4', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
     exits: [
-      { code: 0, when: 'every entry written and read back' },
       { code: 2, when: 'a bad or unknown field, a channel outside 0..127 or a channel listed twice; the message and the channel and field details name the entry' },
-      EXIT_TRANSPORT,
-      EXIT_TIMEOUT,
-      { code: 5, when: 'no handshake, a bad reply, or a channel that did not take the write; the error carries slot, the channel that failed' },
-      EXIT_BUSY,
+      { code: 5, when: 'a record or name that reads back different; the error carries slot, the channel that failed' },
     ],
     positionals: 1,
     run: loadVerb,
@@ -272,7 +251,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only' },
     result: { channel: 5, ...CHANNEL_RECORD },
-    exits: sessionExits('printed the record', 'no handshake or a bad reply'),
+    exits: [],
     positionals: 1,
     run: readVerb,
   },
@@ -285,7 +264,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY],
     writesToRadio: { writes: true, note: '0xFF over the record and name of slot N' },
     result: { channel: 127, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
-    exits: sessionExits('erased and read back', 'no handshake, a bad reply, or a slot that reads back different'),
+    exits: [],
     positionals: 1,
     run: eraseVerb,
   },
@@ -306,13 +285,7 @@ const verbs: Record<string, Verb> = {
     ],
     writesToRadio: { writes: false, note: 'raises PTT only, which transmits on a TX-capable channel' },
     result: { pttAsserted: true, seconds: 2.003, released: true },
-    exits: [
-      { code: 0, when: 'PTT asserted and released' },
-      EXIT_USAGE,
-      { code: 3, when: 'no device, a serial error or a PTT control failure' },
-      EXIT_BUSY,
-      { code: '128+signal', when: 'interrupted by a signal; PTT released' },
-    ],
+    exits: [{ code: 3, when: 'a PTT control failure' }],
     positionals: 0,
     run: keyVerb,
   },
@@ -325,7 +298,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only; writes FILE on disk' },
     result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011' },
-    exits: sessionExits('image written to FILE', 'no handshake or a bad reply').map((e) => (e.code === 2 ? { code: 2, when: `${e.when}; also FILE not writable` } : e)),
+    exits: [{ code: 2, when: 'FILE not writable' }],
     positionals: 0,
     run: dumpVerb,
   },
@@ -341,10 +314,10 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY, 'IMAGE comes from a radio with the same ident.'],
     writesToRadio: { writes: true, note: 'channels, names and settings from IMAGE' },
     result: { file: 'radio.img', blocks: 382, verifiedBlocks: 64, settings: SETTINGS_EXAMPLE },
-    exits: sessionExits(
-      'written and verified',
-      'no handshake, a bad reply, an ident mismatch, or a block that reads back different; the message names the first address',
-    ).map((e) => (e.code === 2 ? { code: 2, when: `${e.when}; also no --force, an unreadable IMAGE or a short one` } : e)),
+    exits: [
+      { code: 2, when: 'no --force, an unreadable IMAGE or a short one' },
+      { code: 5, when: 'an ident mismatch, or a block that reads back different; the message names the first address' },
+    ],
     positionals: 1,
     run: restoreVerb,
   },
@@ -361,7 +334,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY],
     writesToRadio: { writes: true, note: 'the menu settings block, only when given FIELD VALUE pairs' },
     result: SETTINGS_EXAMPLE,
-    exits: sessionExits('printed the settings', 'no handshake, a bad reply, or a block that reads back different'),
+    exits: [],
     fields: Object.fromEntries(SETTING_NAMES.map((name) => [name, settingValues(name)])),
     positionals: Infinity,
     run: settingsVerb,
@@ -386,11 +359,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [AUDIO_READY],
     writesToRadio: { writes: false, note: 'opens no serial port' },
     result: { ...LISTEN_EXAMPLE, out: 'rx.wav' },
-    exits: [
-      { code: 0, when: 'captured' },
-      EXIT_USAGE,
-      { code: 3, when: 'ffmpeg missing or failed, a short capture, or an afplay failure' },
-    ],
+    exits: [{ code: 3, when: 'ffmpeg missing, or a short capture' }],
     positionals: 0,
     run: listenVerb,
   },
@@ -421,15 +390,7 @@ const verbs: Record<string, Verb> = {
       warnings: [],
       slot0: { channel: 7, name: 'SHERIFF' },
     },
-    exits: [
-      { code: 0, when: 'every entry swept' },
-      { code: 2, when: `${EXIT_CODES['2']}; also a plan without checkMhz` },
-      { code: 3, when: 'no device, a serial error, or an ffmpeg failure; the error carries summary, the result so far' },
-      { code: 4, when: 'no ack or a short read; the error carries summary, the result so far' },
-      { code: 5, when: 'the check failed or a write did not take; the error carries summary, the result so far' },
-      EXIT_BUSY,
-      { code: '128+signal', when: 'interrupted by a signal; the summary adds interrupted' },
-    ],
+    exits: [{ code: 2, when: 'a plan without checkMhz' }],
     positionals: 1,
     run: sweepVerb,
   },
@@ -467,7 +428,7 @@ function helpText(): string {
     ...Object.entries(verbs).map(([name, v]) => `  ${name.padEnd(width)}  ${v.summary}`),
     `  ${'help'.padEnd(width)}  Print this overview; help VERB prints one verb`,
     '',
-    'run uv5r help VERB for flags, defaults, effects, a result example and exit cases',
+    'run uv5r help VERB for flags, defaults, effects, a result example and the exit cases it adds to the table below',
     'run uv5r help --json or uv5r help VERB --json for the same as JSON; uv5r --version prints the version',
     '',
     'rules:',

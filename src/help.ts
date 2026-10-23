@@ -19,7 +19,7 @@ export interface ArgDoc {
   optional?: boolean;
 }
 
-/** One exit code a verb returns and when. */
+/** A verb-specific note on one exit code of the global table. */
 export interface ExitCase {
   code: number | string;
   when: string;
@@ -37,6 +37,7 @@ export interface VerbDoc {
   writesToRadio: { writes: boolean; note: string };
   /** Example of the JSON result on stdout. */
   result: unknown;
+  /** Notes that add to the global exit table; empty when the table covers the verb. */
   exits: ExitCase[];
   /** Extra name-to-text table, as the settings fields. */
   fields?: Record<string, string>;
@@ -92,6 +93,7 @@ export function verbText(name: string, doc: VerbDoc): string {
     return f.default === undefined ? '' : ` (default ${f.default})`;
   };
   const bullets = (items: string[]) => items.map((s) => `  - ${s}`);
+  const codeWidth = Math.max(0, ...doc.exits.map((e) => String(e.code).length));
   return [
     `uv5r ${name}: ${doc.summary}`,
     '',
@@ -113,8 +115,6 @@ export function verbText(name: string, doc: VerbDoc): string {
     '',
     'result:',
     `  ${JSON.stringify(doc.result)}`,
-    '',
-    'exit codes:',
-    ...doc.exits.map((e) => `  ${String(e.code).padEnd(10)}  ${e.when}`),
+    ...(doc.exits.length ? ['', 'exit codes beyond uv5r help:', ...doc.exits.map((e) => `  ${String(e.code).padEnd(codeWidth)}  ${e.when}`)] : []),
   ].join('\n');
 }

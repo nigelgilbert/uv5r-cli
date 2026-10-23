@@ -72,7 +72,8 @@ one they may transmit on, after asking the human what the display shows.
 
 Record keys are `rxMhz`, `txMhz`, `txTone`, `rxTone`, `bandwidth`, `power` and `name`.
 Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, result example and
-exit cases, and `uv5r help VERB --json` for the same as JSON.
+the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` for the same
+as JSON.
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal or with
 `--text`. A failed command prints nothing on stdout and one error object on stderr with

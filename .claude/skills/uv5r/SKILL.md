@@ -11,7 +11,8 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
 - `uv5r help` lists the verbs, the operating rules and the exit codes.
 - `uv5r help VERB` prints a verb's flags, defaults, effects, preconditions, result example
-  and exit cases. `uv5r help VERB --json` prints the same as JSON.
+  and the exit cases it adds to the table in `uv5r help`. `uv5r help VERB --json` prints the
+  same as JSON.
 - Read `uv5r help VERB --json` before the first run of a verb in a session.
 
 ## Operating rules

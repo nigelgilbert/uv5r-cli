@@ -128,7 +128,23 @@ describe('help', () => {
     expect(tune.preconditions).toContain(CHANNEL_RULE);
     expect(tune.writesToRadio).toEqual({ writes: true, note: expect.any(String) });
     expect(tune.result).toMatchObject({ channel: 5, rxMhz: '154.68', appliesAfterSeconds: 3 });
-    expect(tune.exits.map((e: { code: number }) => e.code)).toEqual([0, 2, 3, 4, 5, 6]);
+    expect(tune.exits).toEqual([{ code: 5, when: 'a record or name that reads back different' }]);
+  });
+
+  it('lists only the verb-specific exit cases in help VERB --json', async () => {
+    expect((await helpJson('status')).exits).toEqual([]);
+    stdout = [];
+    const check = await helpJson('check');
+    expect(check.exits.map((e: { code: number }) => e.code)).toEqual([3, 5]);
+    expect(check.exits[1].when).toContain('fewer than 80% of the seconds active');
+  });
+
+  it('prints help VERB with no exit section when the global table covers the verb', async () => {
+    await cli(['help', 'status']);
+    expect(stdout.join('')).not.toContain('exit codes');
+    stdout = [];
+    await cli(['help', 'check']);
+    expect(stdout.join('')).toContain('exit codes beyond uv5r help:\n  3  an ffmpeg failure or a short capture\n');
   });
 
   it('prints help --json with the schema version, rules, exit-code guidance and flag defaults', async () => {
