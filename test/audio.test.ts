@@ -283,6 +283,35 @@ describe('listen with stop', () => {
     expect(kill).not.toHaveBeenCalled();
     expect((await done).activeSeconds).toBe(2);
   });
+  it('leaves a finished capture untouched when a later stop resolves', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    const reads: PropertyKey[] = [];
+    let finished = false;
+    // Keep exitCode null so only the callback flag can tell the handler ffmpeg exited.
+    const child = new Proxy(
+      { kill, exitCode: null, signalCode: null },
+      {
+        get(target, key, receiver) {
+          if (finished) reads.push(key);
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => cb(null, '', STDERR);
+      return child;
+    });
+    let stop = () => {};
+    const done = listen('AIOC Audio', 3, -50, { stop: new Promise<void>((resolve) => (stop = resolve)) });
+    exit();
+    expect((await done).activeSeconds).toBe(2);
+    finished = true;
+    stop();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(kill).not.toHaveBeenCalled();
+    expect(reads).toEqual([]);
+  });
   it('sends SIGKILL when ffmpeg ignores SIGTERM for the grace period', async () => {
     vi.useFakeTimers();
     try {

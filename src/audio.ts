@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { type ChildProcess, execFile } from 'node:child_process';
 import { TransportError, UsageError } from './errors.ts';
 
 export interface ListenResult {
@@ -300,14 +300,20 @@ export function checkFfmpeg(): Promise<void> {
 /**
  * Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV.
  * When `stop` resolves, send ffmpeg SIGTERM, then SIGKILL after KILL_GRACE_MS, and reject once it exits.
+ * The stop handler outlives the capture in a sweep with no signal, so the callback drops the
+ * child to keep it and its buffered stderr from staying reachable through `stop`.
  */
 function capture(device: string, seconds: number, floorDbfs: number, out: string | undefined, stop?: Promise<unknown>): Promise<ListenResult> {
   const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
   let stopped = false;
+  let exited = false;
   let escalate: NodeJS.Timeout | undefined;
+  let child: ChildProcess | undefined;
   return new Promise((resolve, reject) => {
-    const child = execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
+    child = execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
       clearTimeout(escalate);
+      exited = true;
+      child = undefined;
       const e = err as ExecError | null;
       if (e?.code === 'ENOENT') {
         reject(ffmpegMissing());
@@ -331,11 +337,11 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
       resolve(summarize(device, seconds, levels, floorDbfs));
     });
     void stop?.then(() => {
-      if (child.exitCode != null || child.signalCode != null) return;
+      if (exited || !child || child.exitCode != null || child.signalCode != null) return;
       stopped = true;
       child.kill('SIGTERM');
       // Escalate in case ffmpeg ignores SIGTERM, since the capture resolves only once it exits.
-      escalate = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS).unref();
+      escalate = setTimeout(() => child?.kill('SIGKILL'), KILL_GRACE_MS).unref();
     });
   });
 }
