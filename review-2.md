@@ -2,7 +2,7 @@
 
 Date: 2026-10-22
 
-This review looks for knobs and output fields that a small model can misuse. Each item names a cut, says whether this PR added the surface, and lists the [review.md](review.md) findings it removes. Do items 1–5 in this PR. Items 6–11 can follow.
+This review looks for knobs and output fields that a small model can misuse. Each item names a cut, says whether this PR added the surface, and lists the [review.md](review.md) findings it removes. Do items 1–5 in this PR. Items 6–10 can follow.
 
 ## Do in this PR
 
@@ -56,7 +56,7 @@ Location: [src/main.ts:216](src/main.ts#L216). Predates this PR.
 
 `--seconds`, `--narrow`, `--low-power`, `--name` and the no-op `--rx-only` add nothing to the job.
 
-Cut: remove all seven flags. Keep `--device` until item 6 lands.
+Cut: remove all seven flags. Keep `--device`.
 
 ### 5. Drop `sweep --verbose`
 
@@ -68,47 +68,43 @@ Cut: remove the flag and `onDwell`.
 
 ## Follow-ups
 
-### 6. Move `--target` and `--device` to environment variables
+In priority order.
 
-Location: [src/main.ts:125](src/main.ts#L125), [src/main.ts:133](src/main.ts#L133), [src/errors.ts:81](src/errors.ts#L81), [src/errors.ts:105](src/errors.ts#L105), [src/transport.ts:38-78](src/transport.ts#L38-L78).
-
-The serial path and the audio input belong to the host. The human sets them once. `UV5R_TARGET` already exists.
-
-Cut: add `UV5R_AUDIO_DEVICE` and remove both flags. Reword the remedies that say "pass --target" or "check that --device names the AIOC input" to "ask the human".
-
-### 7. Drop `sweep --play` and `sweep --floor`
-
-Location: [src/main.ts:422](src/main.ts#L422).
-
-`--play` ties itself to `--out-dir` and to `afplay`. The human can play the WAVs in `--out-dir` after the run. Keep `--play` and `--floor` on `listen` for diagnostics.
-
-Removes: review #8.
-
-### 8. Drop the EEPROM channel fields from `status`
+### 6. Drop the EEPROM channel fields from `status`
 
 Location: [src/main.ts:173](src/main.ts#L173), [src/radio.ts:28-38](src/radio.ts#L28-L38). Predates this PR.
 
 `channelA`, `channelB`, the active record and `note` come with a warning not to trust them. SKILL.md repeats it. A small model reads the number anyway.
 
-Cut: remove the four fields and the SKILL.md rule about them.
+Cut: remove the four fields and the SKILL.md rule about them. Check whether `workmode` comes from the same EEPROM read; if it does, cut it too.
 
-### 9. Drop `kind` from the error JSON
+### 7. Drop `sweep --play` and `sweep --floor`
 
-Location: [src/errors.ts:207](src/errors.ts#L207).
+Location: [src/main.ts:422](src/main.ts#L422).
 
-The exit code and `reason` already carry it.
+`--floor` lets a model lower the threshold until a quiet sweep looks active, the same hole item 4 closes on `check`. `--play` ties itself to `--out-dir` and to `afplay`. The human can play the WAVs in `--out-dir` after the run. Keep `--play` and `--floor` on `listen` for diagnostics.
 
-### 10. Shrink per-verb `exits` in the help JSON
+Cut: remove both flags. Rewrite the SKILL.md rule that names `sweep --out-dir DIR --play` to point at the WAVs in `--out-dir`.
+
+Removes: review #8.
+
+### 8. Shrink per-verb `exits` in the help JSON
 
 The global exit table and the runtime `remedy` cover the shared cases. SKILL.md tells the agent to read `help VERB --json` before each verb, so the length costs context every session.
 
-Cut: keep only verb-specific notes in each verb's `exits`.
+Cut: keep only verb-specific notes in each verb's `exits`. A verb-specific twist on a shared code stays, such as `backup` adding "FILE not writable" to exit 2.
 
-### 11. Drop `--text`
+### 9. Drop `--text`
 
 Location: [src/main.ts:124](src/main.ts#L124).
 
 The terminal default and `--json` cover both audiences.
+
+### 10. Drop `kind` from the error JSON
+
+Location: [src/errors.ts:207](src/errors.ts#L207).
+
+The exit code and `reason` already carry it.
 
 ## Keep
 
