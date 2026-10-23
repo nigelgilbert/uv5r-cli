@@ -61,6 +61,9 @@ const PAD_SECONDS = 2;
 /** Milliseconds `ffmpeg -version` gets before checkFfmpeg reports it failed. */
 const VERSION_TIMEOUT_MS = 5000;
 
+/** Milliseconds ffmpeg gets after SIGTERM before the stop path sends SIGKILL. */
+export const KILL_GRACE_MS = 2000;
+
 /** RMS level in dBFS above which a second counts as active. */
 export const DEFAULT_FLOOR_DBFS = -50;
 
@@ -296,7 +299,7 @@ export function checkFfmpeg(): Promise<void> {
 
 /**
  * Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV.
- * When `stop` resolves, kill ffmpeg and reject once it exits.
+ * When `stop` resolves, send ffmpeg SIGTERM, then SIGKILL after KILL_GRACE_MS, and reject once it exits.
  */
 function capture(device: string, seconds: number, floorDbfs: number, out: string | undefined, stop?: Promise<unknown>): Promise<ListenResult> {
   const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
@@ -326,8 +329,11 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
       resolve(summarize(device, seconds, levels, floorDbfs));
     });
     void stop?.then(() => {
+      if (child.exitCode != null || child.signalCode != null) return;
       stopped = true;
-      child?.kill('SIGTERM');
+      child.kill('SIGTERM');
+      // Escalate in case ffmpeg ignores SIGTERM, since the capture resolves only once it exits.
+      setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS).unref();
     });
   });
 }

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { CLIP_WARNING, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
+import { CLIP_WARNING, KILL_GRACE_MS, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
 
 /** Pre-high-pass astats fields for one frame: sample min and max on the float scale, and the count of samples at either. */
 interface Raw {
@@ -263,19 +263,45 @@ describe('listen with stop', () => {
     exit();
     await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringMatching(/^ffmpeg killed after a signal to uv5r/) });
   });
-  it('rejects as killed when stop resolves after a clean exit but before the callback', async () => {
+  it('resolves normally when stop lands after ffmpeg exited but before the callback', async () => {
     let exit = () => {};
     const kill = vi.fn();
+    const child = { kill, exitCode: null as number | null, signalCode: null };
     execFile.mockImplementation((_file, _args, _opts, cb) => {
-      exit = () => cb(null, '', STDERR);
-      return { kill };
+      exit = () => {
+        child.exitCode = 0;
+        cb(null, '', STDERR);
+      };
+      return child;
     });
     let stop = () => {};
     const done = listen('AIOC Audio', 3, -50, { stop: new Promise<void>((resolve) => (stop = resolve)) });
+    child.exitCode = 0;
     stop();
     await new Promise((r) => setTimeout(r, 0));
     exit();
-    await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', detail: { code: null, signal: null } });
+    expect(kill).not.toHaveBeenCalled();
+    expect((await done).activeSeconds).toBe(2);
+  });
+  it('sends SIGKILL when ffmpeg ignores SIGTERM for the grace period', async () => {
+    vi.useFakeTimers();
+    try {
+      let exit = () => {};
+      const kill = vi.fn();
+      execFile.mockImplementation((_file, _args, _opts, cb) => {
+        exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGKILL' }), '', STDERR);
+        return { kill, exitCode: null, signalCode: null };
+      });
+      const done = listen('AIOC Audio', 3, -50, { stop: Promise.resolve() });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(kill).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(KILL_GRACE_MS);
+      expect(kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+      exit();
+      await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringMatching(/^ffmpeg killed after a signal to uv5r/) });
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('leaves ffmpeg running while stop stays pending', async () => {
     const kill = vi.fn();
