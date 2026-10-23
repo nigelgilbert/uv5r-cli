@@ -1,5 +1,5 @@
 /** Version of the `help --json` shape; bump it when a field changes meaning or goes away. */
-export const HELP_SCHEMA_VERSION = 1;
+export const HELP_SCHEMA_VERSION = 2;
 
 /** One flag a verb takes. A flag without `value` is boolean. */
 export interface FlagDoc {

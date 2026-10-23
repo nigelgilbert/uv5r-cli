@@ -107,8 +107,8 @@ export function captureName(channel: number, start: Date): string {
 }
 
 /**
- * Capture `options.seconds` on the channel the radio is on at DEFAULT_FLOOR_DBFS and report it as `entry`.
- * With `outDir` the capture goes to a WAV named by captureName.
+ * Capture `options.seconds` on the channel the radio is on, judge activity against DEFAULT_FLOOR_DBFS,
+ * and report it as `entry`. With `outDir` the capture goes to a WAV named by captureName.
  */
 export async function dwell(entry: PlanEntry, options: DwellOptions): Promise<DwellRecord> {
   const out = options.outDir === undefined ? undefined : join(options.outDir, captureName(entry.channel, new Date()));
@@ -128,12 +128,11 @@ export async function dwell(entry: PlanEntry, options: DwellOptions): Promise<Dw
 }
 
 /**
- * Return the steps that work through slot 0 over transport `t`. The check writes
- * `checkSpec` as a receive-only record, waits for the reload, listens CHECK_SECONDS at
- * DEFAULT_FLOOR_DBFS and applies the `check` rule. Each entry write puts the entry with
- * its own TX setting into slot 0 in a fresh clone session and waits for the reload. Each write sets
- * `progress.slot0` to null first, then sets it to the record read back once the write
- * verifies.
+ * Return the steps that work through slot 0 over transport `t`. The check writes `checkSpec` as a
+ * receive-only record, waits for the reload, listens CHECK_SECONDS at DEFAULT_FLOOR_DBFS and applies
+ * the `check` rule. Each entry write puts the entry with its own TX setting into slot 0 in a fresh
+ * clone session and waits for the reload. Each write sets `progress.slot0` to null first, then sets
+ * it to the record read back once the write verifies.
  */
 export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string }): SweepSteps {
   const write = async (progress: SweepProgress, channel: number | null, spec: ChannelSpec) => {
@@ -172,11 +171,11 @@ export function summarize(progress: SweepProgress, seconds: number, interrupted?
 }
 
 /**
- * Run the check, then prepare and dwell on each entry in order, and summarize. A failed
- * check throws before any entry is written. SIGINT,
- * SIGTERM or SIGHUP ends the run. The summary then covers the dwells finished before the
- * signal and names it in `interrupted`. A dwell whose capture the signal cut short is left
- * out. On a throw, `progress` holds the finished dwells and slot 0, and the error carries `phase`, `slot` and the plan `channel`, null during the check.
+ * Run the check, then prepare and dwell on each entry in order, and summarize. A failed check throws
+ * before any entry is written. SIGINT, SIGTERM or SIGHUP ends the run. The summary then covers the
+ * dwells finished before the signal and names it in `interrupted`. A dwell whose capture the signal
+ * cut short is left out. On a throw, `progress` holds the finished dwells and slot 0, and the error
+ * carries `phase`, `slot` and the plan `channel`, null during the check.
  */
 export async function runSweep(
   entries: readonly PlanEntry[],

@@ -114,6 +114,6 @@ describe('CLI number and file errors', () => {
   it('exits 0 with the whole help text on a pipe', () => {
     const r = spawnSync(process.execPath, ['src/main.ts', 'help'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(r.status).toBe(0);
-    expect(r.stdout.trimEnd().endsWith('128+signal key or sweep interrupted')).toBe(true);
+    expect(r.stdout.trimEnd().endsWith('  128+signal  interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary')).toBe(true);
   });
 });

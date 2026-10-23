@@ -214,7 +214,7 @@ const verbs: Record<string, Verb> = {
     writesToRadio: { writes: true, note: 'a receive-only record and name in slot N; nothing restores the old record' },
     result: { slot: 0, requestedMhz: '162.4', ...LISTEN_EXAMPLE },
     exits: [
-      { code: 3, when: 'an ffmpeg failure or a short capture' },
+      { code: 3, when: 'a short capture' },
       { code: 5, when: 'fewer than 80% of the seconds active; the message lists the causes and the error carries the result fields' },
     ],
     positionals: 1,
@@ -357,7 +357,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [AUDIO_READY],
     writesToRadio: { writes: false, note: 'opens no serial port' },
     result: { ...LISTEN_EXAMPLE, out: 'rx.wav' },
-    exits: [{ code: 3, when: 'ffmpeg missing, or a short capture' }],
+    exits: [{ code: 3, when: 'a short capture' }],
     positionals: 0,
     run: listenVerb,
   },
@@ -388,7 +388,10 @@ const verbs: Record<string, Verb> = {
       warnings: [],
       slot0: { channel: 7, name: 'SHERIFF' },
     },
-    exits: [{ code: 2, when: 'a plan without checkMhz' }],
+    exits: [
+      { code: 2, when: 'a plan without checkMhz' },
+      { code: 3, when: 'a short capture' },
+    ],
     positionals: 1,
     run: sweepVerb,
   },
@@ -419,6 +422,7 @@ function packageVersion(): string {
 
 function helpText(): string {
   const width = Math.max(...Object.keys(verbs).map((v) => v.length));
+  const codeWidth = Math.max(...Object.keys(EXIT_CODES).map((c) => c.length));
   return [
     'usage: uv5r VERB [ARGS] [FLAGS]',
     '',
@@ -436,9 +440,8 @@ function helpText(): string {
     '',
     `errors: ${ERROR_GUIDANCE}`,
     '',
-    `exit codes: ${Object.keys(EXIT_CODES)
-      .map((code) => `${code} ${code === '128+signal' ? 'key or sweep interrupted' : EXIT_CODES[code]!.split(':')[0]}`)
-      .join(', ')}`,
+    'exit codes:',
+    ...Object.entries(EXIT_CODES).map(([code, text]) => `  ${code.padEnd(codeWidth)}  ${text}`),
   ].join('\n');
 }
 

@@ -130,7 +130,7 @@ describe('help', () => {
 
   it('prints help tune --json with usage, flags, effects, preconditions, writes, result and exits', async () => {
     const tune = await helpJson('tune');
-    expect(tune).toMatchObject({ schemaVersion: 1, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
+    expect(tune).toMatchObject({ schemaVersion: 2, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
     expect(tune.usage).toMatch(/^uv5r tune FREQ --channel N \[--offset MHZ\]/);
     expect(tune.flags).toContainEqual({ flag: '--channel', value: 'N', required: true, default: null, help: expect.any(String) });
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--rx-tone', default: 'none' }));
@@ -155,12 +155,12 @@ describe('help', () => {
     expect(stdout.join('')).not.toContain('exit codes');
     stdout = [];
     await cli(['help', 'check']);
-    expect(stdout.join('')).toContain('exit codes beyond uv5r help:\n  3  an ffmpeg failure or a short capture\n');
+    expect(stdout.join('')).toContain('exit codes beyond uv5r help:\n  3  a short capture\n');
   });
 
   it('prints help --json with the schema version, rules, exit-code guidance and flag defaults', async () => {
     const help = await helpJson();
-    expect(help.schemaVersion).toBe(1);
+    expect(help.schemaVersion).toBe(2);
     expect(help.version).toBe('0.1.0');
     expect(help.rules).toEqual({
       checkFirst: expect.stringContaining('check 162.400 --channel 0'),
