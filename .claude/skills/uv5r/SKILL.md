@@ -47,14 +47,13 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
 ## On a failed command
 
-- A failed command prints one error object on stderr with `kind`, `reason`, `message`,
-  `remedy`, `retry` and detail fields when output is JSON, piped or with `--json`, and the
-  message plus a remedy line as text on a terminal. An exit of 128 plus a signal number
+- A failed command prints nothing on stdout and one error object on stderr with `kind`,
+  `reason`, `message`, `remedy`, `retry` and detail fields when output is JSON, piped or
+  with `--json`, and the message plus a remedy line as text on a terminal. An exit of 128 plus a signal number
   prints the result on stdout with `interrupted` and no error. Act on `reason`, `remedy`
   and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
 - `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun the
   same command once. `after-remedy`: rerun after doing the remedy.
-- `load` and `sweep` errors carry `written`, the fully verified writes in order.
-  `recordWritten: true` means the record took the write and the name is unverified.
-- A `key` error carries `pttAsserted`, `released` and `phase`. When `released` is false,
-  ask the human to unplug the AIOC. After a failed key, report and wait for the human.
+- A `load` error carries `slot`, the plan entry that failed. A `sweep` error carries
+  `summary`, the sweep result so far.
+- After a failed `key`, report and wait for the human.

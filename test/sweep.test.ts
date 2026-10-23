@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listen, type ListenResult } from '../src/audio.ts';
-import { TransportError } from '../src/errors.ts';
+import { BusyError, TransportError } from '../src/errors.ts';
 import { cli, type OpenTransport } from '../src/main.ts';
 import { readPlan } from '../src/plan.ts';
 import { KEY_SIGNALS } from '../src/radio.ts';
@@ -186,11 +186,11 @@ describe('sweep', () => {
       channel: null,
       requestedMhz: '162.4',
       activeSeconds: active,
-      written: [{ phase: 'check', slot: 0, requestedMhz: '162.4', channel: null }],
+      summary: { swept: 0, seconds: 2, active: [], warnings: [], slot0: { channel: null, name: '162.4' } },
     });
+    expect(errJson()).not.toHaveProperty('written');
     expect(errJson().message).toContain('VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency');
-    expect(stdout).toHaveLength(1);
-    expect(outJson()).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], slot0: { channel: null, name: '162.4' } });
+    expect(stdout).toEqual([]);
   });
 
   it.each([
@@ -267,11 +267,18 @@ describe('sweep', () => {
     execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', 'bad file'));
     await run([...SWEEP, '--out-dir', dir, '--play', '--verbose', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(3);
-    expect(outJson()).toMatchObject({ swept: 1, active: [{ channel: 1, activeSeconds: 2 }], slot0: { channel: 1, name: 'NOAA 1' } });
+    expect(stdout).toEqual([]);
     const lines = stderr.join('').trim().split('\n');
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]!)).toMatchObject({ channel: 1, activeSeconds: 2 });
-    expect(JSON.parse(lines[1]!)).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', phase: 'play', slot: 0, channel: 1 });
+    expect(JSON.parse(lines[1]!)).toMatchObject({
+      kind: 'transport',
+      reason: 'audio-process-failed',
+      phase: 'play',
+      slot: 0,
+      channel: 1,
+      summary: { swept: 1, active: [{ channel: 1, activeSeconds: 2 }], slot0: { channel: 1, name: 'NOAA 1' } },
+    });
   });
 
   it('swallows a playback that a SIGINT cuts short and prints the interrupted summary', async () => {
@@ -292,13 +299,25 @@ describe('sweep', () => {
     ['a missing plan file', ['sweep', 'missing.json']],
     ['no plan file', ['sweep']],
     ['a plan without checkMhz', ['sweep', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }] })]],
-  ])('carries an empty written list and prints no summary on %s', async (_what, argv) => {
+  ])('carries no summary and no written on %s', async (_what, argv) => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', written: [] });
+    expect(errJson()).toMatchObject({ kind: 'usage' });
+    expect(errJson()).not.toHaveProperty('summary');
+    expect(errJson()).not.toHaveProperty('written');
     expect(stdout).toEqual([]);
     expect(open.calls).toBe(0);
+  });
+
+  it('prints nothing on stdout and an empty summary on stderr when the port is busy', async () => {
+    const open: OpenTransport = async () => {
+      throw new BusyError('cannot open fake: Resource temporarily unavailable', { target: 'fake' });
+    };
+    await run([...SWEEP, '--json'], open);
+    expect(process.exitCode).toBe(6);
+    expect(stdout).toEqual([]);
+    expect(errJson()).toMatchObject({ reason: 'device-busy', summary: { swept: 0, seconds: 2, active: [], warnings: [], slot0: null } });
   });
 
   it('tags each warning with its plan channel', async () => {
@@ -337,7 +356,7 @@ describe('sweep', () => {
     expect(outJson()).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], slot0: { channel: null, name: '162.4' }, interrupted: 'SIGINT' });
   });
 
-  it('prints the summary with slot0 on stdout and the error on stderr when a dwell fails', async () => {
+  it('prints nothing on stdout and the error with the summary and slot0 on stderr when a dwell fails', async () => {
     let call = 0;
     listenMock.mockImplementation(async (_device, seconds) => {
       if (call++ === 3) throw new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"');
@@ -345,12 +364,12 @@ describe('sweep', () => {
     });
     await run([...SWEEP, '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(3);
-    expect(outJson()).toMatchObject({ swept: 2, slot0: { channel: 3, name: 'NOAA 3' } });
-    expect(outJson()).not.toHaveProperty('interrupted');
-    expect(errJson()).toMatchObject({ kind: 'transport', message: 'ffmpeg exited 1 capturing from "AIOC Audio"' });
+    expect(stdout).toEqual([]);
+    expect(errJson()).toMatchObject({ kind: 'transport', message: 'ffmpeg exited 1 capturing from "AIOC Audio"', summary: { swept: 2, slot0: { channel: 3, name: 'NOAA 3' } } });
+    expect(errJson().summary).not.toHaveProperty('interrupted');
   });
 
-  it('prints one finished dwell on stdout and the verified writes on stderr when the second dwell fails', async () => {
+  it('puts one finished dwell in the error summary when the second dwell fails', async () => {
     let call = 0;
     listenMock.mockImplementation(async (_device, seconds) => {
       if (call++ === 2) throw new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"');
@@ -358,14 +377,7 @@ describe('sweep', () => {
     });
     await run([...SWEEP, '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(3);
-    expect(stdout).toHaveLength(1);
-    expect(outJson()).toEqual({
-      swept: 1,
-      seconds: 2,
-      active: [{ channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 }],
-      warnings: [],
-      slot0: { channel: 2, name: 'NOAA 2' },
-    });
+    expect(stdout).toEqual([]);
     expect(errJson()).toEqual({
       kind: 'transport',
       reason: 'audio-process-failed',
@@ -375,15 +387,17 @@ describe('sweep', () => {
       phase: 'dwell',
       slot: 0,
       channel: 2,
-      written: [
-        { phase: 'check', slot: 0, requestedMhz: '162.4', channel: null },
-        { phase: 'entry', slot: 0, requestedMhz: '162.4', channel: 1 },
-        { phase: 'entry', slot: 0, requestedMhz: '162.475', channel: 2 },
-      ],
+      summary: {
+        swept: 1,
+        seconds: 2,
+        active: [{ channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 }],
+        warnings: [],
+        slot0: { channel: 2, name: 'NOAA 2' },
+      },
     });
   });
 
-  it('prints slot0 null when an entry write fails', async () => {
+  it('reports slot0 null in the error summary when an entry write fails', async () => {
     const radio = new FakeRadio();
     let call = 0;
     listenMock.mockImplementation(async (_device, seconds) => {
@@ -393,7 +407,7 @@ describe('sweep', () => {
     });
     await run([...SWEEP, '--json'], opener(radio));
     expect(process.exitCode).toBe(5);
-    expect(outJson()).toMatchObject({ swept: 2, slot0: null });
+    expect(stdout).toEqual([]);
     expect(errJson()).toMatchObject({
       kind: 'device-state',
       reason: 'verification-failed',
@@ -401,9 +415,10 @@ describe('sweep', () => {
       phase: 'entry',
       slot: 0,
       channel: 3,
-      recordWritten: false,
+      summary: { swept: 2, slot0: null },
     });
-    expect((errJson().written as Array<{ channel: number | null }>).map((w) => w.channel)).toEqual([null, 1, 2]);
+    expect(errJson()).not.toHaveProperty('written');
+    expect(errJson()).not.toHaveProperty('recordWritten');
   });
 
   it('checks with the plan checkMhz', async () => {
@@ -481,7 +496,7 @@ describe('runSweep', () => {
     };
     await expect(runSweep(entries, steps, options, () => {}, progress, new EventEmitter())).rejects.toThrow('ffmpeg exited 1');
     expect(prepare).not.toHaveBeenCalled();
-    expect(progress).toEqual({ dwells: [], slot0: { channel: null, name: '162.4' }, written: [] });
+    expect(progress).toEqual({ dwells: [], slot0: { channel: null, name: '162.4' } });
   });
 });
 

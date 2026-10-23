@@ -20,7 +20,7 @@ import {
   type SettingName,
   type Settings,
 } from './codec.ts';
-import { BaofengError, DeviceStateError, TransportError, withDetail } from './errors.ts';
+import { BaofengError, DeviceStateError, TransportError } from './errors.ts';
 import { Session, hex, settle } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
@@ -156,7 +156,7 @@ export async function readChannel(s: Session, n: number): Promise<Channel | unde
 /**
  * Write a channel record and read it back, then write its name and read that back, all in
  * one session. Reads the old record first so encodeChannel keeps its BCL, PTT-ID, S-code and
- * scan settings. Any error after the record verifies carries `recordWritten: true`.
+ * scan settings.
  */
 export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Promise<Channel> {
   checkChannelNumber(n);
@@ -169,16 +169,16 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} did not take the write`,
-      { wrote: hex(mem), read: hex(back), recordWritten: false },
+      { wrote: hex(mem), read: hex(back) },
       { remedy: `read channel ${n}, then rerun the write` },
     );
   }
-  const nameBack = await afterRecord(() => writeAndReadBack(s, NAME_BASE + n * 16, name));
+  const nameBack = await writeAndReadBack(s, NAME_BASE + n * 16, name);
   if (hex(nameBack) !== hex(name)) {
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} record written; name did not take the write`,
-      { wrote: hex(name), read: hex(nameBack), recordWritten: true },
+      { wrote: hex(name), read: hex(nameBack) },
       { remedy: `read channel ${n}; rerun the write to fix the name` },
     );
   }
@@ -187,7 +187,7 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
 
 /**
  * Write 0xFF over a channel record and read it back, then over its name and read that back,
- * all in one session. Any error after the record verifies carries `recordWritten: true`.
+ * all in one session.
  */
 export async function eraseChannel(s: Session, n: number): Promise<void> {
   checkChannelNumber(n);
@@ -198,16 +198,16 @@ export async function eraseChannel(s: Session, n: number): Promise<void> {
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} did not take the erase`,
-      { wrote: hex(blank), read: hex(back), recordWritten: false },
+      { wrote: hex(blank), read: hex(back) },
       { remedy: `read channel ${n}, then rerun the erase` },
     );
   }
-  const nameBack = await afterRecord(() => writeAndReadBack(s, NAME_BASE + n * 16, blank));
+  const nameBack = await writeAndReadBack(s, NAME_BASE + n * 16, blank);
   if (hex(nameBack) !== hex(blank)) {
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} record erased; name did not take the erase`,
-      { wrote: hex(blank), read: hex(nameBack), recordWritten: true },
+      { wrote: hex(blank), read: hex(nameBack) },
       { remedy: `read channel ${n}; rerun the erase to clear the name` },
     );
   }
@@ -217,15 +217,6 @@ export async function eraseChannel(s: Session, n: number): Promise<void> {
 async function writeAndReadBack(s: Session, addr: number, data: Uint8Array): Promise<Uint8Array> {
   await s.writeBlock(addr, data);
   return s.readBlock(addr, 0x10);
-}
-
-/** Run a step that follows a verified record write and add `recordWritten: true` to any error it throws. */
-async function afterRecord<T>(step: () => Promise<T>): Promise<T> {
-  try {
-    return await step();
-  } catch (err) {
-    throw withDetail(err, { recordWritten: true });
-  }
 }
 
 /** Full image in CHIRP layout: 8-byte ident, main 0x0000-0x17FF, aux 0x1EC0-0x1FFF. */
@@ -320,9 +311,6 @@ export async function verifyRestoredRanges(s: Session, image: Uint8Array): Promi
 /** Signals that end a key early. */
 export const KEY_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
-/** Step of a key that failed: opening the port, raising PTT, holding it, or releasing it. */
-export type KeyPhase = 'open' | 'assert' | 'hold' | 'release';
-
 export interface HoldResult {
   /** True after setPtt(true) succeeded. */
   pttAsserted: true;
@@ -344,7 +332,7 @@ function keyFailureMessage(pttAsserted: boolean, released: boolean, cause: strin
 /**
  * Assert PTT for `seconds`, stop early when `signals` emits SIGINT, SIGTERM or SIGHUP, and
  * release PTT in both cases. A failure in any step throws a TransportError whose detail
- * carries `pttAsserted`, `released` and the `phase` that failed first.
+ * carries `pttAsserted` and `released`.
  */
 export async function holdPtt(t: Transport, seconds: number, signals: EventEmitter = process): Promise<HoldResult> {
   let interrupted: NodeJS.Signals | undefined;
@@ -360,7 +348,6 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
   });
   let pttAsserted = false;
   let released = false;
-  let phase: KeyPhase = 'assert';
   let failure: unknown;
   let heldMs = 0;
   let timer: NodeJS.Timeout | undefined;
@@ -368,7 +355,6 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
     try {
       await t.setPtt(true);
       pttAsserted = true;
-      phase = 'hold';
       const assertedAt = performance.now();
       if (!interrupted) {
         await new Promise<void>((resolve) => {
@@ -385,10 +371,7 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
       await t.setPtt(false);
       released = true;
     } catch (err) {
-      if (failure === undefined) {
-        failure = err;
-        phase = 'release';
-      }
+      if (failure === undefined) failure = err;
     }
   } finally {
     for (const [signal, handler] of handlers) signals.off(signal, handler);
@@ -404,7 +387,6 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
         ...base,
         pttAsserted,
         released,
-        phase,
         ...(pttAsserted ? { seconds: held } : {}),
         ...(interrupted ? { interrupted } : {}),
       },

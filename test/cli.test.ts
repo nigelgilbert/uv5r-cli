@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TransportError } from '../src/errors.ts';
+import { BusyError, REASONS, TransportError } from '../src/errors.ts';
 import { cli, type OpenTransport } from '../src/main.ts';
 import type { Transport } from '../src/transport.ts';
 import { FakeRadio } from './fake.ts';
@@ -435,7 +435,7 @@ describe('key output', () => {
     expect(out.seconds).toBeGreaterThanOrEqual(0.1);
   });
 
-  it('exits 3 with pttAsserted, released and phase when the release fails after the assertion', async () => {
+  it('exits 3 with pttAsserted true and released false when the release fails after the assertion', async () => {
     const radio = new FakeRadio();
     let releases = 0;
     radio.setPtt = async (on: boolean) => {
@@ -446,8 +446,10 @@ describe('key output', () => {
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     const err = errJson();
-    expect(err).toMatchObject({ kind: 'transport', reason: 'ptt-control-failed', retry: 'no', pttAsserted: true, released: false, phase: 'release' });
+    expect(err).toMatchObject({ kind: 'transport', reason: 'ptt-control-failed', retry: 'no', pttAsserted: true, released: false });
+    expect(err).not.toHaveProperty('phase');
     expect(err.message).toContain('unplug the AIOC');
+    expect(err.remedy).toBe('ask the human to unplug the AIOC to drop PTT');
   });
 
   it('exits 3 with pttAsserted false and released false when both steps fail', async () => {
@@ -457,23 +459,41 @@ describe('key output', () => {
     };
     await cli(['key', '--seconds', '0.1', '--json'], opener(radio));
     expect(process.exitCode).toBe(3);
-    expect(errJson()).toMatchObject({ kind: 'transport', pttAsserted: false, released: false, phase: 'assert' });
+    expect(errJson()).toMatchObject({ kind: 'transport', pttAsserted: false, released: false, retry: 'no' });
   });
 
-  it('exits 3 with pttAsserted false, released false, phase open and retry no when the device is missing', async () => {
+  it('exits 3 with the device-unavailable remedy and retry when the device is missing', async () => {
     await cli(['key', '--seconds', '0.1', '--json'], opener());
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
-    expect(errJson()).toMatchObject({ kind: 'transport', reason: 'device-unavailable', retry: 'no', pttAsserted: false, released: false, phase: 'open' });
+    const err = errJson();
+    expect(err).toMatchObject({ kind: 'transport', reason: 'device-unavailable', remedy: REASONS['device-unavailable'].remedy, retry: 'after-remedy' });
+    expect(err).not.toHaveProperty('pttAsserted');
+    expect(err).not.toHaveProperty('released');
+    expect(err).not.toHaveProperty('phase');
   });
 
-  it('reports phase open when the PTT release fails while the port opens', async () => {
+  it('exits 6 with the device-busy retry when another process holds the port', async () => {
+    const open: OpenTransport = async () => {
+      throw new BusyError('cannot open fake: Resource temporarily unavailable', { target: 'fake' });
+    };
+    await cli(['key', '--seconds', '0.1', '--json'], open);
+    expect(process.exitCode).toBe(6);
+    expect(stdout).toEqual([]);
+    const err = errJson();
+    expect(err).toMatchObject({ reason: 'device-busy', retry: 'after-remedy' });
+    expect(err).not.toHaveProperty('released');
+  });
+
+  it('tells the human to unplug with retry no when the PTT release fails while the port opens', async () => {
     const open: OpenTransport = async () => {
       throw new TransportError('ptt-control-failed', 'cannot lower DTR', { target: 'fake' });
     };
     await cli(['key', '--seconds', '0.1', '--json'], open);
     expect(process.exitCode).toBe(3);
-    expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', retry: 'no', pttAsserted: false, released: false, phase: 'open', target: 'fake' });
+    const err = errJson();
+    expect(err).toMatchObject({ reason: 'ptt-control-failed', remedy: 'ask the human to unplug the AIOC to drop PTT', retry: 'no', target: 'fake' });
+    expect(err).not.toHaveProperty('phase');
   });
 
   it('describes the displayed channel and receive-only slots in help', async () => {
@@ -575,14 +595,14 @@ describe('load', () => {
       message: 'channel 5 did not take the write',
       remedy: 'read channel 5, then rerun the write',
       retry: 'after-remedy',
-      recordWritten: false,
       slot: 5,
     });
-    expect(errJson().written.map((w: { channel: number }) => w.channel)).toEqual([1, 2, 3, 4]);
+    expect(errJson()).not.toHaveProperty('written');
+    expect(errJson()).not.toHaveProperty('recordWritten');
     expect(stdout).toEqual([]);
   });
 
-  it('lists the two verified channels in written when the third record write gets no ack', async () => {
+  it('names slot 3 when the third record write gets no ack', async () => {
     const radio = new FakeRadio();
     radio.refuseWriteAt = 0x0000 + 3 * 16;
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
@@ -590,14 +610,11 @@ describe('load', () => {
     expect(radio.writes).toEqual([0x0010, 0x1010, 0x0020, 0x1020, 0x0030]);
     const err = errJson();
     expect(err).toMatchObject({ kind: 'device-state', reason: 'write-unacknowledged', message: 'radio refused write at 0x30', retry: 'once', slot: 3 });
-    expect(err.written).toEqual([
-      { channel: 1, rxMhz: '162.4', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA 1' },
-      { channel: 2, rxMhz: '162.475', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA 2' },
-    ]);
+    expect(err).not.toHaveProperty('written');
     expect(stdout).toEqual([]);
   });
 
-  it('reports recordWritten when the third channel name does not take the write', async () => {
+  it('names slot 3 and the name in the message when the third channel name does not take the write', async () => {
     const radio = new FakeRadio();
     radio.writesIgnoredBelow = 0x1000 + 3 * 16;
     radio.writesIgnoredAbove = 0x1000 + 4 * 16;
@@ -608,40 +625,44 @@ describe('load', () => {
       reason: 'verification-failed',
       message: 'channel 3 record written; name did not take the write',
       remedy: 'read channel 3; rerun the write to fix the name',
-      recordWritten: true,
       slot: 3,
     });
-    expect(err.written.map((w: { channel: number }) => w.channel)).toEqual([1, 2]);
+    expect(err).not.toHaveProperty('recordWritten');
+    expect(err).not.toHaveProperty('written');
   });
 
   it.each([
     ['a missing plan file', ['load', 'missing.json']],
     ['no plan file', ['load']],
     ['a bad plan entry', ['load', planFile({ channels: [{ channel: 200, rxMhz: 146.82 }] })]],
-  ])('carries an empty written list on %s', async (_what, argv) => {
+  ])('carries no slot and no written on %s', async (_what, argv) => {
     const open = opener(new FakeRadio());
     await run([...argv, '--json'], open);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', written: [] });
+    expect(errJson()).toMatchObject({ kind: 'usage' });
+    expect(errJson()).not.toHaveProperty('slot');
+    expect(errJson()).not.toHaveProperty('written');
     expect(open.calls).toBe(0);
     expect(stdout).toEqual([]);
   });
 
-  it('reports recordWritten and the slot when the third channel name read times out', async () => {
+  it('reports the slot when the third channel name read times out', async () => {
     const radio = new FakeRadio();
     radio.silentReadAt = 0x1000 + 3 * 16;
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
     expect(process.exitCode).toBe(4);
     const err = errJson();
-    expect(err).toMatchObject({ reason: 'serial-timeout', recordWritten: true, slot: 3 });
-    expect(err.written.map((w: { channel: number }) => w.channel)).toEqual([1, 2]);
+    expect(err).toMatchObject({ reason: 'serial-timeout', slot: 3 });
+    expect(err).not.toHaveProperty('recordWritten');
+    expect(err).not.toHaveProperty('written');
   });
 
-  it('carries an empty written list when the port does not open', async () => {
+  it('carries no slot and no written when the port does not open', async () => {
     await run(['load', EXAMPLE_PLAN, '--json'], opener());
     expect(process.exitCode).toBe(3);
-    expect(errJson()).toMatchObject({ reason: 'device-unavailable', written: [] });
+    expect(errJson()).toMatchObject({ reason: 'device-unavailable' });
     expect(errJson()).not.toHaveProperty('slot');
+    expect(errJson()).not.toHaveProperty('written');
   });
 
   it('prints one channel line per entry as text', async () => {

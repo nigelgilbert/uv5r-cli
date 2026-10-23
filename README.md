@@ -74,14 +74,13 @@ Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, resul
 exit cases, and `uv5r help VERB --json` for the same as JSON.
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal or with
-`--text`. A failed command prints one error object on stderr with `kind`, `reason`,
-`message`, `remedy`, `retry` and detail fields when output is JSON, piped or with `--json`.
-On a terminal it prints the message and a remedy line as text. An exit of 128 plus a signal
-number prints the result on stdout with `interrupted` and no error. Act on `reason`, `remedy`
-and `retry`; `uv5r help --json` lists each reason and retry value under `errors`. `load` and
-`sweep` errors add `written`, the fully verified writes in order. A `key` error carries
-`pttAsserted`, `released` and `phase`. When `released` is false, ask the human to unplug the
-AIOC.
+`--text`. A failed command prints nothing on stdout and one error object on stderr with
+`kind`, `reason`, `message`, `remedy`, `retry` and detail fields when output is JSON, piped
+or with `--json`. On a terminal it prints the message and a remedy line as text. An exit of
+128 plus a signal number prints the result on stdout with `interrupted` and no error. Act on
+`reason`, `remedy` and `retry`; `uv5r help --json` lists each reason and retry value under
+`errors`. A `load` error adds `slot`, the plan entry that failed. A `sweep` error adds
+`summary`, the sweep result so far.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 

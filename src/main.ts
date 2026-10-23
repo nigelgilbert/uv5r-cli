@@ -43,7 +43,6 @@ import {
   writeChannel,
   writeSettings,
   type ChannelResult,
-  type HoldResult,
   type RadioStatus,
 } from './radio.ts';
 import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type DwellRecord, type Slot0, type SweepSummary } from './sweep.ts';
@@ -92,7 +91,7 @@ const RULES = {
     'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or sweep --out-dir DIR --play.',
 };
 
-const OUTPUT_RULE = 'JSON on stdout when piped or with --json, text on a terminal or with --text; errors go to stderr in the same format';
+const OUTPUT_RULE = 'JSON on stdout when piped or with --json, text on a terminal or with --text; a failed command prints nothing on stdout and its error on stderr in the same format';
 
 /** What each exit code means; the error's reason and remedy fields say what to do next. */
 const EXIT_CODES: Record<string, string> = {
@@ -110,7 +109,7 @@ const ERROR_GUIDANCE =
   'A failed command prints one error object on stderr with kind, reason, message, remedy, retry and detail fields when output is JSON, piped or with --json. ' +
   'On a terminal it prints the message and a remedy line as text. ' +
   'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
-  'load and sweep errors add written, the fully verified writes in order. ' +
+  'A load error adds slot, the plan entry that failed. A sweep error adds summary, the sweep result so far. ' +
   'An exit of 128 plus a signal number prints the result on stdout with interrupted and no error.';
 
 /** The errors section of `help --json`: the error format, each reason with its exit code, and the retry values. */
@@ -272,7 +271,7 @@ const verbs: Record<string, Verb> = {
       { code: 2, when: 'a bad or unknown field, a channel outside 0..127 or a channel listed twice; the message and the channel and field details name the entry' },
       EXIT_TRANSPORT,
       EXIT_TIMEOUT,
-      { code: 5, when: 'no handshake, a bad reply, or a channel that did not take the write; the error carries slot and written, the channels verified before it' },
+      { code: 5, when: 'no handshake, a bad reply, or a channel that did not take the write; the error carries slot, the channel that failed' },
       EXIT_BUSY,
     ],
     positionals: 1,
@@ -324,10 +323,7 @@ const verbs: Record<string, Verb> = {
     exits: [
       { code: 0, when: 'PTT asserted and released' },
       EXIT_USAGE,
-      {
-        code: 3,
-        when: 'no device, a serial error or a PTT control failure; the error carries pttAsserted, released and phase, which is open when the port did not open. When released is false, ask the human to unplug the AIOC',
-      },
+      { code: 3, when: 'no device, a serial error or a PTT control failure; a PTT failure while keying carries pttAsserted and released' },
       EXIT_BUSY,
       { code: '128+signal', when: 'interrupted by a signal; PTT released' },
     ],
@@ -444,9 +440,9 @@ const verbs: Record<string, Verb> = {
     exits: [
       { code: 0, when: 'every entry swept' },
       { code: 2, when: `${EXIT_CODES['2']}; also a plan without checkMhz` },
-      { code: 3, when: 'no device, a serial error, or an ffmpeg or afplay failure; stdout holds the summary so far and the error carries written' },
-      { code: 4, when: 'no ack or a short read; stdout holds the summary so far and the error carries written' },
-      { code: 5, when: 'the check failed or a write did not take; stdout holds the summary so far and the error carries written' },
+      { code: 3, when: 'no device, a serial error, or an ffmpeg or afplay failure; the error carries summary, the result so far' },
+      { code: 4, when: 'no ack or a short read; the error carries summary, the result so far' },
+      { code: 5, when: 'the check failed or a write did not take; the error carries summary, the result so far' },
       EXIT_BUSY,
       { code: '128+signal', when: 'interrupted by a signal; the summary adds interrupted' },
     ],
@@ -676,7 +672,7 @@ async function checkVerb(args: Invocation): Promise<number> {
 
 async function loadVerb(args: Invocation): Promise<number> {
   checkFlags('load', args.flags, flagNames('load'));
-  const written: ChannelResult[] = [];
+  const records: ChannelResult[] = [];
   let slot: number | undefined;
   try {
     const file = args.positionals[0];
@@ -686,15 +682,15 @@ async function loadVerb(args: Invocation): Promise<number> {
       withSession(t, async (s) => {
         for (const { channel, spec } of plan.entries) {
           slot = channel;
-          written.push(channelPayload(channel, await writeChannel(s, channel, spec)));
+          records.push(channelPayload(channel, await writeChannel(s, channel, spec)));
         }
       }),
     );
   } catch (err) {
-    // Name the slot that failed and the channels verified before it.
-    throw withDetail(err, { ...(slot === undefined ? {} : { slot }), written });
+    // Name the slot that failed.
+    throw withDetail(err, slot === undefined ? {} : { slot });
   }
-  const result = written.map((record) => ({ ...record, appliesAfterSeconds: APPLIES_AFTER_SECONDS }));
+  const result = records.map((record) => ({ ...record, appliesAfterSeconds: APPLIES_AFTER_SECONDS }));
   print(args, result, () => result.map(channelText).join('\n'));
   return EXIT.ok;
 }
@@ -728,15 +724,7 @@ async function keyVerb(args: Invocation): Promise<number> {
   if (!args.flags.has('seconds')) throw new UsageError(`key needs --seconds S (max ${MAX_KEY_SECONDS}), as in: key --seconds 2`);
   const seconds = numberFlag(args.flags, 'seconds')!;
   if (seconds <= 0 || seconds > MAX_KEY_SECONDS) throw new UsageError(`--seconds takes 0 < S <= ${MAX_KEY_SECONDS}; got ${seconds}`);
-  let held: HoldResult;
-  try {
-    held = await withTransport(args, (t) => holdPtt(t, seconds));
-  } catch (err) {
-    const error = withDetail(err, {});
-    // Report an error from before holdPtt ran with PTT unconfirmed and no retry advice.
-    if (!('pttAsserted' in error.detail)) error.attach({ pttAsserted: false, released: false, phase: 'open' }, { retry: 'no' });
-    throw error;
-  }
+  const held = await withTransport(args, (t) => holdPtt(t, seconds));
   const signal = held.interrupted;
   if (signal) {
     print(args, held, () => `PTT asserted for ${held.seconds} s; interrupted by ${signal}; PTT released`);
@@ -906,12 +894,8 @@ async function sweepVerb(args: Invocation): Promise<number> {
     transportAsked = true;
     summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device, floorDbfs }), options, onDwell, progress));
   } catch (err) {
-    if (transportAsked) {
-      // Print the finished dwells and slot 0 on stdout; cli prints the error with the verified writes on stderr.
-      const partial = summarize(progress, seconds);
-      print(args, partial, () => sweepText(partial));
-    }
-    throw withDetail(err, { written: progress.written });
+    // Add the finished dwells and slot 0 to the error once the port was asked for.
+    throw withDetail(err, transportAsked ? { summary: summarize(progress, seconds) } : {});
   }
   print(args, summary, () => sweepText(summary));
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;

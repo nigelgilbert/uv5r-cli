@@ -62,7 +62,7 @@ describe('holdPtt', () => {
     expect(result).toMatchObject({ pttAsserted: true, released: true });
   });
 
-  it('throws a transport error naming the release phase when the release fails after the assertion', async () => {
+  it('throws a transport error with released false when the release fails after the assertion', async () => {
     const em = new EventEmitter();
     const radio: Transport = Object.assign(new FakeRadio(), {
       async setPtt(on: boolean): Promise<void> {
@@ -74,7 +74,8 @@ describe('holdPtt', () => {
     const err = await pending.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     const body = (err as TransportError).toJSON();
-    expect(body).toMatchObject({ kind: 'transport', pttAsserted: true, released: false, phase: 'release', interrupted: 'SIGINT' });
+    expect(body).toMatchObject({ kind: 'transport', retry: 'no', pttAsserted: true, released: false, interrupted: 'SIGINT' });
+    expect(body).not.toHaveProperty('phase');
     expect(body.message).toContain('PTT rose and the release is unconfirmed: release failed');
     expect(body.message).toContain('unplug the AIOC');
     expect(body.message).not.toMatch(/retry/i);
@@ -91,7 +92,7 @@ describe('holdPtt', () => {
     const err = await holdPtt(radio, 5, em).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     const body = (err as TransportError).toJSON();
-    expect(body).toMatchObject({ pttAsserted: false, released: false, phase: 'assert' });
+    expect(body).toMatchObject({ pttAsserted: false, released: false });
     expect(body.message).toContain('assert failed');
     expect(body.message).toContain('unplug the AIOC');
     expect(listeners(em)).toBe(0);
@@ -104,7 +105,7 @@ describe('holdPtt', () => {
       radio.ptt = false;
     };
     const err = await holdPtt(radio, 5, new EventEmitter()).catch((e: unknown) => e);
-    expect((err as TransportError).toJSON()).toMatchObject({ target: 'fake', pttAsserted: false, released: true, phase: 'assert' });
+    expect((err as TransportError).toJSON()).toMatchObject({ target: 'fake', pttAsserted: false, released: true });
     expect((err as TransportError).message).not.toContain('unplug');
   });
 });
@@ -118,7 +119,7 @@ describe('signalExitCode', () => {
 });
 
 describe('key verb', () => {
-  it('exits 3 with a transport error when the target does not exist', () => {
+  it('exits 3 with the device-unavailable retry and no PTT fields when the target does not exist', () => {
     const res = spawnSync(process.execPath, [MAIN, 'key', '--seconds', '5', '--json'], {
       env: { ...process.env, UV5R_TARGET: '/dev/does-not-exist-uv5r' },
       encoding: 'utf8',
@@ -126,6 +127,10 @@ describe('key verb', () => {
     });
     expect(res.status).toBe(3);
     expect(res.stdout).toBe('');
-    expect(JSON.parse(res.stderr.trim())).toMatchObject({ kind: 'transport', retry: 'no', pttAsserted: false, released: false, phase: 'open' });
+    const err = JSON.parse(res.stderr.trim());
+    expect(err).toMatchObject({ kind: 'transport', reason: 'device-unavailable', retry: 'after-remedy' });
+    expect(err).not.toHaveProperty('pttAsserted');
+    expect(err).not.toHaveProperty('released');
+    expect(err).not.toHaveProperty('phase');
   });
 });

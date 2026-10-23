@@ -74,22 +74,12 @@ export interface SweepSummary {
 /** Step of a sweep: the check write and capture, an entry write, an entry dwell, or its playback. */
 export type SweepPhase = 'check' | 'entry' | 'dwell' | 'play';
 
-/** One fully verified write into slot 0; `channel` is the plan channel, null for the check record. */
-export interface SweepWrite {
-  phase: 'check' | 'entry';
-  slot: number;
-  requestedMhz: string;
-  channel: number | null;
-}
-
 /** State the sweep steps update as they go; the caller reads it to summarize a sweep that threw. */
 export interface SweepProgress {
   /** Dwells finished, in plan order. */
   dwells: DwellRecord[];
   /** Contents of slot 0 after the last verified write; null while a write runs and after a failed one. */
   slot0: Slot0 | null;
-  /** Fully verified writes in order, independent of finished dwells. */
-  written: SweepWrite[];
 }
 
 /** Signal state shared by the loop and the steps that wait on the radio. */
@@ -110,7 +100,7 @@ export interface SweepSteps {
 
 /** Return an empty progress record. */
 export function newProgress(): SweepProgress {
-  return { dwells: [], slot0: null, written: [] };
+  return { dwells: [], slot0: null };
 }
 
 /** Name a capture from the plan channel and the local start time, as in ch07-2026-10-18T00-15-00.wav. */
@@ -159,15 +149,14 @@ export async function playDwell(record: DwellRecord, options: DwellOptions, stop
  * `checkSpec` as a receive-only record, waits for the reload, listens CHECK_SECONDS and
  * applies the `check` rule. Each entry write puts the entry with its own TX setting into
  * slot 0 in a fresh clone session and waits for the reload. Each write sets
- * `progress.slot0` to null first, then sets it to the record read back and appends to
- * `progress.written` once the write verifies.
+ * `progress.slot0` to null first, then sets it to the record read back once the write
+ * verifies.
  */
 export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string; floorDbfs: number }): SweepSteps {
   const write = async (progress: SweepProgress, channel: number | null, spec: ChannelSpec) => {
     progress.slot0 = null;
     const written = await withSession(t, (s) => writeChannel(s, SWEEP_SLOT, spec));
     progress.slot0 = { channel, name: written.name };
-    progress.written.push({ phase: channel === null ? 'check' : 'entry', slot: SWEEP_SLOT, requestedMhz: formatMhz(spec.rxHz), channel });
   };
   return {
     async check(progress, stop) {
@@ -205,8 +194,7 @@ export function summarize(progress: SweepProgress, seconds: number, interrupted?
  * its dwell already in `progress`. A failed check throws before any entry is written. SIGINT,
  * SIGTERM or SIGHUP ends the run. The summary then covers the dwells finished before the
  * signal and names it in `interrupted`. A dwell whose capture the signal cut short is left
- * out. On a throw, `progress` holds the finished dwells, slot 0 and the verified writes,
- * and the error carries `phase`, `slot` and the plan `channel`, null during the check.
+ * out. On a throw, `progress` holds the finished dwells and slot 0, and the error carries `phase`, `slot` and the plan `channel`, null during the check.
  */
 export async function runSweep(
   entries: readonly PlanEntry[],

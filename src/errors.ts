@@ -89,7 +89,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'ptt-control-failed': {
     kind: 'transport',
-    means: 'the port did not confirm a PTT assertion or release; pttAsserted, released and phase say which',
+    means: 'the port did not confirm a PTT assertion or release',
     remedy: 'ask the human to unplug the AIOC to drop PTT',
     retry: 'no',
   },
@@ -131,7 +131,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'verification-failed': {
     kind: 'device-state',
-    means: 'a write was acked but reads back different; recordWritten says when the record took it',
+    means: 'a write was acked but reads back different',
     remedy: 'read the slot, then rerun the write',
     retry: 'after-remedy',
   },
