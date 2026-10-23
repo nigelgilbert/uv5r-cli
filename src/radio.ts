@@ -20,14 +20,20 @@ import {
   type SettingName,
   type Settings,
 } from './codec.ts';
-import { BaofengError, DeviceStateError, TransportError } from './errors.ts';
+import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
 import { Session, hex, settle } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
 /** Channel fields every channel payload carries. */
 export type ChannelPayload = { channel: number } & Omit<ChannelJson, 'scan'>;
 
-export type ChannelResult = ChannelPayload | { channel: number; empty: true };
+/** A record whose first byte is not 0xFF and whose RX or TX frequency bytes are not valid BCD; raw holds its 16 bytes as hex. */
+export interface MalformedRecord {
+  malformed: true;
+  raw: string;
+}
+
+export type ChannelResult = ChannelPayload | { channel: number; empty: true } | ({ channel: number } & MalformedRecord);
 
 export type RadioStatus = {
   firmware: string;
@@ -39,8 +45,9 @@ export type RadioStatus = {
 };
 
 /** Build the flat payload for channel `n`; an undefined record gives `empty: true`. */
-export function channelPayload(n: number, ch: Channel | undefined): ChannelResult {
+export function channelPayload(n: number, ch: Channel | MalformedRecord | undefined): ChannelResult {
   if (!ch) return { channel: n, empty: true };
+  if ('malformed' in ch) return { channel: n, ...ch };
   // Destructure the first three keys to keep the documented order, which puts txTone before rxTone.
   const { scan: _scan, rxMhz, txMhz, txTone, ...rest } = channelToJson(ch);
   return { channel: n, rxMhz, txMhz, txTone, ...rest };
@@ -72,10 +79,20 @@ export async function readSettings(s: Session): Promise<Settings> {
 export async function writeSettings(s: Session, patch: Partial<Record<SettingName, number>>): Promise<Uint8Array> {
   const block = applySettings(await readSettingsBlock(s), patch);
   const commit = (await s.readBlock(SETTINGS_COMMIT, 0x40)).subarray(0, 0x10);
-  await s.writeBlock(SETTINGS_BASE, block.subarray(0, 0x10));
-  await s.writeBlock(SETTINGS_BASE + 0x10, block.subarray(0x10, 0x20));
-  await s.writeBlock(SETTINGS_COMMIT, commit);
+  try {
+    await s.writeBlock(SETTINGS_BASE, block.subarray(0, 0x10));
+    await s.writeBlock(SETTINGS_BASE + 0x10, block.subarray(0x10, 0x20));
+    await s.writeBlock(SETTINGS_COMMIT, commit);
+  } catch (err) {
+    throw unacknowledged(err, { remedy: 'run uv5r settings to read the block, then rerun', retry: 'after-remedy' });
+  }
   return block;
+}
+
+/** Return `err`, with `guidance` replacing the slot remedy when the radio did not ack a write. */
+function unacknowledged(err: unknown, guidance: Partial<Guidance>): unknown {
+  if (err instanceof BaofengError && err.reason === 'write-unacknowledged') err.attach({}, guidance);
+  return err;
 }
 
 /** Read the settings block in a fresh session and fail when it differs from `expected`. */
@@ -131,11 +148,14 @@ export async function readStatus(s: Session): Promise<RadioStatus> {
   };
 }
 
-export async function readChannel(s: Session, n: number): Promise<Channel | undefined> {
+/** Read channel `n`; an erased slot gives undefined and a record with bad BCD gives a MalformedRecord. */
+export async function readChannel(s: Session, n: number): Promise<Channel | MalformedRecord | undefined> {
   checkChannelNumber(n);
   const mem = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
   const name = await s.readBlock(NAME_BASE + n * 16, 0x10);
-  return decodeChannel(mem, name);
+  const ch = decodeChannel(mem, name);
+  if (ch === undefined && mem[0] !== 0xff) return { malformed: true, raw: hex(mem) };
+  return ch;
 }
 
 /**
@@ -244,12 +264,16 @@ export async function restoreImage(s: Session, image: Uint8Array, onProgress?: (
     throw new DeviceStateError('image-incompatible', 'image ident does not match this radio', { image: hex(image.subarray(0, IMAGE_HEADER)), radio: hex(ident.bytes) });
   }
   let blocks = 0;
-  for (const [start, end] of RESTORE_RANGES) {
-    for (let a = start; a < end; a += 0x10) {
-      await s.writeBlock(a, image.subarray(IMAGE_HEADER + a, IMAGE_HEADER + a + 0x10));
-      blocks++;
-      onProgress?.(a);
+  try {
+    for (const [start, end] of RESTORE_RANGES) {
+      for (let a = start; a < end; a += 0x10) {
+        await s.writeBlock(a, image.subarray(IMAGE_HEADER + a, IMAGE_HEADER + a + 0x10));
+        blocks++;
+        onProgress?.(a);
+      }
     }
+  } catch (err) {
+    throw unacknowledged(err, { remedy: 'rerun the restore' });
   }
   return blocks;
 }

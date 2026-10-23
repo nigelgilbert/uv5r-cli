@@ -61,7 +61,7 @@ one they may transmit on, after asking the human what the display shows.
 | `tune` | record and name of slot N | one clone session | `channel`, record keys, `appliesAfterSeconds` |
 | `check` | receive-only record and name of slot N | one clone session, 3 s reload, 5 s listen | `slot`, `requestedMhz`, `listen` keys |
 | `load` | record and name of each plan slot | one clone session | array of `tune` results |
-| `read` | no | one clone session | `channel`, record keys; `empty` for an empty slot |
+| `read` | no | one clone session | `channel`, record keys; `empty` for an empty slot; `malformed` and `raw`, the record bytes as hex, for a record whose frequency bytes are not valid BCD |
 | `erase` | 0xFF over the record and name of slot N | one clone session | `channel`, `empty`, `appliesAfterSeconds` |
 | `key` | no; raises PTT | `--seconds` | `pttAsserted`, `seconds`, `released`; `interrupted` on a signal |
 | `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware` |
@@ -175,7 +175,8 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 
 ### Plan fields
 
-A plan has a top-level `name`, `notes`, `checkMhz` and a `channels` array. Each entry is
+A plan has a top-level `name`, `notes`, `checkMhz` and a `channels` array. Any other
+top-level key exits 2. `name` and `notes` take strings. Each entry is
 one `tune` call, and each entry field maps onto one `tune` flag. `uv5r load PLAN.json` writes
 the whole plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
 tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
@@ -192,7 +193,7 @@ tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
 | `rxOnly` | `--rx-only` when true |
 | `name` | `--name TEXT` |
 | `notes` | none |
-| `checkMhz` | none; top level. `sweep` runs `check` on slot 0 with it. It takes the band and 10 Hz rules of `rxMhz`. `load` checks it and writes nothing for it |
+| `checkMhz` | none; top level. `sweep` runs `check` on slot 0 with it. It takes the band and 10 Hz rules of `rxMhz`. `load` validates it and writes nothing for it |
 
 ## Development
 

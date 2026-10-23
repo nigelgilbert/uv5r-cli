@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../src/codec.ts';
 import { BaofengError } from '../src/errors.ts';
-import { Session } from '../src/protocol.ts';
+import { Session, hex } from '../src/protocol.ts';
 import { channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../src/radio.ts';
 import { FakeRadio } from './fake.ts';
 
@@ -150,6 +150,23 @@ describe('channels', () => {
       name: 'RPT',
     });
     expect(Object.keys(channelPayload(4, undefined))).toEqual(['channel', 'empty']);
+    expect(channelPayload(4, { malformed: true, raw: 'ff' })).toEqual({ channel: 4, malformed: true, raw: 'ff' });
+  });
+  it('reads a record with malformed TX BCD as malformed with its raw bytes', async () => {
+    const radio = new FakeRadio();
+    const mem = encodeChannel({ rxHz: 162_550_000 });
+    mem.set([0xff, 0x00, 0x00, 0x00], 4);
+    radio.eeprom.set(mem, 0x0000 + 6 * 16);
+    const s = new Session(radio);
+    await s.start();
+    expect(await readChannel(s, 6)).toEqual({ malformed: true, raw: hex(mem) });
+  });
+  it('reads a record with a 0xFF first byte as empty whatever follows', async () => {
+    const radio = new FakeRadio();
+    radio.eeprom.set([0xff, 0x00, 0x00, 0x00, 0x12], 0x0000 + 6 * 16);
+    const s = new Session(radio);
+    await s.start();
+    expect(await readChannel(s, 6)).toBeUndefined();
   });
   it('reports a TX-inhibited record with a null txMhz', async () => {
     const radio = new FakeRadio();

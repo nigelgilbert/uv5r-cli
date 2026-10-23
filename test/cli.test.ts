@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { encodeChannel } from '../src/codec.ts';
 import { BusyError, REASONS, TransportError } from '../src/errors.ts';
 import { cli, type OpenTransport } from '../src/main.ts';
 import type { Transport } from '../src/transport.ts';
@@ -302,6 +303,29 @@ describe('status output', () => {
   });
 });
 
+describe('read output', () => {
+  it('reports a record with malformed TX BCD as malformed with its raw bytes', async () => {
+    const radio = new FakeRadio();
+    const mem = encodeChannel({ rxHz: 162_550_000 });
+    mem.set([0xff, 0x00, 0x00, 0x00], 4);
+    radio.eeprom.set(mem, 5 * 16);
+    await cli(['read', '5', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toEqual({ channel: 5, malformed: true, raw: [...mem].map((b) => b.toString(16).padStart(2, '0')).join(' ') });
+  });
+
+  it('reports an erased slot as empty', async () => {
+    await cli(['read', '5', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toEqual({ channel: 5, empty: true });
+  });
+
+  it('names the malformed shape in help read', async () => {
+    await cli(['help', 'read', '--json']);
+    expect(stdout.join('')).toContain('\\"malformed\\": true, \\"raw\\": HEX');
+  });
+});
+
 describe('repeated flags', () => {
   it('prints the duplicate-flag error as JSON on a terminal when --json was given', async () => {
     await onTerminal(() => cli(['status', '--json', '--json'], opener(new FakeRadio())));
@@ -449,6 +473,15 @@ describe('restore verification', () => {
     expect(outJson()).toMatchObject({ file: FIXTURE, blocks: 382, verifiedBlocks: 64 });
   });
 
+  it('exits 5 with the restore remedy when the radio does not ack a write', async () => {
+    const radio = new FakeRadio();
+    radio.refuseWriteAt = 0x0100;
+    await run(['restore', FIXTURE, '--force', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({ reason: 'write-unacknowledged', remedy: 'rerun the restore', retry: 'once' });
+    expect(stdout).toEqual([]);
+  });
+
   it('exits 5 naming the address when the radio drops name writes', async () => {
     const radio = new FakeRadio();
     radio.eeprom.fill(0, 0x1000, 0x1800);
@@ -458,6 +491,82 @@ describe('restore verification', () => {
     expect(process.exitCode).toBe(5);
     expect(errJson()).toMatchObject({ reason: 'verification-failed', message: 'restore did not take 128 blocks; first at 0x1000' });
     expect(stdout).toEqual([]);
+  });
+});
+
+describe('settings write errors', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Run the CLI under fake timers until it finishes. */
+  async function run(argv: string[], open: OpenTransport): Promise<void> {
+    const done = cli(argv, open);
+    await vi.runAllTimersAsync();
+    await done;
+  }
+
+  it('exits 5 with the settings remedy when the radio does not ack a settings write', async () => {
+    const radio = new FakeRadio();
+    radio.refuseWriteAt = 0x0e20;
+    await run(['settings', 'squelch', '3', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({ reason: 'write-unacknowledged', remedy: 'run uv5r settings to read the block, then rerun', retry: 'after-remedy' });
+    expect(stdout).toEqual([]);
+  });
+});
+
+describe('dump output file', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Run the CLI under fake timers until it finishes. */
+  async function run(argv: string[], open: OpenTransport): Promise<void> {
+    const done = cli(argv, open);
+    await vi.runAllTimersAsync();
+    await done;
+  }
+
+  it.each([
+    ['a missing directory', (dir: string) => join(dir, 'missing', 'radio.img')],
+    ['a directory path', (dir: string) => dir],
+  ])('exits 2 on %s before opening the transport', async (_what, path) => {
+    const out = path(mkdtempSync(join(tmpdir(), 'uv5r-')));
+    const open = opener(new FakeRadio());
+    await run(['dump', '--out', out, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', out, remedy: 'pass --out with a writable path' });
+    expect(open.calls).toBe(0);
+  });
+
+  it('replaces the bytes of an existing FILE with the image', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    writeFileSync(out, 'old bytes');
+    await run(['dump', '--out', out, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    const bytes = readFileSync(out);
+    expect(bytes.length).toBe(outJson().bytes);
+    expect(bytes.subarray(0, 8)).toEqual(Buffer.from(new FakeRadio().ident));
+  });
+
+  it('leaves a new FILE empty when the port does not open', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    await run(['dump', '--out', out, '--json'], opener());
+    expect(process.exitCode).toBe(3);
+    expect(readFileSync(out).length).toBe(0);
+  });
+
+  it('names the check before the port opens in help dump', async () => {
+    await cli(['help', 'dump', '--json']);
+    const help = JSON.parse(stdout.join('')) as { exits: Array<{ code: number; when: string }> };
+    expect(help.exits).toContainEqual({ code: 2, when: 'FILE not writable, found before the port opens' });
   });
 });
 
@@ -678,6 +787,14 @@ describe('load', () => {
     });
     expect(err).not.toHaveProperty('recordWritten');
     expect(err).not.toHaveProperty('written');
+  });
+
+  it('rejects a top-level rxOnly with exit 2 before opening the transport', async () => {
+    const open = opener(new FakeRadio());
+    await run(['load', planFile({ rxOnly: true, channels: [{ channel: 1, rxMhz: 162.4 }] }), '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', field: 'rxOnly', message: expect.stringContaining('top-level fields: name, notes, checkMhz, channels') });
+    expect(open.calls).toBe(0);
   });
 
   it.each([

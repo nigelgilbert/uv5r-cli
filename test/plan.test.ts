@@ -74,4 +74,24 @@ describe('parsePlan', () => {
   it('rejects a plan with no channels array', () => {
     expect(() => parsePlan({ name: 'x' })).toThrow(UsageError);
   });
+
+  it.each([['rxOnly', true], ['checkMHz', 162.4]])('rejects the top-level key %s naming it and the allowed list', (key, value) => {
+    let err: unknown;
+    try {
+      parsePlan({ [key]: value, channels: [{ channel: 1, rxMhz: 162.4 }] });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(UsageError);
+    expect((err as UsageError).message).toBe(`plan ${key}: unknown top-level field; top-level fields: name, notes, checkMhz, channels`);
+    expect((err as UsageError).detail).toEqual({ field: key });
+  });
+
+  it.each([
+    ['name', 7],
+    ['notes', ['a']],
+    ['notes', null],
+  ])('rejects a top-level %s of %j', (key, value) => {
+    expect(() => parsePlan({ [key]: value, channels: [{ channel: 1, rxMhz: 162.4 }] })).toThrow(`plan ${key}: needs a string; got ${JSON.stringify(value)}`);
+  });
 });

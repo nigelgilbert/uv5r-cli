@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
@@ -226,16 +226,19 @@ const verbs: Record<string, Verb> = {
     args: [{ name: 'PLAN', help: 'plan JSON with name, notes, checkMhz and a channels array; README.md "Plan fields" lists the entry fields' }],
     flags: COMMON_FLAGS,
     effects: [
-      'Check every entry before the port opens.',
+      'Validate every entry before the port opens.',
       'Write each entry to its own slot in one clone session and read each back. Slots absent from the plan keep their records and names.',
-      'Check checkMhz and write nothing for it.',
+      'Validate checkMhz and write nothing for it.',
       APPLIES,
     ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: true, note: 'the record and name of each plan slot' },
     result: [{ channel: 1, rxMhz: '162.4', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
     exits: [
-      { code: 2, when: 'a bad or unknown field, a channel outside 0..127 or a channel listed twice; the message and the channel and field details name the entry' },
+      {
+        code: 2,
+        when: 'a bad or unknown top-level or entry field, a channel outside 0..127 or a channel listed twice; the message and the field detail name the field, and the channel detail names the entry',
+      },
     ],
     positionals: 1,
     run: loadVerb,
@@ -245,7 +248,10 @@ const verbs: Record<string, Verb> = {
     example: 'uv5r read 5',
     args: [SLOT_ARG],
     flags: COMMON_FLAGS,
-    effects: ['Read the record and name of slot N. An empty slot returns {"channel": N, "empty": true}.'],
+    effects: [
+      'Read the record and name of slot N. An empty slot returns {"channel": N, "empty": true}.',
+      'A record whose RX or TX frequency bytes are not valid BCD returns {"channel": N, "malformed": true, "raw": HEX} with the 16 record bytes as hex. The slot is in use.',
+    ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only' },
     result: { channel: 5, ...CHANNEL_RECORD },
@@ -282,7 +288,7 @@ const verbs: Record<string, Verb> = {
       'Key only when the human asked and the frequency is one they may transmit on.',
     ],
     writesToRadio: { writes: false, note: 'raises PTT only, which transmits on a TX-capable channel' },
-    result: { pttAsserted: true, seconds: 2.003, released: true },
+    result: { pttAsserted: true, seconds: 2, released: true },
     exits: [{ code: 3, when: 'a PTT control failure' }],
     positionals: 0,
     run: keyVerb,
@@ -292,11 +298,14 @@ const verbs: Record<string, Verb> = {
     example: 'uv5r dump --out radio.img',
     args: [],
     flags: [{ name: 'out', value: 'FILE', default: 'uv5r-YYYY-MM-DDTHH-MM-SS.img', help: 'image path' }, ...COMMON_FLAGS],
-    effects: ['Read the full memory image in CHIRP layout in one clone session, about 14 s, and write it to FILE.'],
+    effects: [
+      'Open FILE before the port opens; a new FILE stays empty when the read fails.',
+      'Read the full memory image in CHIRP layout in one clone session, about 14 s, and write it to FILE.',
+    ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only; writes FILE on disk' },
     result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011' },
-    exits: [{ code: 2, when: 'FILE not writable' }],
+    exits: [{ code: 2, when: 'FILE not writable, found before the port opens' }],
     positionals: 0,
     run: dumpVerb,
   },
@@ -345,7 +354,7 @@ const verbs: Record<string, Verb> = {
       { name: 'seconds', value: 'S', required: true, help: `capture time, whole number 1..${MAX_LISTEN_SECONDS}` },
       DEVICE_FLAG,
       FLOOR_FLAG,
-      { name: 'out', value: 'FILE', help: 'write the capture as a 48 kHz mono WAV and report out' },
+      { name: 'out', value: 'FILE', help: 'write the capture as a 48 kHz mono WAV and report out; overwrites FILE' },
       { name: 'play', help: 'play the --out file through afplay after the capture; needs --out' },
       ...OUTPUT_FLAGS,
     ],
@@ -528,6 +537,7 @@ function channelSpec(freqText: string, flags: Map<string, string | true>): Chann
 
 function channelText(c: ChannelResult): string {
   if ('empty' in c) return `ch ${c.channel}: empty`;
+  if ('malformed' in c) return `ch ${c.channel}: malformed record ${c.raw}`;
   return `ch ${c.channel}: rx ${c.rxMhz} tx ${c.txMhz ?? 'off'} tone ${c.txTone} rx-tone ${c.rxTone} ${c.bandwidth} ${c.power} ${c.name}`;
 }
 
@@ -680,6 +690,14 @@ async function dumpVerb(args: Invocation): Promise<number> {
   checkFlags('dump', args.flags, flagNames('dump'));
   const out = stringFlag(args.flags, 'out') ?? defaultDumpName();
   const json = wantsJson(args.flags);
+  const notWritable = (err: unknown) =>
+    new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
+  // Open FILE for append so a missing directory, a read-only file or a directory path fails before the port opens.
+  try {
+    closeSync(openSync(out, 'a'));
+  } catch (err) {
+    throw notWritable(err);
+  }
   const result = await withTransport(args, (t) =>
     withSession(t, async (s) => {
       const image = await dumpImage(s, (addr) => {
@@ -688,7 +706,7 @@ async function dumpVerb(args: Invocation): Promise<number> {
       try {
         writeFileSync(out, image);
       } catch (err) {
-        throw new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
+        throw notWritable(err);
       }
       return { out, bytes: image.length, firmware: s.startedIdent.firmware };
     }),
@@ -753,6 +771,8 @@ async function listenVerb(args: Invocation): Promise<number> {
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
   const floor = floorFlag(args.flags, 'uv5r listen --seconds 5');
   const out = stringFlag(args.flags, 'out');
+  // Reject stdout, since capture drops ffmpeg's stdout and no file would hold the WAV.
+  if (out === '-') throw new UsageError('--out takes a file path; got "-", as in: listen --seconds 5 --out rx.wav', { flag: 'out' });
   const play = args.flags.get('play') === true;
   if (play && out === undefined) throw new UsageError('--play needs --out FILE, as in: listen --seconds 5 --out rx.wav --play');
   const result = await listen(device, seconds, floor, { out, play });
