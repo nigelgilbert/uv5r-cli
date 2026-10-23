@@ -205,7 +205,7 @@ describe('help', () => {
     const viaHelp = stdout.join('');
     expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N');
     expect(viaHelp).toContain(CHANNEL_RULE);
-    for (const argv of [['tune', '--help'], ['tune', '-h']]) {
+    for (const argv of [['tune', '--help'], ['tune', '-h'], ['tune', '-h', '--help']]) {
       stdout = [];
       await onTerminal(() => cli(argv, opener()));
       expect(process.exitCode).toBe(0);

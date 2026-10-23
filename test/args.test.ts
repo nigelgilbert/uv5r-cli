@@ -33,6 +33,14 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['status', '--json', '--json'], BOOLEAN_FLAGS)).toThrow('--json given twice');
   });
 
+  it.each([
+    [['-h', '--help']],
+    [['-h', '-h']],
+    [['--help', '--help']],
+  ])('accepts %j as one --help', (help) => {
+    expect(parseArgs(['tune', ...help], BOOLEAN_FLAGS).flags.get('help')).toBe(true);
+  });
+
   it('leaves the positional after a boolean flag in place', () => {
     const args = parseArgs(['restore', '--force', 'radio.img'], BOOLEAN_FLAGS);
     expect(args.verb).toBe('restore');

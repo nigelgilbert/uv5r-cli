@@ -8,13 +8,14 @@ export interface ParsedArgs {
 
 /**
  * Split argv into a verb, positionals and `--flag [value]` pairs. `-h` stands for `--help`.
- * Throw UsageError on a value given to a boolean flag and on a flag given twice.
+ * Throw UsageError on a value given to a boolean flag and on a flag given twice. `--help` and `-h`
+ * may repeat.
  */
 export function parseArgs(argv: string[], booleanFlags: ReadonlySet<string>): ParsedArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | true>();
   const set = (name: string, value: string | true) => {
-    if (flags.has(name)) throw new UsageError(`--${name} given twice; pass it once`, { flag: name });
+    if (flags.has(name) && name !== 'help') throw new UsageError(`--${name} given twice; pass it once`, { flag: name });
     flags.set(name, value);
   };
   for (let i = 0; i < argv.length; i++) {
