@@ -559,6 +559,21 @@ describe('runSweep', () => {
     expect(listenMock.mock.calls[0]![3]).toMatchObject({ stop: expect.any(Promise) });
   });
 
+  it('ends the entry settle at once on a signal and leaves no timer pending', async () => {
+    const signals = new EventEmitter();
+    listenMock.mockImplementation(async (_device, seconds) => heard(seconds, seconds));
+    const progress = newProgress();
+    const done = runSweep(entries, slotZero(new FakeRadio(), { rxHz: 162_400_000 }, { device: 'AIOC Audio' }), options, progress, signals);
+    for (let i = 0; i < 1000 && progress.slot0?.channel !== entries[0]!.channel; i++) await vi.advanceTimersByTimeAsync(10);
+    expect(vi.getTimerCount()).toBe(1);
+    const signalAt = Date.now();
+    signals.emit('SIGINT');
+    expect(await done).toMatchObject({ swept: 0, slot0: { channel: entries[0]!.channel }, interrupted: 'SIGINT' });
+    expect(Date.now()).toBe(signalAt);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(listenMock).toHaveBeenCalledTimes(1);
+  });
+
   it('runs no entry when the check throws and leaves the dwells in progress', async () => {
     const prepare = vi.fn(async () => {});
     const progress = newProgress();

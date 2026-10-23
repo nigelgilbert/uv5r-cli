@@ -23,10 +23,20 @@ const BLOCK = 0x10;
 /** The two 16-byte halves the radio stages until a write at SETTINGS_COMMIT. */
 const SETTINGS_HALVES = [SETTINGS_BASE, SETTINGS_BASE + BLOCK] as const;
 
-// Unref the timer so a sweep that a signal ended during the settle exits at once.
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
-/** Wait for the radio to drop the clone session and reload its settings from EEPROM. */
-export const settle = (): Promise<void> => sleep(SETTLE_MS);
+/**
+ * Wait `ms` on a ref'd timer, so a port that closes mid-wait still leaves the loop alive for the
+ * next read to report it. When `stop` resolves first, clear the timer and resolve at once.
+ */
+const sleep = (ms: number, stop?: Promise<unknown>) =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    void stop?.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+/** Wait for the radio to drop the clone session and reload its settings from EEPROM; end early when `stop` resolves. */
+export const settle = (stop?: Promise<unknown>): Promise<void> => sleep(SETTLE_MS, stop);
 export const hex = (a: Uint8Array | number[]): string => [...a].map((b) => b.toString(16).padStart(2, '0')).join(' ');
 
 export interface Ident {

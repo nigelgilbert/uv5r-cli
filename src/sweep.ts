@@ -153,7 +153,7 @@ export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device
     async check(progress, stop) {
       const spec = receiveOnly(checkSpec);
       await write(progress, null, spec, (s) => refuseOpenSquelch(s, SWEEP_SLOT));
-      await Promise.race([settle(), stop.stopped]);
+      await settle(stop.stopped);
       if (stop.signal) return;
       const heard = await listen(options.device, CHECK_SECONDS, DEFAULT_FLOOR_DBFS, { stop: stop.stopped });
       progress.checkWarnings = heard.warnings;
@@ -161,7 +161,7 @@ export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device
     },
     async prepare(entry, progress, stop) {
       await write(progress, entry.channel, entry.spec);
-      await Promise.race([settle(), stop.stopped]);
+      await settle(stop.stopped);
     },
   };
 }
