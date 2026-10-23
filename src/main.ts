@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { accessSync, closeSync, constants as fsConstants, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, closeSync, constants as fsConstants, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, checkFfmpeg, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
@@ -311,7 +311,7 @@ const verbs: Record<string, Verb> = {
     args: [],
     flags: [{ name: 'out', value: 'FILE', default: 'uv5r-YYYY-MM-DDTHH-MM-SS.img', help: 'image path' }, ...COMMON_FLAGS],
     effects: [
-      'Open FILE before the port opens; a new FILE is removed when the read fails.',
+      'Open FILE before the port opens; a new FILE is removed when the dump fails.',
       'Read the full memory image in CHIRP layout in one clone session, about 14 s, and write it to FILE.',
     ],
     preconditions: [RADIO_READY],
@@ -710,10 +710,16 @@ async function dumpVerb(args: Invocation): Promise<number> {
   const json = wantsJson(args.flags);
   const notWritable = (err: unknown) =>
     new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
-  const created = !existsSync(out);
-  // Open FILE for append so a missing directory, a read-only file or a directory path fails before the port opens.
+  let created = false;
+  // Create FILE, or open an existing one for append, so a missing directory, a read-only file or a directory path fails before the port opens.
   try {
-    closeSync(openSync(out, 'a'));
+    try {
+      closeSync(openSync(out, 'wx'));
+      created = true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      closeSync(openSync(out, 'a'));
+    }
   } catch (err) {
     throw notWritable(err);
   }

@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -619,6 +619,15 @@ describe('dump output file', () => {
     await run(['dump', '--out', out, '--json'], opener());
     expect(process.exitCode).toBe(3);
     expect(readFileSync(out, 'utf8')).toBe('old bytes');
+  });
+
+  it('leaves a FILE symlink in place when the port does not open', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    const out = join(dir, 'radio.img');
+    symlinkSync(join(dir, 'target.img'), out);
+    await run(['dump', '--out', out, '--json'], opener());
+    expect(process.exitCode).toBe(3);
+    expect(lstatSync(out).isSymbolicLink()).toBe(true);
   });
 
   it('names the check before the port opens in help dump', async () => {
