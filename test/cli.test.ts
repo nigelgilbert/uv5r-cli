@@ -82,7 +82,7 @@ const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, any>;
 
 describe('cli exit status', () => {
   it('sets exitCode 0 on success and leaves process.exit alone', async () => {
-    await cli(['help']);
+    await onTerminal(() => cli(['help']));
     expect(process.exitCode).toBe(0);
     expect(stdout.join('')).toContain('exit codes:');
     expect(exit).not.toHaveBeenCalled();
@@ -153,10 +153,10 @@ describe('help', () => {
   });
 
   it('prints help VERB with no exit section when the global table covers the verb', async () => {
-    await cli(['help', 'status']);
+    await onTerminal(() => cli(['help', 'status']));
     expect(stdout.join('')).not.toContain('exit codes');
     stdout = [];
-    await cli(['help', 'check']);
+    await onTerminal(() => cli(['help', 'check']));
     expect(stdout.join('')).toContain('exit codes beyond uv5r help:\n  3  a short capture\n');
   });
 
@@ -195,20 +195,20 @@ describe('help', () => {
   });
 
   it('prints the same entry for help VERB, VERB --help and VERB -h', async () => {
-    await cli(['help', 'tune']);
+    await onTerminal(() => cli(['help', 'tune']));
     const viaHelp = stdout.join('');
     expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N');
     expect(viaHelp).toContain(CHANNEL_RULE);
     for (const argv of [['tune', '--help'], ['tune', '-h']]) {
       stdout = [];
-      await cli(argv, opener());
+      await onTerminal(() => cli(argv, opener()));
       expect(process.exitCode).toBe(0);
       expect(stdout.join('')).toBe(viaHelp);
     }
   });
 
   it('prints the overview for -h', async () => {
-    await cli(['-h']);
+    await onTerminal(() => cli(['-h']));
     expect(process.exitCode).toBe(0);
     const help = stdout.join('');
     expect(help).toContain('run uv5r help VERB');
@@ -218,9 +218,20 @@ describe('help', () => {
   it('prints the package version for --version', async () => {
     const { version } = JSON.parse(readFileSync(PACKAGE, 'utf8')) as { version: string };
     expect(version).toBe('0.1.0');
-    await cli(['--version']);
+    await onTerminal(() => cli(['--version']));
     expect(process.exitCode).toBe(0);
     expect(stdout.join('')).toBe(`${version}\n`);
+    stdout = [];
+    await cli(['--version']);
+    expect(outJson()).toEqual({ version });
+  });
+
+  it('prints help and help VERB as JSON when stdout is a pipe', async () => {
+    await cli(['help']);
+    expect(outJson().exitCodes).toMatchObject({ '4': 'timeout: no ack before a block read, or a short block payload' });
+    stdout = [];
+    await cli(['help', 'tune']);
+    expect(outJson()).toMatchObject({ schemaVersion: 2, usage: expect.stringContaining('uv5r tune FREQ --channel N') });
   });
 
   it('answers an unknown verb in under 300 bytes with no help text', async () => {

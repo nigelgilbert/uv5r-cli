@@ -111,9 +111,9 @@ describe('CLI number and file errors', () => {
     expect(body.reason).toBe('invalid-argument');
   });
 
-  it('exits 0 with the whole help text on a pipe', () => {
+  it('exits 0 with the whole help JSON on a pipe', () => {
     const r = spawnSync(process.execPath, ['src/main.ts', 'help'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(r.status).toBe(0);
-    expect(r.stdout.trimEnd().endsWith('  128+signal  interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary')).toBe(true);
+    expect(JSON.parse(r.stdout).exitCodes['128+signal']).toBe('interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary');
   });
 });

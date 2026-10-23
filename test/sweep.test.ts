@@ -401,7 +401,7 @@ describe('sweep', () => {
   });
 
   it('describes the one sweep mode in help sweep', async () => {
-    await cli(['help', 'sweep']);
+    await onTerminal(() => cli(['help', 'sweep']));
     const help = stdout.join('');
     expect(help).toContain('sweep channels.json --seconds 30');
     expect(help).toContain('checkMhz');

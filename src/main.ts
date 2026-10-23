@@ -98,7 +98,7 @@ const EXIT_CODES: Record<string, string> = {
   '1': 'unexpected: an error the CLI has no kind for',
   '2': 'usage: bad input; argument errors exit before the port opens',
   '3': 'transport: no device, a serial error, or an ffmpeg or afplay failure',
-  '4': 'timeout: no ack or a short read',
+  '4': 'timeout: no ack before a block read, or a short block payload',
   '5': 'device-state: no handshake, a bad reply, a refused write, a failed verification, an image ident mismatch or a check under 80% active seconds',
   '6': 'busy: another process holds the serial port',
   '128+signal': 'interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary',
@@ -322,7 +322,7 @@ const verbs: Record<string, Verb> = {
   settings: {
     summary: 'Print the menu settings, or set fields',
     example: 'uv5r settings voice eng beep on',
-    args: [{ name: 'FIELD VALUE ...', optional: true, help: 'pairs to set, by radio menu index or by name; fields lists them' }],
+    args: [{ name: 'FIELD VALUE ...', optional: true, help: 'FIELD is a field name; VALUE is a number or a listed name; fields lists both' }],
     flags: COMMON_FLAGS,
     effects: [
       'With no pairs, read the eight fields.',
@@ -459,9 +459,9 @@ function helpJson(): Record<string, unknown> {
   };
 }
 
-/** Print the overview, or one verb's entry; JSON only with an explicit --json. */
+/** Print the overview, or one verb's entry; JSON when piped or with --json. */
 function printHelp(flags: Map<string, string | true>, verb: string | undefined): void {
-  const json = flags.get('json') === true;
+  const json = wantsJson(flags);
   if (verb === undefined) process.stdout.write(`${json ? JSON.stringify(helpJson()) : helpText()}\n`);
   else {
     const doc = verbs[verb]!;
@@ -837,7 +837,7 @@ async function main(args: Invocation): Promise<number> {
     }
     if (args.flags.get('version')) {
       const version = packageVersion();
-      process.stdout.write(`${args.flags.get('json') === true ? JSON.stringify({ version }) : version}\n`);
+      process.stdout.write(`${wantsJson(args.flags) ? JSON.stringify({ version }) : version}\n`);
       return EXIT.ok;
     }
     printHelp(args.flags, undefined);

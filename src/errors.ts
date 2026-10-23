@@ -161,7 +161,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'serial-timeout': {
     kind: 'timeout',
-    means: 'no ack or a short read from the radio',
+    means: 'no ack before a block read, or a short block payload',
     remedy: 'rerun the command; ask the human to check the radio is on if it fails again',
     retry: 'once',
   },

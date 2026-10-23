@@ -80,7 +80,13 @@ describe('listen --out and --play', () => {
   });
 
   it('names --out and --play in help listen', async () => {
-    await cli(['help', 'listen']);
+    const tty = process.stdout.isTTY;
+    process.stdout.isTTY = true;
+    try {
+      await cli(['help', 'listen']);
+    } finally {
+      process.stdout.isTTY = tty;
+    }
     const help = stdout.join('');
     expect(help).toMatch(/--out FILE +write the capture as a 48 kHz mono WAV/);
     expect(help).toMatch(/--play +play .*needs --out/);
