@@ -434,7 +434,7 @@ describe('key output', () => {
     expect(out.seconds).toBeGreaterThanOrEqual(0.1);
   });
 
-  it('exits 3 with pttAsserted true and released false when the release fails after the assertion', async () => {
+  it('exits 3 with the unplug remedy when the release fails after the assertion', async () => {
     const radio = new FakeRadio();
     let releases = 0;
     radio.setPtt = async (on: boolean) => {
@@ -445,20 +445,24 @@ describe('key output', () => {
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     const err = errJson();
-    expect(err).toMatchObject({ kind: 'transport', reason: 'ptt-control-failed', retry: 'no', pttAsserted: true, released: false });
+    expect(err).toMatchObject({ kind: 'transport', reason: 'ptt-control-failed', retry: 'no' });
     expect(err).not.toHaveProperty('phase');
+    expect(err).not.toHaveProperty('pttAsserted');
+    expect(err).not.toHaveProperty('released');
     expect(err.message).toContain('unplug the AIOC');
     expect(err.remedy).toBe('ask the human to unplug the AIOC to drop PTT');
   });
 
-  it('exits 3 with pttAsserted false and released false when both steps fail', async () => {
+  it('exits 3 with the unplug remedy when both steps fail', async () => {
     const radio = new FakeRadio();
     radio.setPtt = async () => {
       throw new TransportError('ptt-control-failed', 'port gone', { target: 'fake' });
     };
     await cli(['key', '--seconds', '0.1', '--json'], opener(radio));
     expect(process.exitCode).toBe(3);
-    expect(errJson()).toMatchObject({ kind: 'transport', pttAsserted: false, released: false, retry: 'no' });
+    expect(errJson()).toMatchObject({ kind: 'transport', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT' });
+    expect(errJson()).not.toHaveProperty('pttAsserted');
+    expect(errJson()).not.toHaveProperty('released');
   });
 
   it('exits 3 with the device-unavailable remedy and retry when the device is missing', async () => {

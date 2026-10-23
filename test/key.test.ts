@@ -62,7 +62,7 @@ describe('holdPtt', () => {
     expect(result).toMatchObject({ pttAsserted: true, released: true });
   });
 
-  it('throws a transport error with released false when the release fails after the assertion', async () => {
+  it('throws a transport error with the unplug remedy when the release fails after the assertion', async () => {
     const em = new EventEmitter();
     const radio: Transport = Object.assign(new FakeRadio(), {
       async setPtt(on: boolean): Promise<void> {
@@ -74,15 +74,17 @@ describe('holdPtt', () => {
     const err = await pending.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     const body = (err as TransportError).toJSON();
-    expect(body).toMatchObject({ kind: 'transport', retry: 'no', pttAsserted: true, released: false, interrupted: 'SIGINT' });
+    expect(body).toMatchObject({ kind: 'transport', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT', interrupted: 'SIGINT' });
     expect(body).not.toHaveProperty('phase');
+    expect(body).not.toHaveProperty('pttAsserted');
+    expect(body).not.toHaveProperty('released');
     expect(body.message).toContain('PTT rose and the release is unconfirmed: release failed');
     expect(body.message).toContain('unplug the AIOC');
     expect(body.message).not.toMatch(/retry/i);
     expect(listeners(em)).toBe(0);
   });
 
-  it('reports pttAsserted false and released false when both steps fail', async () => {
+  it('tells the human to unplug when both steps fail', async () => {
     const em = new EventEmitter();
     const radio: Transport = Object.assign(new FakeRadio(), {
       async setPtt(on: boolean): Promise<void> {
@@ -92,20 +94,24 @@ describe('holdPtt', () => {
     const err = await holdPtt(radio, 5, em).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     const body = (err as TransportError).toJSON();
-    expect(body).toMatchObject({ pttAsserted: false, released: false });
+    expect(body).toMatchObject({ retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT' });
+    expect(body).not.toHaveProperty('pttAsserted');
+    expect(body).not.toHaveProperty('released');
     expect(body.message).toContain('assert failed');
     expect(body.message).toContain('unplug the AIOC');
     expect(listeners(em)).toBe(0);
   });
 
-  it('reports released true when only the assertion fails', async () => {
+  it('reports the release and the cable remedy when only the assertion fails', async () => {
     const radio = new FakeRadio();
     radio.setPtt = async (on: boolean) => {
       if (on) throw new TransportError('ptt-control-failed', 'assert failed', { target: 'fake' });
       radio.ptt = false;
     };
     const err = await holdPtt(radio, 5, new EventEmitter()).catch((e: unknown) => e);
-    expect((err as TransportError).toJSON()).toMatchObject({ target: 'fake', pttAsserted: false, released: true });
+    expect((err as TransportError).toJSON()).toMatchObject({ target: 'fake', retry: 'no', remedy: 'report the error and ask the human to check the AIOC cable before keying again' });
+    expect((err as TransportError).toJSON()).not.toHaveProperty('pttAsserted');
+    expect((err as TransportError).toJSON()).not.toHaveProperty('released');
     expect((err as TransportError).message).not.toContain('unplug');
   });
 });

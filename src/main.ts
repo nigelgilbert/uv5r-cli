@@ -313,7 +313,7 @@ const verbs: Record<string, Verb> = {
     exits: [
       { code: 0, when: 'PTT asserted and released' },
       EXIT_USAGE,
-      { code: 3, when: 'no device, a serial error or a PTT control failure; a PTT failure while keying carries pttAsserted and released' },
+      { code: 3, when: 'no device, a serial error or a PTT control failure' },
       EXIT_BUSY,
       { code: '128+signal', when: 'interrupted by a signal; PTT released' },
     ],

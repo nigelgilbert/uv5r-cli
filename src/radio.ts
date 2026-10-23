@@ -331,8 +331,8 @@ function keyFailureMessage(pttAsserted: boolean, released: boolean, cause: strin
 
 /**
  * Assert PTT for `seconds`, stop early when `signals` emits SIGINT, SIGTERM or SIGHUP, and
- * release PTT in both cases. A failure in any step throws a TransportError whose detail
- * carries `pttAsserted` and `released`.
+ * release PTT in both cases. A failure in any step throws a TransportError whose message
+ * and remedy say what the port confirmed.
  */
 export async function holdPtt(t: Transport, seconds: number, signals: EventEmitter = process): Promise<HoldResult> {
   let interrupted: NodeJS.Signals | undefined;
@@ -385,8 +385,6 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
       keyFailureMessage(pttAsserted, released, cause),
       {
         ...base,
-        pttAsserted,
-        released,
         ...(pttAsserted ? { seconds: held } : {}),
         ...(interrupted ? { interrupted } : {}),
       },
