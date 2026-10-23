@@ -87,7 +87,7 @@ const RULES = {
   oneVerb: 'Run one verb at a time. Do not open, cat, screen or stty the serial port.',
   clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.',
   speaker:
-    'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or sweep --out-dir DIR --play.',
+    'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or by playing the WAVs in sweep --out-dir DIR after the run.',
 };
 
 const OUTPUT_RULE = 'JSON on stdout when piped or with --json, text on a terminal or with --text; a failed command prints nothing on stdout and its error on stderr in the same format';
@@ -401,14 +401,13 @@ const verbs: Record<string, Verb> = {
     flags: [
       { name: 'seconds', value: 'S', default: SWEEP_SECONDS, help: `dwell per entry, whole number 1..${MAX_LISTEN_SECONDS}` },
       { name: 'out-dir', value: 'DIR', help: 'keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR' },
-      { name: 'play', help: 'play each active capture after its dwell; needs --out-dir' },
       DEVICE_FLAG,
-      FLOOR_FLAG,
       ...COMMON_FLAGS,
     ],
     effects: [
       `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. A failed check exits 5 before any plan entry is written.`,
       `For each entry in plan order, write it into slot 0 with its own TX setting, wait ${APPLIES_AFTER_SECONDS} s for the reload and capture --seconds.`,
+      `A second is active when its RMS is above ${DEFAULT_FLOOR_DBFS} dBFS.`,
       'Print one summary on stdout on success or on a signal: swept, seconds, active, warnings and slot0. A failure puts it in the error as summary.',
       'slot0 is {channel, name} of the last verified entry write, {channel: null, name} after only the check write, or null when unknown. Slot 0 keeps it after the run.',
       'Read nothing from stdin.',
@@ -425,7 +424,7 @@ const verbs: Record<string, Verb> = {
     exits: [
       { code: 0, when: 'every entry swept' },
       { code: 2, when: `${EXIT_CODES['2']}; also a plan without checkMhz` },
-      { code: 3, when: 'no device, a serial error, or an ffmpeg or afplay failure; the error carries summary, the result so far' },
+      { code: 3, when: 'no device, a serial error, or an ffmpeg failure; the error carries summary, the result so far' },
       { code: 4, when: 'no ack or a short read; the error carries summary, the result so far' },
       { code: 5, when: 'the check failed or a write did not take; the error carries summary, the result so far' },
       EXIT_BUSY,
@@ -844,10 +843,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
       throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
     }
     const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
-    const floorDbfs = floorFlag(args.flags, 'uv5r sweep channels.json');
     const outDir = stringFlag(args.flags, 'out-dir');
-    const play = args.flags.get('play') === true;
-    if (play && outDir === undefined) throw new UsageError('--play needs --out-dir DIR, as in: sweep channels.json --out-dir rx --play');
     const plan = readPlan(file);
     if (plan.checkHz === undefined) {
       throw new UsageError(`${file} has no checkMhz; add a top-level "checkMhz" with a NOAA frequency that carries audio at the location, as in: "checkMhz": 162.400`, {
@@ -863,9 +859,9 @@ async function sweepVerb(args: Invocation): Promise<number> {
         throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
       }
     }
-    const options = { device, seconds, floorDbfs, outDir, play };
+    const options = { device, seconds, outDir };
     transportAsked = true;
-    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device, floorDbfs }), options, progress));
+    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device }), options, progress));
   } catch (err) {
     // Add the finished dwells and slot 0 to the error once the port was asked for.
     throw withDetail(err, transportAsked ? { summary: summarize(progress, seconds) } : {});

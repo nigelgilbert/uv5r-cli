@@ -29,12 +29,13 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 - After a `check` write, the slot keeps the receive-only record. After `sweep`, slot 0
   keeps the write that `slot0` names; `null` means unknown. Nothing restores slot 0.
 - Ask the human to set MR mode and select slot 0 before a sweep, then run
-  `uv5r sweep channels.json --seconds 30 --out-dir rx --play`.
+  `uv5r sweep channels.json --seconds 30 --out-dir rx`. The human plays the WAVs in `rx`
+  after the run.
 - Write a plan to its own slots with one `uv5r load PLAN.json`.
 - Write public-safety listening channels with `--rx-only`.
 - The radio speaker is silent while the AIOC is plugged in. The human hears receive audio
-  only through `uv5r listen --seconds 5 --out FILE --play` or
-  `uv5r sweep PLAN --out-dir DIR --play`.
+  only through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
+  `uv5r sweep PLAN --out-dir DIR` writes to DIR after the run.
 - The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for
   the handshake retry.
 - On the `input clips` warning, ask the human to turn the volume knob down, then listen

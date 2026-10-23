@@ -1,6 +1,6 @@
 import type { EventEmitter } from 'node:events';
 import { join } from 'node:path';
-import { listen, play } from './audio.ts';
+import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
 import { CHECK_SECONDS, judgeCheck, receiveOnly } from './check.ts';
 import { formatMhz, type ChannelSpec } from './codec.ts';
 import { withDetail } from './errors.ts';
@@ -19,12 +19,8 @@ export interface DwellOptions {
   device: string;
   /** Whole seconds to capture per entry. */
   seconds: number;
-  /** A second is active when its RMS is above this level in dBFS. */
-  floorDbfs: number;
   /** Directory that takes one WAV per dwell; undefined keeps no capture. */
   outDir?: string;
-  /** Play each active capture through afplay after its dwell; needs outDir. */
-  play: boolean;
 }
 
 /** One finished dwell. */
@@ -71,8 +67,8 @@ export interface SweepSummary {
   interrupted?: NodeJS.Signals;
 }
 
-/** Step of a sweep: the check write and capture, an entry write, an entry dwell, or its playback. */
-export type SweepPhase = 'check' | 'entry' | 'dwell' | 'play';
+/** Step of a sweep: the check write and capture, an entry write, or an entry dwell. */
+export type SweepPhase = 'check' | 'entry' | 'dwell';
 
 /** State the sweep steps update as they go; the caller reads it to summarize a sweep that threw. */
 export interface SweepProgress {
@@ -111,12 +107,12 @@ export function captureName(channel: number, start: Date): string {
 }
 
 /**
- * Capture `options.seconds` on the channel the radio is on and report it as `entry`.
+ * Capture `options.seconds` on the channel the radio is on at DEFAULT_FLOOR_DBFS and report it as `entry`.
  * With `outDir` the capture goes to a WAV named by captureName.
  */
 export async function dwell(entry: PlanEntry, options: DwellOptions): Promise<DwellRecord> {
   const out = options.outDir === undefined ? undefined : join(options.outDir, captureName(entry.channel, new Date()));
-  const heard = await listen(options.device, options.seconds, options.floorDbfs, { out, play: false });
+  const heard = await listen(options.device, options.seconds, DEFAULT_FLOOR_DBFS, { out });
   return {
     channel: entry.channel,
     slot: SWEEP_SLOT,
@@ -132,27 +128,14 @@ export async function dwell(entry: PlanEntry, options: DwellOptions): Promise<Dw
 }
 
 /**
- * Play the capture of `record` through afplay when `options.play` is set and any second is
- * active. Skip it once a signal has arrived. A playback that a signal cuts short returns quietly.
- */
-export async function playDwell(record: DwellRecord, options: DwellOptions, stop: Stop): Promise<void> {
-  if (!options.play || record.out === undefined || record.activeSeconds === 0 || stop.signal) return;
-  try {
-    await play(record.out, options.seconds);
-  } catch (err) {
-    if (stop.signal === undefined) throw err;
-  }
-}
-
-/**
  * Return the steps that work through slot 0 over transport `t`. The check writes
- * `checkSpec` as a receive-only record, waits for the reload, listens CHECK_SECONDS and
- * applies the `check` rule. Each entry write puts the entry with its own TX setting into
- * slot 0 in a fresh clone session and waits for the reload. Each write sets
+ * `checkSpec` as a receive-only record, waits for the reload, listens CHECK_SECONDS at
+ * DEFAULT_FLOOR_DBFS and applies the `check` rule. Each entry write puts the entry with
+ * its own TX setting into slot 0 in a fresh clone session and waits for the reload. Each write sets
  * `progress.slot0` to null first, then sets it to the record read back once the write
  * verifies.
  */
-export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string; floorDbfs: number }): SweepSteps {
+export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string }): SweepSteps {
   const write = async (progress: SweepProgress, channel: number | null, spec: ChannelSpec) => {
     progress.slot0 = null;
     const written = await withSession(t, (s) => writeChannel(s, SWEEP_SLOT, spec));
@@ -164,7 +147,7 @@ export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device
       await write(progress, null, spec);
       await Promise.race([settle(), stop.stopped]);
       if (stop.signal) return;
-      judgeCheck(SWEEP_SLOT, spec, await listen(options.device, CHECK_SECONDS, options.floorDbfs));
+      judgeCheck(SWEEP_SLOT, spec, await listen(options.device, CHECK_SECONDS, DEFAULT_FLOOR_DBFS));
     },
     async prepare(entry, progress, stop) {
       await write(progress, entry.channel, entry.spec);
@@ -189,9 +172,8 @@ export function summarize(progress: SweepProgress, seconds: number, interrupted?
 }
 
 /**
- * Run the check, then prepare and dwell on each entry in order, play each capture after
- * its dwell, and summarize. A playback failure throws with
- * its dwell already in `progress`. A failed check throws before any entry is written. SIGINT,
+ * Run the check, then prepare and dwell on each entry in order, and summarize. A failed
+ * check throws before any entry is written. SIGINT,
  * SIGTERM or SIGHUP ends the run. The summary then covers the dwells finished before the
  * signal and names it in `interrupted`. A dwell whose capture the signal cut short is left
  * out. On a throw, `progress` holds the finished dwells and slot 0, and the error carries `phase`, `slot` and the plan `channel`, null during the check.
@@ -227,8 +209,6 @@ export async function runSweep(
       phase = 'dwell';
       const record = await dwell(entry, options);
       progress.dwells.push(record);
-      phase = 'play';
-      await playDwell(record, options, stop);
     }
   } catch (err) {
     if (!stop.signal) throw withDetail(err, { phase, slot: SWEEP_SLOT, channel });

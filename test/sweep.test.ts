@@ -125,7 +125,7 @@ describe('sweep', () => {
     expect(writesAtListen.map((w) => w.length)).toEqual([2, 4, 6, 8, 10, 12, 14, 16]);
     expect(checkTxBytes).toEqual([0xff, 0xff, 0xff, 0xff]);
     expect(listenMock.mock.calls[0]).toEqual(['AIOC Audio', 5, -50]);
-    for (const call of listenMock.mock.calls.slice(1)) expect(call).toEqual(['AIOC Audio', 30, -50, { out: undefined, play: false }]);
+    for (const call of listenMock.mock.calls.slice(1)) expect(call).toEqual(['AIOC Audio', 30, -50, { out: undefined }]);
     expect(stdin.listenerCount('data') + stdin.listenerCount('readable')).toBe(0);
     expect(stdin.readableFlowing).toBeNull();
     expect(stdout).toHaveLength(1);
@@ -198,7 +198,8 @@ describe('sweep', () => {
     ['--scratch', ['sweep', EXAMPLE_PLAN, '--scratch', '0'], '--scratch'],
     ['--check', ['sweep', EXAMPLE_PLAN, '--check', '162.400'], '--check'],
     ['--no-check', ['sweep', EXAMPLE_PLAN, '--no-check'], '--no-check'],
-    ['--play without --out-dir', ['sweep', EXAMPLE_PLAN, '--play'], '--out-dir'],
+    ['--play', ['sweep', EXAMPLE_PLAN, '--out-dir', 'rx', '--play'], 'unknown option --play'],
+    ['--floor', ['sweep', EXAMPLE_PLAN, '--floor', '-40'], 'unknown option --floor'],
     ['a fractional --seconds', ['sweep', EXAMPLE_PLAN, '--seconds', '2.5'], '--seconds'],
     ['--verbose', ['sweep', EXAMPLE_PLAN, '--verbose'], 'unknown option --verbose'],
     ['a plan without checkMhz', ['sweep', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }] })], 'checkMhz'],
@@ -234,50 +235,6 @@ describe('sweep', () => {
       ],
     });
     expect(execFile).not.toHaveBeenCalled();
-  });
-
-  it('plays only the active captures through afplay with --play', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
-    listenSequence([0, 2, 0, 1, 0, 0, 0]);
-    await run([...SWEEP, '--out-dir', dir, '--play', '--json'], opener(new FakeRadio()));
-    expect(process.exitCode).toBe(0);
-    const outs = listenMock.mock.calls.slice(1).map((c) => c[3]?.out);
-    expect(listenMock.mock.calls.slice(1).every((c) => c[3]?.play === false)).toBe(true);
-    expect(execFile.mock.calls.map((c) => [c[0], c[1]])).toEqual([
-      ['afplay', [outs[1]]],
-      ['afplay', [outs[3]]],
-    ]);
-  });
-
-  it('keeps a finished dwell in the summary before an afplay failure', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
-    listenSequence([2, 0, 0, 0, 0, 0, 0]);
-    execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', 'bad file'));
-    await run([...SWEEP, '--out-dir', dir, '--play', '--json'], opener(new FakeRadio()));
-    expect(process.exitCode).toBe(3);
-    expect(stdout).toEqual([]);
-    expect(errJson()).toMatchObject({
-      kind: 'transport',
-      reason: 'audio-process-failed',
-      phase: 'play',
-      slot: 0,
-      channel: 1,
-      summary: { swept: 1, active: [{ channel: 1, activeSeconds: 2 }], slot0: { channel: 1, name: 'NOAA 1' } },
-    });
-  });
-
-  it('swallows a playback that a SIGINT cuts short and prints the interrupted summary', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
-    listenSequence([2, 2, 0, 0, 0, 0, 0]);
-    execFile.mockImplementation((_file, _args, _opts, cb) => {
-      process.emit('SIGINT');
-      cb(Object.assign(new Error('afplay stopped'), { signal: 'SIGINT' }), '', '');
-    });
-    await run([...SWEEP, '--out-dir', dir, '--play', '--json'], opener(new FakeRadio()));
-    expect(process.exitCode).toBe(130);
-    expect(stderr).toEqual([]);
-    expect(outJson()).toMatchObject({ swept: 1, interrupted: 'SIGINT', active: [{ channel: 1 }] });
-    expect(execFile).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -453,7 +410,7 @@ describe('sweep', () => {
 
 describe('runSweep', () => {
   const entries = readPlan(EXAMPLE_PLAN).entries;
-  const options = { device: 'AIOC Audio', seconds: 2, floorDbfs: -50, play: false };
+  const options = { device: 'AIOC Audio', seconds: 2 };
   const idle: SweepSteps = { check: async () => {}, prepare: async () => {} };
 
   it('stops after the dwell in progress when a signal arrives and removes its handlers', async () => {

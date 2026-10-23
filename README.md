@@ -25,9 +25,9 @@ node src/main.ts status
    mode and select slot 0, then check again.
 3. Run `uv5r tune 154.680 --channel 0`. The CLI writes the record and name and reads both
    back. The radio applies the write about 3 s after the command ends.
-4. Run `uv5r sweep channels.json --seconds 30 --out-dir rx --play`. It checks slot 0 with
+4. Run `uv5r sweep channels.json --seconds 30 --out-dir rx`. It checks slot 0 with
    the plan's `checkMhz`, then writes each plan entry into slot 0 with its own TX setting
-   and listens.
+   and listens. The human plays the WAVs in `rx` after the run.
 
 **Channel rule.** `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
 
@@ -40,7 +40,8 @@ after only the check write, or `null` when unknown. Nothing restores slot 0. Run
 `uv5r load PLAN.json` to put a plan in its own slots.
 
 The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only
-through `uv5r listen --seconds 5 --out FILE --play` or `uv5r sweep PLAN --out-dir DIR --play`.
+through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
+`uv5r sweep PLAN --out-dir DIR` writes to DIR after the run.
 
 A radio verb runs one or more short clone sessions. `sweep` runs one per write, `settings`
 with pairs and `restore` add a verification session, and `key` opens no session. The

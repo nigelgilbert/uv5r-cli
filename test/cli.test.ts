@@ -142,7 +142,7 @@ describe('help', () => {
       oneVerb: 'Run one verb at a time. Do not open, cat, screen or stty the serial port.',
       clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.',
       speaker:
-        'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or sweep --out-dir DIR --play.',
+        'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or by playing the WAVs in sweep --out-dir DIR after the run.',
     });
     expect(Object.keys(help.exitCodes)).toEqual(['0', '1', '2', '3', '4', '5', '6', '128+signal']);
     expect(help.errors.format).toContain('reason');
@@ -370,7 +370,6 @@ describe('listen input checks', () => {
   it.each([
     [['listen', '--seconds', '5', '--floor', '100']],
     [['listen', '--seconds', '5', '--floor', '-101']],
-    [['sweep', 'missing.json', '--floor', '100']],
   ])('exits 2 on %j naming the -100..0 range before opening the transport', async (argv) => {
     const open = opener(new FakeRadio());
     await cli([...argv, '--json'], open);
