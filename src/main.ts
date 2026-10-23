@@ -99,7 +99,7 @@ const EXIT_CODES: Record<string, string> = {
   '2': 'usage: bad input; argument errors exit before the port opens',
   '3': 'transport: no device, a serial error, or an ffmpeg or afplay failure',
   '4': 'timeout: no ack before a block read, or a short block payload',
-  '5': 'device-state: no handshake, a bad reply, a refused write, a failed verification, an image ident mismatch or a check under 80% active seconds',
+  '5': 'device-state: no handshake, a bad reply, a refused write, a failed verification, an image ident mismatch, an open squelch or a check under 80% active seconds',
   '6': 'busy: another process holds the serial port',
   '128+signal': 'interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary',
 };
