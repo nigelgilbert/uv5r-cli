@@ -9,10 +9,9 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
 ## Find help
 
-- `uv5r help` lists the verbs, the operating rules and the exit codes.
-- `uv5r help VERB` prints a verb's flags, defaults, effects, preconditions, result example
-  and the exit cases it adds to the table in `uv5r help`. `uv5r help VERB --json` prints the
-  same as JSON.
+- `uv5r help` lists the verbs, the operating rules and the exit codes. `uv5r help VERB`
+  prints a verb's flags, defaults, effects, preconditions, result example and the exit cases
+  it adds to that table. `uv5r help VERB --json` prints the same as JSON.
 - Read `uv5r help VERB --json` before the first run of a verb in a session.
 
 ## Operating rules
@@ -27,11 +26,11 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
   writing slot 0, consistent with the radio receiving slot 0. Exit 5 lists the causes: VFO
   mode, another slot selected, volume knob down, plug unseated, quiet frequency. Ask the
   human to set MR mode and select slot 0, then check again.
+- `check` and `sweep` need squelch above 0 and `--device` naming the AIOC input.
 - After a `check` write, the slot keeps the receive-only record. After `sweep`, slot 0
   keeps the write that `slot0` names; `null` means unknown. Nothing restores slot 0.
-- Ask the human to set MR mode and select slot 0 before a sweep, then run
-  `uv5r sweep channels.json --seconds 30 --out-dir rx`. The human plays the WAVs in `rx`
-  after the run.
+- Run `uv5r sweep channels.json --seconds 30 --out-dir rx` after the human sets MR mode and
+  selects slot 0. The human plays the WAVs in `rx` after the run.
 - Write a plan to its own slots with one `uv5r load PLAN.json`.
 - Write public-safety listening channels with `--rx-only`.
 - The radio speaker is silent while the AIOC is plugged in. The human hears receive audio
@@ -39,8 +38,7 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
   `uv5r sweep PLAN --out-dir DIR` writes to DIR after the run.
 - The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for
   the handshake retry.
-- On the `input clips` warning, ask the human to turn the volume knob down, then listen
-  again.
+- On `input clips`, ask the human to turn the volume knob down, then listen again.
 - `key` raises PTT on the channel the radio display shows. The CLI cannot read that
   channel, and a receive-only slot radiates nothing. Key only when the human asked and the
   frequency is one they may transmit on, after asking the human what the display shows.
@@ -49,12 +47,14 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
 - A failed command prints nothing on stdout and one error object on stderr with `reason`,
   `message`, `remedy`, `retry` and detail fields when output is JSON, piped or with
-  `--json`, and the message plus a remedy line as text on a terminal. An exit of 128
-  plus a signal number prints the result on stdout with `interrupted` and no error. Act on
-  `reason`, `remedy` and `retry`; `uv5r help --json` lists each reason and retry value
-  under `errors`.
+  `--json`, and the message plus a remedy line as text on a terminal. Act on `reason`,
+  `remedy` and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
 - `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun the
   same command once. `after-remedy`: rerun after doing the remedy.
 - A `load` error from a plan entry write carries `slot`. A `sweep` error after the port is
-  requested carries `summary`, the sweep result so far.
-- After a failed `key`, report and wait for the human.
+  requested carries `summary`. One in the loop adds `phase` (`check`, `entry` or `dwell`),
+  `slot` (0) and `channel` (null during the check); a failed check adds the check fields.
+- On SIGINT, SIGTERM or SIGHUP after `key` or `sweep` opens the port, the result prints on
+  stdout with `interrupted` and exit 128 plus the signal number. Other verbs print nothing.
+- After a failed `key`, report and wait for the human. A failed PTT release after a signal
+  exits 3 with `interrupted` in the error.

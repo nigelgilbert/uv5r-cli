@@ -68,7 +68,7 @@ one they may transmit on, after asking the human what the display shows.
 | `restore` | channels, names and settings from the image | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
 | `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
 | `listen` | no; opens no serial port | `--seconds` | `device`, `seconds`, `rmsDbfs`, `zeroSeconds`, `meanRmsDbfs`, `peakDbfs`, `active`, `activeSeconds`, `warnings`, `out` |
-| `sweep` | slot 0, once for the check and once per entry | the check, then the dwell plus about 3 s per entry | `swept`, `seconds`, `active`, `warnings`, `slot0`; `interrupted` on a signal |
+| `sweep` | slot 0, once for the check and once per entry | the check, then the dwell plus about 3 s per entry | `swept`, `seconds`, `device`, `active`, `warnings`, `slot0`; `interrupted` on a signal |
 
 Record keys are `rxMhz`, `txMhz`, `txTone`, `rxTone`, `bandwidth`, `power` and `name`.
 Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, result example and
@@ -78,11 +78,18 @@ as JSON.
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. A failed
 command prints nothing on stdout and one error object on stderr with `reason`, `message`,
 `remedy`, `retry` and detail fields when output is JSON, piped or with `--json`.
-On a terminal it prints the message and a remedy line as text. An exit of 128 plus a signal
-number prints the result on stdout with `interrupted` and no error. Act on `reason`,
-`remedy` and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
+On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
+and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
 A `load` error from a plan entry write adds `slot`. A `sweep` error after the port is
-requested adds `summary`, the sweep result so far.
+requested adds `summary`, the sweep result so far. An error inside the sweep loop adds
+`phase` (`check`, `entry` or `dwell`), `slot` (0) and `channel` (the plan channel, `null`
+during the check). `summary.slot0` says whether a write landed. A failed check also carries
+the check result fields.
+
+On SIGINT, SIGTERM or SIGHUP once `key` or `sweep` has opened the port, the verb prints its
+result on stdout with `interrupted` and no error, and exits 128 plus the signal number. A
+failed PTT release after the signal exits 3 with `interrupted` in the error. Other verbs end
+on a signal with no output.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
@@ -114,6 +121,10 @@ above -30. A floor reading with squelch 0 means the volume knob is down or the 2
 is short of its contact. Set the knob so static reads around -20 to -12. The `input clips:
 turn the volume knob down` warning means more than 1 percent of samples sit at full scale;
 ask the human to turn the knob down, then listen again.
+
+Open-squelch noise reads as audio on any frequency. `check` and `sweep` read the squelch
+setting first and exit 5 with `squelch-open` when it is 0. Run `uv5r settings squelch 3`
+after setting the knob.
 
 ffmpeg 9 on macOS 26 returns about 88 percent of the `-t` length as samples. The CLI asks
 ffmpeg for `ceil(seconds / 0.88) + 2`, which also covers the first second the CLI drops.

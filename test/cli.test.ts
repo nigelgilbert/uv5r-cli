@@ -28,6 +28,7 @@ const REASON_ENUM = [
   'verification-failed',
   'image-incompatible',
   'audio-inactive',
+  'squelch-open',
   'invalid-argument',
   'device-busy',
   'serial-timeout',
@@ -178,7 +179,11 @@ describe('help', () => {
     expect(help.errors.format).toContain('remedy');
     expect(help.errors.format).toContain('when output is JSON, piped or with --json');
     expect(help.errors.format).toContain('On a terminal it prints the message and a remedy line as text.');
-    expect(help.errors.format).toContain('An exit of 128 plus a signal number prints the result on stdout with interrupted and no error.');
+    expect(help.errors.format).toContain(
+      'On SIGINT, SIGTERM or SIGHUP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
+    );
+    expect(help.errors.format).toContain('A failed PTT release after the signal exits 3 with interrupted in the error.');
+    expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0) and channel (the plan channel, null during the check).');
     expect(Object.keys(help.errors.reasons)).toEqual(REASON_ENUM);
     for (const line of Object.values(help.errors.reasons)) expect(line).toMatch(/^exit \d: /);
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);

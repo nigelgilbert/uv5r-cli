@@ -28,6 +28,8 @@ export interface ListenOptions {
   out?: string;
   /** Run afplay on `out` after ffmpeg exits. */
   play?: boolean;
+  /** Kill ffmpeg when this resolves; the capture then rejects once ffmpeg exits. */
+  stop?: Promise<unknown>;
 }
 
 /**
@@ -55,6 +57,9 @@ const RATIO = 0.88;
 
 /** Extra seconds added to the padded request. */
 const PAD_SECONDS = 2;
+
+/** Milliseconds `ffmpeg -version` gets before checkFfmpeg reports it failed. */
+const VERSION_TIMEOUT_MS = 5000;
 
 /** RMS level in dBFS above which a second counts as active. */
 export const DEFAULT_FLOOR_DBFS = -50;
@@ -208,9 +213,9 @@ function stderrTail(stderr: string): string {
  * With `play`, afplay plays the WAV once ffmpeg exits; one ffmpeg process that captured and played hung on the bench.
  */
 export async function listen(device: string, seconds: number, floorDbfs = DEFAULT_FLOOR_DBFS, options: ListenOptions = {}): Promise<ListenResult> {
-  const { out, play: playIt = false } = options;
+  const { out, play: playIt = false, stop } = options;
   if (playIt && out === undefined) throw new UsageError('play needs an out file; pass --out FILE with --play');
-  const result = await capture(device, seconds, floorDbfs, out);
+  const result = await capture(device, seconds, floorDbfs, out, stop);
   if (out === undefined) return result;
   if (playIt) await play(out, seconds);
   return { ...result, out };
@@ -244,21 +249,68 @@ export function play(file: string, seconds: number): Promise<void> {
   });
 }
 
-/** Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV. */
-function capture(device: string, seconds: number, floorDbfs: number, out: string | undefined): Promise<ListenResult> {
-  const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
+type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
+
+/** Describe how a child process run with a `timeoutMs` timeout failed. */
+function exitHow(e: ExecError, timeoutMs: number): string {
+  if (e.killed && e.signal) return `timed out after ${timeoutMs / 1000}s`;
+  return e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
+}
+
+/** The dependency-missing error for an ffmpeg absent from PATH. */
+function ffmpegMissing(): TransportError {
+  return new TransportError('dependency-missing', 'ffmpeg not found on PATH; install it with brew install ffmpeg', {}, { remedy: 'run brew install ffmpeg' });
+}
+
+/**
+ * Run `ffmpeg -version` and resolve when it exits 0. Reject with dependency-missing when
+ * ffmpeg is absent from PATH and with audio-process-failed on any other failure. `check`
+ * and `sweep` call it before the port opens so a broken ffmpeg fails before any write.
+ */
+export function checkFfmpeg(): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
-      const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null }) | null;
+    execFile('ffmpeg', ['-version'], { timeout: VERSION_TIMEOUT_MS }, (err, _stdout, stderr) => {
+      const e = err as ExecError | null;
+      if (!e) {
+        resolve();
+        return;
+      }
+      if (e.code === 'ENOENT') {
+        reject(ffmpegMissing());
+        return;
+      }
+      const tail = stderrTail(String(stderr ?? ''));
+      reject(
+        new TransportError(
+          'audio-process-failed',
+          `ffmpeg -version ${exitHow(e, VERSION_TIMEOUT_MS)}${tail ? `: ${tail}` : ''}`,
+          { code: e.code ?? null, signal: e.signal ?? null },
+          { remedy: 'ask the human to check the ffmpeg install; ffmpeg -version failed' },
+        ),
+      );
+    });
+  });
+}
+
+/**
+ * Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV.
+ * When `stop` resolves, kill ffmpeg and reject once it exits.
+ */
+function capture(device: string, seconds: number, floorDbfs: number, out: string | undefined, stop?: Promise<unknown>): Promise<ListenResult> {
+  const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
+  let stopped = false;
+  return new Promise((resolve, reject) => {
+    const child = execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
+      const e = err as ExecError | null;
       if (e?.code === 'ENOENT') {
-        reject(new TransportError('dependency-missing', 'ffmpeg not found on PATH; install it with brew install ffmpeg', {}, { remedy: 'run brew install ffmpeg' }));
+        reject(ffmpegMissing());
         return;
       }
       const tail = stderrTail(stderr);
       const suffix = tail ? `: ${tail}` : '';
-      if (e) {
-        const how = e.killed && e.signal ? `timed out after ${timeoutMs / 1000}s` : e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
-        reject(new TransportError('audio-process-failed', `ffmpeg ${how} capturing from ${JSON.stringify(device)}${suffix}`, { device, code: e.code ?? null, signal: e.signal ?? null }));
+      if (e || stopped) {
+        const how = stopped || !e ? 'killed after a signal to uv5r' : exitHow(e, timeoutMs);
+        reject(new TransportError('audio-process-failed', `ffmpeg ${how} capturing from ${JSON.stringify(device)}${suffix}`, { device, code: e?.code ?? null, signal: e?.signal ?? null }));
         return;
       }
       const levels = parseAstats(stderr);
@@ -270,6 +322,10 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
         return;
       }
       resolve(summarize(device, seconds, levels, floorDbfs));
+    });
+    void stop?.then(() => {
+      stopped = true;
+      child?.kill('SIGTERM');
     });
   });
 }

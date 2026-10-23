@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { CLIP_WARNING, captureSeconds, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
+import { CLIP_WARNING, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
 
 /** Pre-high-pass astats fields for one frame: sample min and max on the float scale, and the count of samples at either. */
 interface Raw {
@@ -222,6 +222,66 @@ describe('listen', () => {
     ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-45', '-40'), frame(2, '-35', '-30')].join('\n'));
     const r = await listen('AIOC Audio', 2, -40);
     expect(r).toMatchObject({ active: [false, true], activeSeconds: 1 });
+  });
+});
+
+describe('listen with stop', () => {
+  beforeEach(() => {
+    execFile.mockReset();
+  });
+
+  it('kills ffmpeg when stop resolves and rejects only once ffmpeg exits', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), '', STDERR);
+      return { kill };
+    });
+    let stop = () => {};
+    const stopped = new Promise<void>((resolve) => (stop = resolve));
+    let settled = false;
+    const done = listen('AIOC Audio', 3, -50, { stop: stopped }).finally(() => (settled = true));
+    stop();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(settled).toBe(false);
+    exit();
+    const err = await done.catch((e) => e);
+    expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed' });
+    expect(err.message).toMatch(/^ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"/);
+  });
+  it('leaves ffmpeg running while stop stays pending', async () => {
+    const kill = vi.fn();
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      setTimeout(() => cb(null, '', STDERR), 0);
+      return { kill };
+    });
+    const r = await listen('AIOC Audio', 3, -50, { stop: new Promise(() => {}) });
+    expect(r.activeSeconds).toBe(2);
+    expect(kill).not.toHaveBeenCalled();
+  });
+});
+
+describe('checkFfmpeg', () => {
+  beforeEach(() => {
+    execFile.mockReset();
+  });
+
+  it('runs ffmpeg -version with a short timeout and resolves on exit 0', async () => {
+    ffmpegReturns(null, '');
+    await checkFfmpeg();
+    expect(execFile.mock.calls[0]!.slice(0, 3)).toEqual(['ffmpeg', ['-version'], { timeout: 5000 }]);
+  });
+  it('maps a missing ffmpeg to dependency-missing', async () => {
+    ffmpegReturns({ code: 'ENOENT' }, '');
+    await expect(checkFfmpeg()).rejects.toMatchObject({ kind: 'transport', reason: 'dependency-missing', remedy: 'run brew install ffmpeg' });
+  });
+  it('maps any other failure to audio-process-failed with the stderr tail', async () => {
+    ffmpegReturns({ code: 1 as unknown as string }, 'dyld: Library not loaded: libavdevice.62.dylib');
+    const err = await checkFfmpeg().catch((e) => e);
+    expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { code: 1 } });
+    expect(err.message).toBe('ffmpeg -version exited with code 1: dyld: Library not loaded: libavdevice.62.dylib');
+    expect(err.remedy).not.toContain('--device');
   });
 });
 

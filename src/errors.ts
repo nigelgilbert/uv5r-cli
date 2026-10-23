@@ -45,7 +45,8 @@ export type DeviceStateReason =
   | 'write-unacknowledged'
   | 'verification-failed'
   | 'image-incompatible'
-  | 'audio-inactive';
+  | 'audio-inactive'
+  | 'squelch-open';
 
 /** Why a command failed; every error carries one, and each maps to one kind. */
 export type ErrorReason = TransportReason | DeviceStateReason | 'invalid-argument' | 'device-busy' | 'serial-timeout' | 'unexpected-error';
@@ -107,7 +108,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'capture-incomplete': {
     kind: 'transport',
-    means: 'ffmpeg returned fewer whole seconds than requested',
+    means: 'ffmpeg returned fewer whole seconds than requested plus the first second the CLI drops; captured and requested count that second',
     remedy: 'rerun the command; check that --device names the AIOC input if it fails again',
     retry: 'once',
   },
@@ -145,6 +146,12 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
     kind: 'device-state',
     means: 'a check heard fewer than 80% of its seconds above the floor',
     remedy: 'ask the human to set MR mode and select the slot',
+    retry: 'after-remedy',
+  },
+  'squelch-open': {
+    kind: 'device-state',
+    means: 'squelch is 0, so noise reads as audio on any frequency; check and sweep stop before the write',
+    remedy: 'run uv5r settings squelch 3',
     retry: 'after-remedy',
   },
   'invalid-argument': {
