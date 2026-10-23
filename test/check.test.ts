@@ -97,27 +97,27 @@ describe('check', () => {
     [[true, true, true, true, true, true, true, false, false, false], 5],
   ])('needs 80%% of the seconds active: %j exits %i', async (active, exit) => {
     listenMock.mockResolvedValue(heard(active));
-    await run(['check', '162.400', '--channel', '0', '--seconds', String(active.length), '--json'], opener(new FakeRadio()));
+    await run(['check', '162.400', '--channel', '0', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(exit);
   });
 
-  it('passes --seconds, --device and --floor to listen', async () => {
-    listenMock.mockResolvedValue(heard([true, true, true, true, true, true]));
-    await run(['check', '162.400', '--channel', '3', '--seconds', '6', '--device', '1', '--floor', '-40', '--json'], opener(new FakeRadio()));
+  it('passes --device to listen with 5 s at -50 dBFS', async () => {
+    listenMock.mockResolvedValue(heard([true, true, true, true, true]));
+    await run(['check', '162.400', '--channel', '3', '--device', '1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
-    expect(listenMock).toHaveBeenCalledWith('1', 6, -40);
-    expect(outJson()).toMatchObject({ slot: 3, requestedMhz: '162.4', activeSeconds: 6 });
+    expect(listenMock).toHaveBeenCalledWith('1', 5, -50);
+    expect(outJson()).toMatchObject({ slot: 3, requestedMhz: '162.4', activeSeconds: 5 });
   });
 
-  it('writes a receive-only record whatever tune flags it gets', async () => {
+  it('writes a receive-only wide record with no RX tone, named by the frequency', async () => {
     const radio = new FakeRadio();
     listenMock.mockResolvedValue(heard([true, true, true, true, true]));
-    await run(['check', '162.400', '--channel', '0', '--low-power', '--narrow', '--name', 'WX', '--json'], opener(radio));
+    await run(['check', '162.400', '--channel', '0', '--json'], opener(radio));
     expect(process.exitCode).toBe(0);
     stdout = [];
     radio.dropSession();
     await run(['read', '0', '--json'], opener(radio));
-    expect(outJson()).toMatchObject({ channel: 0, rxMhz: '162.4', txMhz: null, bandwidth: 'narrow', name: 'WX' });
+    expect(outJson()).toMatchObject({ channel: 0, rxMhz: '162.4', txMhz: null, rxTone: 'none', bandwidth: 'wide', power: 'high', name: '162.4' });
   });
 
   it('exits 5 listing the causes when too few seconds are active', async () => {
@@ -141,10 +141,13 @@ describe('check', () => {
   it.each([
     [['check', '--channel', '0'], 'frequency'],
     [['check', '162.400'], '--channel'],
-    [['check', '162.400', '--channel', '0', '--seconds', '2.5'], '--seconds'],
-    [['check', '162.400', '--channel', '0', '--seconds', '1'], '5..600'],
-    [['check', '162.400', '--channel', '0', '--seconds', '4'], '5..600'],
-    [['check', '162.400', '--channel', '0', '--seconds', '601'], '5..600'],
+    [['check', '162.400', '--channel', '0', '--floor', '-40'], 'unknown option --floor'],
+    [['check', '162.400', '--channel', '0', '--rx-tone', '100.0'], 'unknown option --rx-tone'],
+    [['check', '162.400', '--channel', '0', '--seconds', '5'], 'unknown option --seconds'],
+    [['check', '162.400', '--channel', '0', '--narrow'], 'unknown option --narrow'],
+    [['check', '162.400', '--channel', '0', '--low-power'], 'unknown option --low-power'],
+    [['check', '162.400', '--channel', '0', '--name', 'WX'], 'unknown option --name'],
+    [['check', '162.400', '--channel', '0', '--rx-only'], 'unknown option --rx-only'],
     [['check', '162.400', '--channel', '0', '--offset', '0.6'], '--offset'],
     [['check', '162.400', '--channel', '0', '--tone', '82.5'], '--tone'],
   ])('exits 2 on %j before opening the transport', async (argv, text) => {

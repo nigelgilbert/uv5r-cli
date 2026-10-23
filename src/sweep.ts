@@ -27,7 +27,7 @@ export interface DwellOptions {
   play: boolean;
 }
 
-/** One finished dwell, as `--verbose` prints it. */
+/** One finished dwell. */
 export interface DwellRecord {
   /** Plan channel of the entry written into `slot`. */
   channel: number;
@@ -189,8 +189,8 @@ export function summarize(progress: SweepProgress, seconds: number, interrupted?
 }
 
 /**
- * Run the check, then prepare and dwell on each entry in order, call `onDwell` as each
- * dwell ends, play the capture after that, and summarize. A playback failure throws with
+ * Run the check, then prepare and dwell on each entry in order, play each capture after
+ * its dwell, and summarize. A playback failure throws with
  * its dwell already in `progress`. A failed check throws before any entry is written. SIGINT,
  * SIGTERM or SIGHUP ends the run. The summary then covers the dwells finished before the
  * signal and names it in `interrupted`. A dwell whose capture the signal cut short is left
@@ -200,7 +200,6 @@ export async function runSweep(
   entries: readonly PlanEntry[],
   steps: SweepSteps,
   options: DwellOptions,
-  onDwell: (record: DwellRecord) => void,
   progress: SweepProgress = newProgress(),
   signals: EventEmitter = process,
 ): Promise<SweepSummary> {
@@ -228,7 +227,6 @@ export async function runSweep(
       phase = 'dwell';
       const record = await dwell(entry, options);
       progress.dwells.push(record);
-      onDwell(record);
       phase = 'play';
       await playDwell(record, options, stop);
     }

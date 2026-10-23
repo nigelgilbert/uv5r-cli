@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
-import { CHECK_SECONDS, MIN_CHECK_SECONDS, checkChannel } from './check.ts';
+import { CHECK_SECONDS, checkChannel } from './check.ts';
 import {
   SETTING_NAMES,
   checkBand,
@@ -45,7 +45,7 @@ import {
   type ChannelResult,
   type RadioStatus,
 } from './radio.ts';
-import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type DwellRecord, type Slot0, type SweepSummary } from './sweep.ts';
+import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type Slot0, type SweepSummary } from './sweep.ts';
 import { SerialTransport, resolveTarget, type Transport } from './transport.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
@@ -216,21 +216,11 @@ const verbs: Record<string, Verb> = {
     summary: 'Write a receive-only frequency into slot N, wait for the reload and listen; exit 5 unless 80% of the seconds are active',
     example: 'uv5r check 162.400 --channel 0',
     args: [FREQ_ARG],
-    flags: [
-      CHANNEL_FLAG,
-      RX_TONE_FLAG,
-      NARROW_FLAG,
-      LOW_POWER_FLAG,
-      { name: 'rx-only', help: 'accepted; check writes a receive-only record either way' },
-      NAME_FLAG,
-      { name: 'seconds', value: 'S', default: CHECK_SECONDS, help: `listen time, whole number ${MIN_CHECK_SECONDS}..${MAX_LISTEN_SECONDS}` },
-      DEVICE_FLAG,
-      FLOOR_FLAG,
-      ...COMMON_FLAGS,
-    ],
+    flags: [CHANNEL_FLAG, DEVICE_FLAG, ...COMMON_FLAGS],
     effects: [
       'Write FREQ into slot N as a receive-only record and read it back. --offset and --tone exit 2.',
-      `Wait ${APPLIES_AFTER_SECONDS} s for the reload, then capture --seconds of receive audio with the listen pipeline.`,
+      `Wait ${APPLIES_AFTER_SECONDS} s for the reload, then capture ${CHECK_SECONDS} s of receive audio with the listen pipeline.`,
+      `A second is active when its RMS is above ${DEFAULT_FLOOR_DBFS} dBFS.`,
       'Pass when at least 80% of the seconds are active, rounded up: 4 of 5.',
       'A pass means audio above the floor after writing slot N, consistent with the radio receiving slot N. The received frequency stays unverified.',
       'Once the write succeeds, slot N keeps the receive-only record, also after a capture failure. A failure before or during the write leaves the slot state unknown.',
@@ -418,7 +408,6 @@ const verbs: Record<string, Verb> = {
       { name: 'play', help: 'play each active capture after its dwell; needs --out-dir' },
       DEVICE_FLAG,
       FLOOR_FLAG,
-      { name: 'verbose', help: 'write one JSON line per entry to stderr as each dwell ends' },
       ...COMMON_FLAGS,
     ],
     effects: [
@@ -651,18 +640,14 @@ async function checkVerb(args: Invocation): Promise<number> {
   if (!args.flags.has('channel')) throw new UsageError('check needs --channel N, as in: check 162.400 --channel 0');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
-  const spec = channelSpec(freq, args.flags);
-  const seconds = numberFlag(args.flags, 'seconds') ?? CHECK_SECONDS;
-  if (!Number.isInteger(seconds) || seconds < MIN_CHECK_SECONDS || seconds > MAX_LISTEN_SECONDS) {
-    throw new UsageError(`check --seconds takes a whole number ${MIN_CHECK_SECONDS}..${MAX_LISTEN_SECONDS}; got ${seconds}`, { flag: 'seconds' });
-  }
+  // Pass no flags so the spec takes the defaults: no RX tone, wide, high power, named by frequency.
+  const spec = channelSpec(freq, new Map());
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
-  const floorDbfs = floorFlag(args.flags, 'uv5r check 162.400 --channel 0');
-  const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device, seconds, floorDbfs }));
+  const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device }));
   print(args, result, () =>
     [
       `slot ${result.slot}: requested ${result.requestedMhz}`,
-      `active     ${result.activeSeconds} of ${result.active.length} s above ${floorDbfs} dBFS`,
+      `active     ${result.activeSeconds} of ${result.active.length} s above ${DEFAULT_FLOOR_DBFS} dBFS`,
       `timeline   ${result.active.map((on) => (on ? '#' : '.')).join('')}`,
       ...result.warnings.map((w) => `warning    ${w}`),
     ].join('\n'),
@@ -871,7 +856,6 @@ async function sweepVerb(args: Invocation): Promise<number> {
     const outDir = stringFlag(args.flags, 'out-dir');
     const play = args.flags.get('play') === true;
     if (play && outDir === undefined) throw new UsageError('--play needs --out-dir DIR, as in: sweep channels.json --out-dir rx --play');
-    const verbose = args.flags.get('verbose') === true;
     const plan = readPlan(file);
     if (plan.checkHz === undefined) {
       throw new UsageError(`${file} has no checkMhz; add a top-level "checkMhz" with a NOAA frequency that carries audio at the location, as in: "checkMhz": 162.400`, {
@@ -888,11 +872,8 @@ async function sweepVerb(args: Invocation): Promise<number> {
       }
     }
     const options = { device, seconds, floorDbfs, outDir, play };
-    const onDwell = (record: DwellRecord) => {
-      if (verbose) process.stderr.write(`${JSON.stringify(record)}\n`);
-    };
     transportAsked = true;
-    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device, floorDbfs }), options, onDwell, progress));
+    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device, floorDbfs }), options, progress));
   } catch (err) {
     // Add the finished dwells and slot 0 to the error once the port was asked for.
     throw withDetail(err, transportAsked ? { summary: summarize(progress, seconds) } : {});

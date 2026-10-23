@@ -9,7 +9,7 @@ import { BusyError, TransportError } from '../src/errors.ts';
 import { cli, type OpenTransport } from '../src/main.ts';
 import { readPlan } from '../src/plan.ts';
 import { KEY_SIGNALS } from '../src/radio.ts';
-import { captureName, newProgress, runSweep, type DwellRecord, type SweepSteps } from '../src/sweep.ts';
+import { captureName, newProgress, runSweep, type SweepSteps } from '../src/sweep.ts';
 import { FakeRadio } from './fake.ts';
 
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
@@ -199,6 +199,7 @@ describe('sweep', () => {
     ['--no-check', ['sweep', EXAMPLE_PLAN, '--no-check'], '--no-check'],
     ['--play without --out-dir', ['sweep', EXAMPLE_PLAN, '--play'], '--out-dir'],
     ['a fractional --seconds', ['sweep', EXAMPLE_PLAN, '--seconds', '2.5'], '--seconds'],
+    ['--verbose', ['sweep', EXAMPLE_PLAN, '--verbose'], 'unknown option --verbose'],
     ['a plan without checkMhz', ['sweep', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }] })], 'checkMhz'],
     ['a checkMhz outside the band', ['sweep', planFile({ checkMhz: 300, channels: [{ channel: 1, rxMhz: 162.4 }] })], 'checkMhz'],
   ])('exits 2 on %s before opening the transport', async (_what, argv, text) => {
@@ -214,20 +215,6 @@ describe('sweep', () => {
   it('loads a plan without checkMhz', async () => {
     await run(['load', planFile({ channels: [{ channel: 1, rxMhz: 162.4 }] }), '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
-  });
-
-  it('writes one stderr line per entry with --verbose and leaves stdout as one object', async () => {
-    listenSequence([2, 0, 0, 0, 0, 0, 0]);
-    await run([...SWEEP, '--verbose', '--json'], opener(new FakeRadio()));
-    expect(process.exitCode).toBe(0);
-    const lines = stderr.join('').trim().split('\n');
-    expect(lines).toHaveLength(7);
-    const records = lines.map((line) => JSON.parse(line) as DwellRecord);
-    expect(records.map((r) => r.channel)).toEqual(PLAN_CHANNELS);
-    expect(records[0]).toMatchObject({ channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2, active: [true, true], warnings: [] });
-    expect(records[0]).not.toHaveProperty('rxMhz');
-    expect(stdout).toHaveLength(1);
-    expect(outJson()).toMatchObject({ swept: 7 });
   });
 
   it('keeps one WAV per entry named by channel with --out-dir and creates the directory', async () => {
@@ -261,17 +248,14 @@ describe('sweep', () => {
     ]);
   });
 
-  it('keeps a finished dwell in the summary and runs onDwell before an afplay failure', async () => {
+  it('keeps a finished dwell in the summary before an afplay failure', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
     listenSequence([2, 0, 0, 0, 0, 0, 0]);
     execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', 'bad file'));
-    await run([...SWEEP, '--out-dir', dir, '--play', '--verbose', '--json'], opener(new FakeRadio()));
+    await run([...SWEEP, '--out-dir', dir, '--play', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
-    const lines = stderr.join('').trim().split('\n');
-    expect(lines).toHaveLength(2);
-    expect(JSON.parse(lines[0]!)).toMatchObject({ channel: 1, activeSeconds: 2 });
-    expect(JSON.parse(lines[1]!)).toMatchObject({
+    expect(errJson()).toMatchObject({
       kind: 'transport',
       reason: 'audio-process-failed',
       phase: 'play',
@@ -462,10 +446,10 @@ describe('runSweep', () => {
       if (call++ === 1) signals.emit('SIGTERM');
       return heard(seconds, 1);
     });
-    const records: DwellRecord[] = [];
-    const summary = await runSweep(entries, idle, options, (r) => records.push(r), newProgress(), signals);
+    const progress = newProgress();
+    const summary = await runSweep(entries, idle, options, progress, signals);
     expect(summary).toMatchObject({ swept: 2, interrupted: 'SIGTERM' });
-    expect(records.map((r) => r.channel)).toEqual([1, 2]);
+    expect(progress.dwells.map((r) => r.channel)).toEqual([1, 2]);
     expect(KEY_SIGNALS.reduce((n, s) => n + signals.listenerCount(s), 0)).toBe(0);
   });
 
@@ -479,7 +463,7 @@ describe('runSweep', () => {
         await stop.stopped;
       },
     };
-    const summary = await runSweep(entries, steps, options, () => {}, newProgress(), signals);
+    const summary = await runSweep(entries, steps, options, newProgress(), signals);
     expect(summary).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], slot0: null, interrupted: 'SIGHUP' });
     expect(listenMock).not.toHaveBeenCalled();
   });
@@ -494,7 +478,7 @@ describe('runSweep', () => {
       },
       prepare,
     };
-    await expect(runSweep(entries, steps, options, () => {}, progress, new EventEmitter())).rejects.toThrow('ffmpeg exited 1');
+    await expect(runSweep(entries, steps, options, progress, new EventEmitter())).rejects.toThrow('ffmpeg exited 1');
     expect(prepare).not.toHaveBeenCalled();
     expect(progress).toEqual({ dwells: [], slot0: { channel: null, name: '162.4' } });
   });
