@@ -145,7 +145,7 @@ describe('help', () => {
   it('lists only the verb-specific exit cases in help VERB --json', async () => {
     const status = await helpJson('status');
     expect(status.exits).toEqual([]);
-    expect(status.exitsNote).toBe('exits adds to the exitCodes table in uv5r help --json');
+    expect(status.exitsNote).toBe('exits lists verb-specific notes on the codes in exitCodes in uv5r help --json; empty means none');
     stdout = [];
     const check = await helpJson('check');
     expect(check.exits.map((e: { code: number }) => e.code)).toEqual([3, 5]);
@@ -190,7 +190,7 @@ describe('help', () => {
     expect(flag('listen', '--floor').default).toBe(-50);
     expect(flag('listen', '--device').default).toBe('AIOC Audio');
     for (const verb of Object.values(help.verbs) as Array<Record<string, unknown>>) {
-      for (const key of ['usage', 'flags', 'effects', 'preconditions', 'writesToRadio', 'result', 'exits']) expect(verb).toHaveProperty(key);
+      for (const key of ['usage', 'flags', 'effects', 'preconditions', 'writesToRadio', 'result', 'exits', 'exitsNote']) expect(verb).toHaveProperty(key);
     }
   });
 

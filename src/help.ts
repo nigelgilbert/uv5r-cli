@@ -2,7 +2,7 @@
 export const HELP_SCHEMA_VERSION = 2;
 
 /** Pointer printed under every verb's exits in the help JSON. */
-export const EXITS_NOTE = 'exits adds to the exitCodes table in uv5r help --json';
+export const EXITS_NOTE = 'exits lists verb-specific notes on the codes in exitCodes in uv5r help --json; empty means none';
 
 /** One flag a verb takes. A flag without `value` is boolean. */
 export interface FlagDoc {
