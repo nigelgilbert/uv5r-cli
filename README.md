@@ -28,7 +28,7 @@ node src/main.ts status
 4. Run `uv5r sweep channels.json --seconds 30 --out-dir rx`. It checks slot 0 with
    the plan's `checkMhz`, then writes each plan entry into slot 0 with its own TX setting
    and listens. The human plays the WAVs in `rx` after the run. Each WAV holds a full
-   dwell; a dwell cut short by a signal or a failed capture leaves no file.
+   dwell; a dwell cut short by a signal or a failed capture leaves no WAV.
 
 **Channel rule.** `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
 

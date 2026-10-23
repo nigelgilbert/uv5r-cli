@@ -416,6 +416,7 @@ const verbs: Record<string, Verb> = {
     },
     exits: [
       { code: 2, when: 'a plan without checkMhz' },
+      { code: 2, when: 'a capture that cannot be renamed into DIR mid-run, after slot 0 is written; the error names part and carries summary' },
       { code: 3, when: 'a short capture' },
     ],
     positionals: 1,
