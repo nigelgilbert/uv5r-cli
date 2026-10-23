@@ -311,7 +311,7 @@ const verbs: Record<string, Verb> = {
     args: [],
     flags: [{ name: 'out', value: 'FILE', default: 'uv5r-YYYY-MM-DDTHH-MM-SS.img', help: 'image path' }, ...COMMON_FLAGS],
     effects: [
-      'Open FILE before the port opens; a new FILE is removed when the dump fails.',
+      'Open FILE before the port opens; a new FILE is removed when the dump exits with an error and stays empty after a signal.',
       'Read the full memory image in CHIRP layout in one clone session, about 14 s, and write it to FILE.',
     ],
     preconditions: [RADIO_READY],
@@ -711,14 +711,14 @@ async function dumpVerb(args: Invocation): Promise<number> {
   const notWritable = (err: unknown) =>
     new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
   let created = false;
-  // Create FILE, or open an existing one for append, so a missing directory, a read-only file or a directory path fails before the port opens.
+  // Create FILE, or open an existing one for append without creating it, so a missing directory, a read-only file, a directory path or a dangling symlink fails before the port opens.
   try {
     try {
       closeSync(openSync(out, 'wx'));
       created = true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      closeSync(openSync(out, 'a'));
+      closeSync(openSync(out, fsConstants.O_WRONLY | fsConstants.O_APPEND));
     }
   } catch (err) {
     throw notWritable(err);

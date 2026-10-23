@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DEFAULT_FLOOR_DBFS, listen, type ListenResult } from './audio.ts';
 import { CHECK_SECONDS, judgeCheck, receiveOnly, refuseOpenSquelch } from './check.ts';
 import { formatMhz, type ChannelSpec } from './codec.ts';
-import { withDetail } from './errors.ts';
+import { UsageError, withDetail } from './errors.ts';
 import type { PlanEntry } from './plan.ts';
 import { settle, type Session } from './protocol.ts';
 import { KEY_SIGNALS, withSession, writeChannel } from './radio.ts';
@@ -115,7 +115,7 @@ export function captureName(channel: number, start: Date): string {
  * Capture `options.seconds` on the channel the radio is on, judge activity against DEFAULT_FLOOR_DBFS,
  * and report it as `entry`. With `outDir` ffmpeg writes the captureName plus .part, and the dwell renames
  * it to the captureName once the capture finishes. A failed capture removes the part file, so every WAV in
- * `outDir` holds a full dwell. When `stop` resolves, the capture kills ffmpeg and rejects once ffmpeg exits.
+ * `outDir` holds a full dwell. A failed rename throws UsageError naming the kept part file. When `stop` resolves, the capture kills ffmpeg and rejects once ffmpeg exits.
  */
 export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Promise<unknown>): Promise<DwellRecord> {
   const out = options.outDir === undefined ? undefined : join(options.outDir, captureName(entry.channel, new Date()));
@@ -124,10 +124,21 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
   try {
     heard = await listen(options.device, options.seconds, DEFAULT_FLOOR_DBFS, { out: part, stop });
   } catch (err) {
-    if (part !== undefined) rmSync(part, { force: true });
+    // Remove the part file and keep the capture error when the removal fails.
+    if (part !== undefined) {
+      try {
+        rmSync(part, { force: true });
+      } catch {}
+    }
     throw err;
   }
-  if (part !== undefined && out !== undefined) renameSync(part, out);
+  if (part !== undefined && out !== undefined) {
+    try {
+      renameSync(part, out);
+    } catch (err) {
+      throw new UsageError(`cannot rename ${part} to ${out}: ${(err as NodeJS.ErrnoException).message}`, { out, part }, { remedy: 'pass --out-dir with a writable directory' });
+    }
+  }
   return {
     channel: entry.channel,
     slot: SWEEP_SLOT,

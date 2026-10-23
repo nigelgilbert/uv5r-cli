@@ -621,13 +621,16 @@ describe('dump output file', () => {
     expect(readFileSync(out, 'utf8')).toBe('old bytes');
   });
 
-  it('leaves a FILE symlink in place when the port does not open', async () => {
+  it('exits 2 on a dangling FILE symlink and creates no target', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
     const out = join(dir, 'radio.img');
     symlinkSync(join(dir, 'target.img'), out);
-    await run(['dump', '--out', out, '--json'], opener());
-    expect(process.exitCode).toBe(3);
+    const open = opener(new FakeRadio());
+    await run(['dump', '--out', out, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(open.calls).toBe(0);
     expect(lstatSync(out).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(dir, 'target.img'))).toBe(false);
   });
 
   it('names the check before the port opens in help dump', async () => {

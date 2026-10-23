@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -634,6 +634,29 @@ describe('dwell', () => {
     });
     await expect(dwell(entry, { ...options, outDir: dir })).rejects.toMatchObject({ reason: 'capture-incomplete' });
     expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('rethrows the capture error when the part file cannot be removed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    listenMock.mockImplementation(async (_device, _seconds, _floor, opts) => {
+      mkdirSync(opts!.out!);
+      throw new TransportError('capture-incomplete', 'ffmpeg captured 1 of 3 seconds from "AIOC Audio"');
+    });
+    await expect(dwell(entry, { ...options, outDir: dir })).rejects.toMatchObject({ reason: 'capture-incomplete' });
+  });
+
+  it('keeps the part file and names it when the rename fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    let part = '';
+    listenMock.mockImplementation(async (_device, seconds, _floor, opts) => {
+      part = opts!.out!;
+      writeFileSync(part, 'RIFF');
+      mkdirSync(part.replace(/\.part$/, ''));
+      return { ...heard(seconds, 0), out: part };
+    });
+    const err = await dwell(entry, { ...options, outDir: dir }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ reason: 'invalid-argument', detail: { part, out: part.replace(/\.part$/, '') } });
+    expect(existsSync(part)).toBe(true);
   });
 
   it('rethrows the capture error when ffmpeg wrote no part file', async () => {
