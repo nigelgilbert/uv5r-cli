@@ -592,7 +592,7 @@ describe('dump output file', () => {
   it('names the check before the port opens in help dump', async () => {
     await cli(['help', 'dump', '--json']);
     const help = JSON.parse(stdout.join('')) as { exits: Array<{ code: number; when: string }> };
-    expect(help.exits).toContainEqual({ code: 2, when: 'FILE not writable, found before the port opens' });
+    expect(help.exits).toContainEqual({ code: 2, when: 'FILE not writable, found before the port opens; a write that fails after the read, such as a full disk, exits 2 too' });
   });
 });
 

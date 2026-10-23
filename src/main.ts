@@ -248,7 +248,7 @@ const verbs: Record<string, Verb> = {
     exits: [
       {
         code: 2,
-        when: 'a bad or unknown top-level or entry field, a channel outside 0..127 or a channel listed twice; the message and the field detail name the field, and the channel detail names the entry',
+        when: 'a missing or empty channels array, a bad or unknown top-level or entry field, a channel outside 0..127 or a channel listed twice; a field error carries field, and an entry error carries channel',
       },
     ],
     positionals: 1,
@@ -317,7 +317,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only; writes FILE on disk' },
     result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011' },
-    exits: [{ code: 2, when: 'FILE not writable, found before the port opens' }],
+    exits: [{ code: 2, when: 'FILE not writable, found before the port opens; a write that fails after the read, such as a full disk, exits 2 too' }],
     positionals: 0,
     run: dumpVerb,
   },

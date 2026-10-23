@@ -304,8 +304,10 @@ export function checkFfmpeg(): Promise<void> {
 function capture(device: string, seconds: number, floorDbfs: number, out: string | undefined, stop?: Promise<unknown>): Promise<ListenResult> {
   const timeoutMs = (captureSeconds(seconds) + 15) * 1000;
   let stopped = false;
+  let escalate: NodeJS.Timeout | undefined;
   return new Promise((resolve, reject) => {
     const child = execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
+      clearTimeout(escalate);
       const e = err as ExecError | null;
       if (e?.code === 'ENOENT') {
         reject(ffmpegMissing());
@@ -333,7 +335,7 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
       stopped = true;
       child.kill('SIGTERM');
       // Escalate in case ffmpeg ignores SIGTERM, since the capture resolves only once it exits.
-      setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS).unref();
+      escalate = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS).unref();
     });
   });
 }
