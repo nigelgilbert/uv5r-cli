@@ -1,24 +1,18 @@
-import { listen, type ListenResult } from './audio.ts';
+import { DEFAULT_FLOOR_DBFS, listen, type ListenResult } from './audio.ts';
 import { formatMhz, type ChannelSpec } from './codec.ts';
 import { DeviceStateError } from './errors.ts';
 import { settle } from './protocol.ts';
 import { withSession, writeChannel } from './radio.ts';
 import type { Transport } from './transport.ts';
 
-/** Seconds `check` listens when the caller gives no length. */
+/** Seconds `check` listens. */
 export const CHECK_SECONDS = 5;
-/** Fewest seconds `check` listens; the 80% rule needs at least 4 active of 5. */
-export const MIN_CHECK_SECONDS = 5;
 /** Share of captured seconds a passing check has active. */
 export const CHECK_ACTIVE_SHARE = 0.8;
 
 export interface CheckOptions {
   /** avfoundation audio input to capture from. */
   device: string;
-  /** Whole seconds to capture. */
-  seconds: number;
-  /** A second is active when its RMS is above this level in dBFS. */
-  floorDbfs: number;
 }
 
 export type CheckResult = { slot: number; requestedMhz: string } & ListenResult;
@@ -56,11 +50,11 @@ export function judgeCheck(n: number, spec: ChannelSpec, heard: ListenResult): C
 
 /**
  * Write `spec` into slot `n` as a receive-only record in one clone session, wait for the
- * reload, then listen and judge the capture with judgeCheck. Slot `n` keeps the
- * receive-only record after the call, also when the capture fails.
+ * reload, then listen CHECK_SECONDS at DEFAULT_FLOOR_DBFS and judge the capture with
+ * judgeCheck. Slot `n` keeps the receive-only record after the call, also when the capture fails.
  */
 export async function checkChannel(t: Transport, n: number, spec: ChannelSpec, options: CheckOptions): Promise<CheckResult> {
   await withSession(t, (s) => writeChannel(s, n, receiveOnly(spec)));
   await settle();
-  return judgeCheck(n, spec, await listen(options.device, options.seconds, options.floorDbfs));
+  return judgeCheck(n, spec, await listen(options.device, CHECK_SECONDS, DEFAULT_FLOOR_DBFS));
 }

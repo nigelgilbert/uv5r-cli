@@ -156,7 +156,7 @@ describe('help', () => {
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
     expect(Object.keys(help.verbs)).toEqual(['status', 'tune', 'check', 'load', 'read', 'erase', 'key', 'dump', 'restore', 'settings', 'listen', 'sweep']);
     const flag = (verb: string, name: string) => help.verbs[verb].flags.find((f: { flag: string }) => f.flag === name);
-    expect(flag('check', '--seconds').default).toBe(5);
+    expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--device', '--json', '--text', '--target']);
     expect(flag('sweep', '--seconds').default).toBe(30);
     expect(flag('listen', '--floor').default).toBe(-50);
     expect(flag('listen', '--device').default).toBe('AIOC Audio');
@@ -353,7 +353,6 @@ describe('listen input checks', () => {
   it.each([
     [['listen', '--seconds', '5', '--floor', '100']],
     [['listen', '--seconds', '5', '--floor', '-101']],
-    [['check', '162.400', '--channel', '0', '--floor', '100']],
     [['sweep', 'missing.json', '--floor', '100']],
   ])('exits 2 on %j naming the -100..0 range before opening the transport', async (argv) => {
     const open = opener(new FakeRadio());
