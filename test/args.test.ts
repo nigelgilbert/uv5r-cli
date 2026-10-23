@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../src/args.ts';
 import { UsageError } from '../src/errors.ts';
 
-const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'force']);
+const BOOLEAN_FLAGS = new Set(['json', 'help', 'narrow', 'low-power', 'force']);
 
 describe('parseArgs', () => {
   it('rejects a value on a boolean flag', () => {

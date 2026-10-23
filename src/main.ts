@@ -90,7 +90,7 @@ const RULES = {
     'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or by playing the WAVs in sweep --out-dir DIR after the run.',
 };
 
-const OUTPUT_RULE = 'JSON on stdout when piped or with --json, text on a terminal or with --text; a failed command prints nothing on stdout and its error on stderr in the same format';
+const OUTPUT_RULE = 'JSON on stdout when piped or with --json, text on a terminal; a failed command prints nothing on stdout and its error on stderr in the same format';
 
 /** What each exit code means; the error's reason and remedy fields say what to do next. */
 const EXIT_CODES: Record<string, string> = {
@@ -119,9 +119,8 @@ const ERRORS_HELP = {
 };
 
 const JSON_FLAG: FlagDoc = { name: 'json', help: 'print JSON; the default when stdout is not a terminal' };
-const TEXT_FLAG: FlagDoc = { name: 'text', help: 'print text; the default on a terminal' };
 const TARGET_FLAG: FlagDoc = { name: 'target', value: 'PATH', help: 'serial device', default: 'UV5R_TARGET, else the AIOC found by USB id 1209:7388' };
-const OUTPUT_FLAGS = [JSON_FLAG, TEXT_FLAG];
+const OUTPUT_FLAGS = [JSON_FLAG];
 const COMMON_FLAGS = [...OUTPUT_FLAGS, TARGET_FLAG];
 const CHANNEL_FLAG: FlagDoc = { name: 'channel', value: 'N', required: true, help: 'memory slot to write, 0..127; see the channel rule in uv5r help' };
 const RX_TONE_FLAG: FlagDoc = { name: 'rx-tone', value: 'HZ', default: 'none', help: 'RX tone in the --tone forms; none is carrier squelch' };
@@ -397,7 +396,7 @@ const verbs: Record<string, Verb> = {
 
 const BOOLEAN_FLAGS = new Set(['help', 'version', ...Object.values(verbs).flatMap((v) => v.flags.filter((f) => !f.value).map((f) => f.name))]);
 /** Flags `uv5r` takes with no verb. */
-const TOP_FLAGS = ['help', 'version', 'json', 'text'];
+const TOP_FLAGS = ['help', 'version', 'json'];
 
 /** Return the flags `verb` takes, as the verbs table lists them. */
 function flagNames(verb: string): string[] {
@@ -476,11 +475,9 @@ function floorFlag(flags: Map<string, string | true>, example: string): number {
   return floor;
 }
 
-/** Pick JSON for --json or a non-terminal stdout, and text for --text or a terminal. */
+/** Pick JSON for --json or a non-terminal stdout, and text on a terminal. */
 function wantsJson(flags: Map<string, string | true>): boolean {
-  if (flags.get('json')) return true;
-  if (flags.get('text')) return false;
-  return !process.stdout.isTTY;
+  return flags.get('json') === true || !process.stdout.isTTY;
 }
 
 /** Open the serial port at the given path, or at the AIOC found by USB id. */
@@ -844,7 +841,7 @@ async function main(args: Invocation): Promise<number> {
     return EXIT.ok;
   }
   if (args.verb === 'help') {
-    checkFlags('help', args.flags, ['help', 'json', 'text']);
+    checkFlags('help', args.flags, ['help', 'json']);
     checkPositionals('help', args.positionals, 1, 'uv5r help VERB');
     const subject = args.positionals[0];
     if (subject !== undefined && !isVerb(subject)) throw unknownVerb('unknown help subject', subject);
@@ -868,8 +865,8 @@ async function main(args: Invocation): Promise<number> {
  * The process exits on its own once stdout and stderr drain, so piped output arrives whole.
  */
 export async function cli(argv: string[], open: OpenTransport = openSerial): Promise<void> {
-  // Read --json and --text from argv so an error from parseArgs keeps the requested format.
-  let flags = new Map<string, string | true>(['json', 'text'].filter((name) => argv.includes(`--${name}`)).map((name) => [name, true]));
+  // Read --json from argv so an error from parseArgs keeps the requested format.
+  let flags = new Map<string, string | true>(argv.includes('--json') ? [['json', true]] : []);
   try {
     const args = parseArgs(argv, BOOLEAN_FLAGS);
     flags = args.flags;

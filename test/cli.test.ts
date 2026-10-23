@@ -66,6 +66,17 @@ function opener(transport?: Transport): OpenTransport & { calls: number } {
   return open;
 }
 
+/** Run `fn` with stdout set as a terminal. */
+async function onTerminal(fn: () => Promise<void>): Promise<void> {
+  const tty = process.stdout.isTTY;
+  process.stdout.isTTY = true;
+  try {
+    await fn();
+  } finally {
+    process.stdout.isTTY = tty;
+  }
+}
+
 const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unknown>;
 const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, any>;
 
@@ -93,8 +104,8 @@ describe('cli exit status', () => {
     expect(errJson()).toEqual({ kind: 'unexpected', reason: 'unexpected-error', message: 'boom', remedy: 'report the message to the human', retry: 'no' });
   });
 
-  it('prints the remedy and retry value under the message as text', async () => {
-    await cli(['status', '--text'], opener());
+  it('prints the remedy and retry value under the message as text on a terminal', async () => {
+    await onTerminal(() => cli(['status'], opener()));
     expect(process.exitCode).toBe(3);
     expect(stderr.join('')).toMatch(/^uv5r: no device at .*\nremedy: ask the human to reseat the AIOC cable, or pass --target PATH \(retry: after-remedy\)\n$/);
   });
@@ -172,7 +183,7 @@ describe('help', () => {
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
     expect(Object.keys(help.verbs)).toEqual(['status', 'tune', 'check', 'load', 'read', 'erase', 'key', 'dump', 'restore', 'settings', 'listen', 'sweep']);
     const flag = (verb: string, name: string) => help.verbs[verb].flags.find((f: { flag: string }) => f.flag === name);
-    expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--device', '--json', '--text', '--target']);
+    expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--device', '--json', '--target']);
     expect(flag('sweep', '--seconds').default).toBe(30);
     expect(flag('listen', '--floor').default).toBe(-50);
     expect(flag('listen', '--device').default).toBe('AIOC Audio');
@@ -291,21 +302,23 @@ describe('status output', () => {
 
 describe('repeated flags', () => {
   it('prints the duplicate-flag error as JSON on a terminal when --json was given', async () => {
-    const tty = process.stdout.isTTY;
-    process.stdout.isTTY = true;
-    try {
-      await cli(['status', '--json', '--json'], opener(new FakeRadio()));
-    } finally {
-      process.stdout.isTTY = tty;
-    }
+    await onTerminal(() => cli(['status', '--json', '--json'], opener(new FakeRadio())));
     expect(process.exitCode).toBe(2);
     expect(errJson()).toMatchObject({ kind: 'usage', reason: 'invalid-argument', message: '--json given twice; pass it once' });
   });
 
-  it('prints a parse error as text when --text was given', async () => {
-    await cli(['status', '--text', '--text'], opener(new FakeRadio()));
+  it('prints a parse error as text on a terminal', async () => {
+    await onTerminal(() => cli(['status', '--target', 'a', '--target', 'b'], opener(new FakeRadio())));
     expect(process.exitCode).toBe(2);
-    expect(stderr.join('')).toMatch(/^uv5r: --text given twice; pass it once\nremedy: /);
+    expect(stderr.join('')).toMatch(/^uv5r: --target given twice; pass it once\nremedy: /);
+  });
+
+  it('exits 2 on --text before opening the transport', async () => {
+    const open = opener(new FakeRadio());
+    await cli(['status', '--text', '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining('unknown option --text') });
+    expect(open.calls).toBe(0);
   });
 
   it('exits 2 naming the flag before opening the transport', async () => {
@@ -700,8 +713,8 @@ describe('load', () => {
     expect(errJson()).not.toHaveProperty('written');
   });
 
-  it('prints one channel line per entry as text', async () => {
-    await run(['load', EXAMPLE_PLAN, '--text'], opener(new FakeRadio()));
+  it('prints one channel line per entry as text on a terminal', async () => {
+    await onTerminal(() => run(['load', EXAMPLE_PLAN], opener(new FakeRadio())));
     expect(process.exitCode).toBe(0);
     const lines = stdout.join('').trim().split('\n');
     expect(lines).toHaveLength(7);

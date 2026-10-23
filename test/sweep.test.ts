@@ -91,6 +91,17 @@ async function run(argv: string[], open: OpenTransport): Promise<void> {
 
 const SWEEP = ['sweep', EXAMPLE_PLAN, '--seconds', '2'];
 
+/** Run `fn` with stdout set as a terminal. */
+async function onTerminal(fn: () => Promise<void>): Promise<void> {
+  const tty = process.stdout.isTTY;
+  process.stdout.isTTY = true;
+  try {
+    await fn();
+  } finally {
+    process.stdout.isTTY = tty;
+  }
+}
+
 /** Replace stdin with a non-TTY stream and return it. */
 function stubStdin(): PassThrough {
   const stdin = Object.assign(new PassThrough(), { isTTY: false });
@@ -311,13 +322,13 @@ describe('sweep', () => {
     expect(errJson().summary).not.toHaveProperty('interrupted');
   });
 
-  it('prints the error and the summary so far on stderr in text mode when a dwell fails', async () => {
+  it('prints the error and the summary so far on stderr as text on a terminal when a dwell fails', async () => {
     let call = 0;
     listenMock.mockImplementation(async (_device, seconds) => {
       if (call++ === 3) throw new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"');
       return heard(seconds, seconds);
     });
-    await run([...SWEEP, '--text'], opener(new FakeRadio()));
+    await onTerminal(() => run(SWEEP, opener(new FakeRadio())));
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     const text = stderr.join('');
