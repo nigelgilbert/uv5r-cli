@@ -250,6 +250,33 @@ describe('listen with stop', () => {
     expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed' });
     expect(err.message).toMatch(/^ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"/);
   });
+  it('kills ffmpeg at once when stop resolved before the capture started', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), '', STDERR);
+      return { kill };
+    });
+    const done = listen('AIOC Audio', 3, -50, { stop: Promise.resolve() });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    exit();
+    await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringMatching(/^ffmpeg killed after a signal to uv5r/) });
+  });
+  it('rejects as killed when stop resolves after a clean exit but before the callback', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => cb(null, '', STDERR);
+      return { kill };
+    });
+    let stop = () => {};
+    const done = listen('AIOC Audio', 3, -50, { stop: new Promise<void>((resolve) => (stop = resolve)) });
+    stop();
+    await new Promise((r) => setTimeout(r, 0));
+    exit();
+    await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', detail: { code: null, signal: null } });
+  });
   it('leaves ffmpeg running while stop stays pending', async () => {
     const kill = vi.fn();
     execFile.mockImplementation((_file, _args, _opts, cb) => {

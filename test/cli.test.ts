@@ -330,6 +330,16 @@ describe('read output', () => {
     expect(outJson()).toEqual({ channel: 5, malformed: true, raw: [...mem].map((b) => b.toString(16).padStart(2, '0')).join(' ') });
   });
 
+  it('prints a malformed record as text with its raw bytes on a terminal', async () => {
+    const radio = new FakeRadio();
+    const mem = encodeChannel({ rxHz: 162_550_000 });
+    mem.set([0xff, 0x00, 0x00, 0x00], 4);
+    radio.eeprom.set(mem, 5 * 16);
+    await onTerminal(() => cli(['read', '5'], opener(radio)));
+    expect(process.exitCode).toBe(0);
+    expect(stdout.join('')).toBe(`ch 5: malformed record ${[...mem].map((b) => b.toString(16).padStart(2, '0')).join(' ')}\n`);
+  });
+
   it('reports an erased slot as empty', async () => {
     await cli(['read', '5', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);

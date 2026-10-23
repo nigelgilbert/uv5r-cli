@@ -23,7 +23,8 @@ const BLOCK = 0x10;
 /** The two 16-byte halves the radio stages until a write at SETTINGS_COMMIT. */
 const SETTINGS_HALVES = [SETTINGS_BASE, SETTINGS_BASE + BLOCK] as const;
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+// Unref the timer so a sweep that a signal ended during the settle exits at once.
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
 /** Wait for the radio to drop the clone session and reload its settings from EEPROM. */
 export const settle = (): Promise<void> => sleep(SETTLE_MS);
 export const hex = (a: Uint8Array | number[]): string => [...a].map((b) => b.toString(16).padStart(2, '0')).join(' ');

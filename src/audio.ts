@@ -221,6 +221,14 @@ export async function listen(device: string, seconds: number, floorDbfs = DEFAUL
   return { ...result, out };
 }
 
+type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
+
+/** Describe how a child process run with a `timeoutMs` timeout failed. */
+function exitHow(e: ExecError, timeoutMs: number): string {
+  if (e.killed && e.signal) return `timed out after ${timeoutMs / 1000}s`;
+  return e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
+}
+
 /** Guidance for a failed afplay, since a rerun with the same --out records over the saved capture. */
 const PLAYBACK_FAILED = { remedy: 'the capture is saved at file; ask the human to play it; do not capture again', retry: 'no' } as const;
 
@@ -239,25 +247,16 @@ export function play(file: string, seconds: number): Promise<void> {
         return;
       }
       const tail = stderrTail(stderr);
-      const how = e.killed && e.signal ? `timed out after ${timeoutMs / 1000}s` : e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
       reject(
         new TransportError(
           'audio-process-failed',
-          `afplay ${how} playing ${file}${tail ? `: ${tail}` : ''}`,
+          `afplay ${exitHow(e, timeoutMs)} playing ${file}${tail ? `: ${tail}` : ''}`,
           { file, code: e.code ?? null, signal: e.signal ?? null },
           PLAYBACK_FAILED,
         ),
       );
     });
   });
-}
-
-type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
-
-/** Describe how a child process run with a `timeoutMs` timeout failed. */
-function exitHow(e: ExecError, timeoutMs: number): string {
-  if (e.killed && e.signal) return `timed out after ${timeoutMs / 1000}s`;
-  return e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
 }
 
 /** The dependency-missing error for an ffmpeg absent from PATH. */

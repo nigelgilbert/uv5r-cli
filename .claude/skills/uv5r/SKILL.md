@@ -19,13 +19,13 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 - Do not open, `cat`, `screen` or `stty` the serial port.
 - Run one verb at a time. Start a task with `uv5r status`.
 - `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
-- Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0.
-  `tune` and `load` write any slot.
+- Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0. `tune` and `load` write any slot.
 - Run `uv5r check 162.400 --channel 0` once per session before tuning slot 0, with a NOAA
   frequency that carries audio at the location. Exit 0 means audio above the floor after
-  writing slot 0, consistent with the radio receiving slot 0. Exit 5 lists the causes: VFO
-  mode, another slot selected, volume knob down, plug unseated, quiet frequency. Ask the
-  human to set MR mode and select slot 0, then check again.
+  writing slot 0, consistent with the radio receiving slot 0. Exit 5 with `squelch-open`:
+  run `uv5r settings squelch 3`, then check again. Exit 5 with `audio-inactive` lists the
+  causes: VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency;
+  ask the human to set MR mode and select slot 0, then check again.
 - `check` and `sweep` need squelch above 0 and `--device` naming the AIOC input.
 - After a `check` write, the slot keeps the receive-only record. After `sweep`, slot 0
   keeps the write that `slot0` names; `null` means unknown. Nothing restores slot 0.
