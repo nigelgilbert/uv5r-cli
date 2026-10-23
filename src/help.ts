@@ -1,6 +1,9 @@
 /** Version of the `help --json` shape; bump it when a field changes meaning or goes away. */
 export const HELP_SCHEMA_VERSION = 2;
 
+/** Pointer printed under every verb's exits in the help JSON. */
+export const EXITS_NOTE = 'exits adds to the exitCodes table in uv5r help --json';
+
 /** One flag a verb takes. A flag without `value` is boolean. */
 export interface FlagDoc {
   name: string;
@@ -80,6 +83,7 @@ export function verbJson(name: string, doc: VerbDoc): Record<string, unknown> {
     writesToRadio: doc.writesToRadio,
     result: doc.result,
     exits: doc.exits,
+    exitsNote: EXITS_NOTE,
     ...(doc.fields ? { fields: doc.fields } : {}),
   };
 }

@@ -143,7 +143,9 @@ describe('help', () => {
   });
 
   it('lists only the verb-specific exit cases in help VERB --json', async () => {
-    expect((await helpJson('status')).exits).toEqual([]);
+    const status = await helpJson('status');
+    expect(status.exits).toEqual([]);
+    expect(status.exitsNote).toBe('exits adds to the exitCodes table in uv5r help --json');
     stdout = [];
     const check = await helpJson('check');
     expect(check.exits.map((e: { code: number }) => e.code)).toEqual([3, 5]);
