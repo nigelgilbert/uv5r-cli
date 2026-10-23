@@ -109,7 +109,7 @@ const ERROR_GUIDANCE =
   'A failed command prints one error object on stderr with kind, reason, message, remedy, retry and detail fields when output is JSON, piped or with --json. ' +
   'On a terminal it prints the message and a remedy line as text. ' +
   'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
-  'A load error adds slot, the plan entry that failed. A sweep error adds summary, the sweep result so far. ' +
+  'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +
   'An exit of 128 plus a signal number prints the result on stdout with interrupted and no error.';
 
 /** The errors section of `help --json`: the error format, each reason with its exit code, and the retry values. */
@@ -413,7 +413,7 @@ const verbs: Record<string, Verb> = {
     effects: [
       `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. A failed check exits 5 before any plan entry is written.`,
       `For each entry in plan order, write it into slot 0 with its own TX setting, wait ${APPLIES_AFTER_SECONDS} s for the reload and capture --seconds.`,
-      'Print one summary on stdout: swept, seconds, active, warnings and slot0.',
+      'Print one summary on stdout on success or on a signal: swept, seconds, active, warnings and slot0. A failure puts it in the error as summary.',
       'slot0 is {channel, name} of the last verified entry write, {channel: null, name} after only the check write, or null when unknown. Slot 0 keeps it after the run.',
       'Read nothing from stdin.',
     ],
@@ -929,7 +929,11 @@ export async function cli(argv: string[], open: OpenTransport = openSerial): Pro
   } catch (err) {
     const error = err instanceof BaofengError ? err : new UnexpectedError(err instanceof Error ? err.message : String(err));
     if (wantsJson(flags)) process.stderr.write(`${JSON.stringify(error)}\n`);
-    else process.stderr.write(`uv5r: ${error.message}\nremedy: ${error.remedy} (retry: ${error.retry})\n`);
+    else {
+      process.stderr.write(`uv5r: ${error.message}\nremedy: ${error.remedy} (retry: ${error.retry})\n`);
+      // Print the sweep result so far under the error.
+      if ('summary' in error.detail) process.stderr.write(`${sweepText(error.detail.summary as SweepSummary)}\n`);
+    }
     process.exitCode = exitCodeFor(error.kind);
   }
 }

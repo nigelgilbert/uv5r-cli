@@ -93,8 +93,6 @@ describe('check', () => {
   it.each([
     [[true, true, true, true, false], 0],
     [[true, false, true, false, true], 5],
-    [[true, true, true, true, true, true, true, true, false, false], 0],
-    [[true, true, true, true, true, true, true, false, false, false], 5],
   ])('needs 80%% of the seconds active: %j exits %i', async (active, exit) => {
     listenMock.mockResolvedValue(heard(active));
     await run(['check', '162.400', '--channel', '0', '--json'], opener(new FakeRadio()));

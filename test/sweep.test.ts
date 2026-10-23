@@ -189,6 +189,7 @@ describe('sweep', () => {
       summary: { swept: 0, seconds: 2, active: [], warnings: [], slot0: { channel: null, name: '162.4' } },
     });
     expect(errJson()).not.toHaveProperty('written');
+    expect(errJson().summary).toEqual({ swept: 0, seconds: 2, active: [], warnings: [], slot0: { channel: null, name: '162.4' } });
     expect(errJson().message).toContain('VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency');
     expect(stdout).toEqual([]);
   });
@@ -351,6 +352,22 @@ describe('sweep', () => {
     expect(stdout).toEqual([]);
     expect(errJson()).toMatchObject({ kind: 'transport', message: 'ffmpeg exited 1 capturing from "AIOC Audio"', summary: { swept: 2, slot0: { channel: 3, name: 'NOAA 3' } } });
     expect(errJson().summary).not.toHaveProperty('interrupted');
+  });
+
+  it('prints the error and the summary so far on stderr in text mode when a dwell fails', async () => {
+    let call = 0;
+    listenMock.mockImplementation(async (_device, seconds) => {
+      if (call++ === 3) throw new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"');
+      return heard(seconds, seconds);
+    });
+    await run([...SWEEP, '--text'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(3);
+    expect(stdout).toEqual([]);
+    const text = stderr.join('');
+    expect(text).toContain('uv5r: ffmpeg exited 1 capturing from "AIOC Audio"');
+    expect(text).toContain('remedy: ');
+    expect(text).toContain('swept      2 entries, 2 s each');
+    expect(text).toContain('slot 0     ');
   });
 
   it('puts one finished dwell in the error summary when the second dwell fails', async () => {

@@ -79,8 +79,8 @@ Output is JSON when stdout is a pipe or with `--json`, and text on a terminal or
 or with `--json`. On a terminal it prints the message and a remedy line as text. An exit of
 128 plus a signal number prints the result on stdout with `interrupted` and no error. Act on
 `reason`, `remedy` and `retry`; `uv5r help --json` lists each reason and retry value under
-`errors`. A `load` error adds `slot`, the plan entry that failed. A `sweep` error adds
-`summary`, the sweep result so far.
+`errors`. A `load` error from a plan entry write adds `slot`. A `sweep` error after the port
+is requested adds `summary`, the sweep result so far.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
