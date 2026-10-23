@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -582,11 +582,43 @@ describe('dump output file', () => {
     expect(bytes.subarray(0, 8)).toEqual(Buffer.from(new FakeRadio().ident));
   });
 
-  it('leaves a new FILE empty when the port does not open', async () => {
+  it('removes a new FILE when the port does not open', async () => {
     const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
     await run(['dump', '--out', out, '--json'], opener());
     expect(process.exitCode).toBe(3);
-    expect(readFileSync(out).length).toBe(0);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('removes a new FILE when a block read times out', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const radio = new FakeRadio();
+    radio.silentReadAt = 0x0100;
+    await run(['dump', '--out', out, '--json'], opener(radio));
+    expect(process.exitCode).toBe(4);
+    expect(errJson()).toMatchObject({ reason: 'serial-timeout' });
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('removes a new FILE when the image write fails', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const radio = new FakeRadio();
+    // Make the probed file read-only once the port opens so the image write fails.
+    const open: OpenTransport = async () => {
+      chmodSync(out, 0o444);
+      return radio;
+    };
+    await run(['dump', '--out', out, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', out });
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('leaves an existing FILE in place when the port does not open', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    writeFileSync(out, 'old bytes');
+    await run(['dump', '--out', out, '--json'], opener());
+    expect(process.exitCode).toBe(3);
+    expect(readFileSync(out, 'utf8')).toBe('old bytes');
   });
 
   it('names the check before the port opens in help dump', async () => {

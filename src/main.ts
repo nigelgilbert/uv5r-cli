@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { accessSync, closeSync, constants as fsConstants, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, closeSync, constants as fsConstants, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, checkFfmpeg, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
@@ -311,7 +311,7 @@ const verbs: Record<string, Verb> = {
     args: [],
     flags: [{ name: 'out', value: 'FILE', default: 'uv5r-YYYY-MM-DDTHH-MM-SS.img', help: 'image path' }, ...COMMON_FLAGS],
     effects: [
-      'Open FILE before the port opens; a new FILE stays empty when the read fails.',
+      'Open FILE before the port opens; a new FILE is removed when the read fails.',
       'Read the full memory image in CHIRP layout in one clone session, about 14 s, and write it to FILE.',
     ],
     preconditions: [RADIO_READY],
@@ -710,25 +710,37 @@ async function dumpVerb(args: Invocation): Promise<number> {
   const json = wantsJson(args.flags);
   const notWritable = (err: unknown) =>
     new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
+  const created = !existsSync(out);
   // Open FILE for append so a missing directory, a read-only file or a directory path fails before the port opens.
   try {
     closeSync(openSync(out, 'a'));
   } catch (err) {
     throw notWritable(err);
   }
-  const result = await withTransport(args, (t) =>
-    withSession(t, async (s) => {
-      const image = await dumpImage(s, (addr) => {
-        if (!json && addr % 0x400 === 0) process.stderr.write(`read 0x${addr.toString(16).padStart(4, '0')}\n`);
-      });
+  let result: { out: string; bytes: number; firmware: string };
+  try {
+    result = await withTransport(args, (t) =>
+      withSession(t, async (s) => {
+        const image = await dumpImage(s, (addr) => {
+          if (!json && addr % 0x400 === 0) process.stderr.write(`read 0x${addr.toString(16).padStart(4, '0')}\n`);
+        });
+        try {
+          writeFileSync(out, image);
+        } catch (err) {
+          throw notWritable(err);
+        }
+        return { out, bytes: image.length, firmware: s.startedIdent.firmware };
+      }),
+    );
+  } catch (err) {
+    // Remove the file the probe created and keep the dump error when the removal fails.
+    if (created) {
       try {
-        writeFileSync(out, image);
-      } catch (err) {
-        throw notWritable(err);
-      }
-      return { out, bytes: image.length, firmware: s.startedIdent.firmware };
-    }),
-  );
+        rmSync(out, { force: true });
+      } catch {}
+    }
+    throw err;
+  }
   print(args, result, () => `wrote ${result.bytes} bytes to ${result.out} (${result.firmware})`);
   return EXIT.ok;
 }
