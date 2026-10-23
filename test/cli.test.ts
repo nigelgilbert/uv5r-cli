@@ -256,6 +256,23 @@ describe('help', () => {
   });
 });
 
+describe('status output', () => {
+  const STATUS = { firmware: 'HN5RV011', workmode: 'vfo', squelch: 3, voice: 'eng', beep: 'on', abr: 5 };
+
+  it('prints firmware, work mode and the audio settings as JSON', async () => {
+    await cli(['status', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toEqual(STATUS);
+  });
+
+  it('lists the same keys in the help result', async () => {
+    await cli(['help', 'status', '--json']);
+    const { result } = JSON.parse(stdout.join('')) as { result: Record<string, unknown> };
+    expect(Object.keys(result)).toEqual(Object.keys(STATUS));
+    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxMhz', 'name', 'note']) expect(result).not.toHaveProperty(key);
+  });
+});
+
 describe('repeated flags', () => {
   it('prints the duplicate-flag error as JSON on a terminal when --json was given', async () => {
     const tty = process.stdout.isTTY;

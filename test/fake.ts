@@ -57,7 +57,6 @@ export class FakeRadio implements Transport {
       SETTINGS,
     );
     this.eeprom[0x0e4c] = 0;
-    this.eeprom[0x0e4a] = 0x9f;
     this.eeprom.set([4, 4, 6, 0, 0, 0, 0, 0], 0x0f08);
     this.reload();
   }

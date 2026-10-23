@@ -32,8 +32,6 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
   `uv5r sweep channels.json --seconds 30 --out-dir rx --play`.
 - Write a plan to its own slots with one `uv5r load PLAN.json`.
 - Write public-safety listening channels with `--rx-only`.
-- Trust the display for the active channel. `status` reads `channelA` and `channelB` from
-  EEPROM.
 - The radio speaker is silent while the AIOC is plugged in. The human hears receive audio
   only through `uv5r listen --seconds 5 --out FILE --play` or
   `uv5r sweep PLAN --out-dir DIR --play`.

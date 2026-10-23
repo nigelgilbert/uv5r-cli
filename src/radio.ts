@@ -24,9 +24,6 @@ import { BaofengError, DeviceStateError, TransportError } from './errors.ts';
 import { Session, hex, settle } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
-/** Fixed explanation attached to every status payload. */
-export const STATUS_NOTE = 'channelA/B are the values stored in EEPROM; the radio display shows the channel the knob selected';
-
 /** Channel fields every channel payload carries. */
 export type ChannelPayload = { channel: number } & Omit<ChannelJson, 'scan'>;
 
@@ -35,14 +32,11 @@ export type ChannelResult = ChannelPayload | { channel: number; empty: true };
 export type RadioStatus = {
   firmware: string;
   workmode: 'vfo' | 'channel';
-  channelA: number;
-  channelB: number;
   squelch: number | string;
   voice: number | string;
   beep: number | string;
   abr: number | string;
-  note: string;
-} & ChannelResult;
+};
 
 /** Build the flat payload for channel `n`; an undefined record gives `empty: true`. */
 export function channelPayload(n: number, ch: Channel | undefined): ChannelResult {
@@ -121,28 +115,19 @@ export async function verifySettingsInFreshSession(t: Transport, expected: Uint8
   return verifySettingsBlock(await startFreshSession(t), expected);
 }
 
-/** Read work mode, both channel numbers, the audio settings and the record on the display line in use. */
+/** Read the firmware, the work mode and the audio settings. */
 export async function readStatus(s: Session): Promise<RadioStatus> {
   const ident = s.startedIdent;
   const settings = await readSettings(s);
   const page = await s.readBlock(ADDR.statePage, 0x40);
   const workmode = page[ADDR.workmode - ADDR.statePage] === 1 ? 'channel' : 'vfo';
-  const lineB = ((page[ADDR.flags - ADDR.statePage] ?? 0) & 0x80) !== 0;
-  const channelA = (page[ADDR.mrcha - ADDR.statePage] ?? 0) & 0x7f;
-  const channelB = (page[ADDR.mrchb - ADDR.statePage] ?? 0) & 0x7f;
-  const active = lineB ? channelB : channelA;
-  const record = channelPayload(active, await readChannel(s, active));
   return {
     firmware: ident.firmware,
     workmode,
-    channelA,
-    channelB,
     squelch: settings.squelch,
     voice: settings.voice,
     beep: settings.beep,
     abr: settings.abr,
-    ...record,
-    note: STATUS_NOTE,
   };
 }
 

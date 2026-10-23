@@ -28,7 +28,6 @@ import {
   eraseChannel,
   IMAGE_HEADER,
   RESTORE_RANGES,
-  STATUS_NOTE,
   holdPtt,
   imageSettingsBlock,
   readChannel,
@@ -170,17 +169,14 @@ const LISTEN_EXAMPLE = {
 
 const verbs: Record<string, Verb> = {
   status: {
-    summary: 'Print firmware, work mode, stored channel numbers, squelch, voice, beep, abr and the active record',
+    summary: 'Print firmware, work mode, squelch, voice, beep and abr',
     example: 'uv5r status',
     args: [],
     flags: COMMON_FLAGS,
-    effects: [
-      'Read the ident, the menu settings, the stored channel A/B numbers and the record of the stored active channel in one clone session.',
-      'channelA and channelB come from EEPROM and may differ from the display; note says so.',
-    ],
+    effects: ['Read the ident, the menu settings and the work mode in one clone session.'],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only' },
-    result: { firmware: 'HN5RV011', workmode: 'channel', channelA: 0, channelB: 0, squelch: 3, voice: 'eng', beep: 'on', abr: 5, channel: 0, ...CHANNEL_RECORD, note: STATUS_NOTE },
+    result: { firmware: 'HN5RV011', workmode: 'channel', squelch: 3, voice: 'eng', beep: 'on', abr: 5 },
     exits: sessionExits('printed the status', 'no handshake or a bad reply'),
     positionals: 0,
     run: statusVerb,
@@ -580,14 +576,10 @@ function statusText(s: RadioStatus): string {
   return [
     `firmware   ${s.firmware}`,
     `workmode   ${s.workmode}`,
-    `channel A  ${s.channelA}`,
-    `channel B  ${s.channelB}`,
     `squelch    ${s.squelch}`,
     `voice      ${s.voice}`,
     `beep       ${s.beep}`,
     `abr        ${s.abr}`,
-    channelText(s),
-    `note       ${s.note}`,
   ].join('\n');
 }
 

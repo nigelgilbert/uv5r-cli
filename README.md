@@ -56,7 +56,7 @@ one they may transmit on, after asking the human what the display shows.
 
 | Verb | Writes to radio | Time | Result keys |
 |---|---|---|---|
-| `status` | no | one clone session | `firmware`, `workmode`, `channelA`, `channelB`, `squelch`, `voice`, `beep`, `abr`, `channel`, record keys, `note` |
+| `status` | no | one clone session | `firmware`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
 | `tune` | record and name of slot N | one clone session | `channel`, record keys, `appliesAfterSeconds` |
 | `check` | receive-only record and name of slot N | one clone session, 3 s reload, 5 s listen | `slot`, `requestedMhz`, `listen` keys |
 | `load` | record and name of each plan slot | one clone session | array of `tune` results |
@@ -93,9 +93,7 @@ session ends after 2.5 s of silence. The radio then reloads from EEPROM and the 
 frequency is live about 3 s after the command ends. When the handshake gets no ack, the CLI
 waits 3 s and retries it once, which covers a session still closing from the previous verb.
 
-`status` reads `channelA` and `channelB` from EEPROM. Trust the display for the active
-channel. Name the channel after the frequency; with menu 21 MDF-A on NAME the display then
-shows it.
+Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows it.
 
 An early version of this CLI wrote one half of the menu settings block and the radio zeroed
 the block. The silent receive audio seen at the same time traced to the volume knob and the

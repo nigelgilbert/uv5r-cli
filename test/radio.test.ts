@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../src/codec.ts';
 import { BaofengError } from '../src/errors.ts';
 import { Session } from '../src/protocol.ts';
-import { STATUS_NOTE, channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../src/radio.ts';
+import { channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../src/radio.ts';
 import { FakeRadio } from './fake.ts';
 
 /** Write channel `n` in a new session, as the tune verb does. */
@@ -218,41 +218,13 @@ describe('tune over an existing slot', () => {
 });
 
 describe('status', () => {
-  it('returns the flat payload with the note', async () => {
-    const radio = new FakeRadio();
-    radio.eeprom[ADDR.mrchb] = 5;
-    const s = new Session(radio);
-    await s.start();
-    await writeChannel(s, 5, { rxHz: 154_680_000, name: 'SHERIFF' });
-    const st = await readStatus(await nextSession(radio));
-    expect(st).toEqual({
-      firmware: 'HN5RV011',
-      workmode: 'vfo',
-      channelA: 0x7f,
-      channelB: 5,
-      squelch: 3,
-      voice: 'eng',
-      beep: 'on',
-      abr: 5,
-      channel: 5,
-      rxMhz: '154.68',
-      txMhz: '154.68',
-      txTone: 'none',
-      rxTone: 'none',
-      bandwidth: 'wide',
-      power: 'high',
-      name: 'SHERIFF',
-      note: STATUS_NOTE,
-    });
-    expect(STATUS_NOTE).toBe('channelA/B are the values stored in EEPROM; the radio display shows the channel the knob selected');
-  });
-  it('marks an empty active record', async () => {
+  it('returns firmware, work mode and the audio settings', async () => {
     const radio = new FakeRadio();
     const s = new Session(radio);
     await s.start();
     const st = await readStatus(s);
-    expect(st).toMatchObject({ channel: 0x7f, empty: true, note: STATUS_NOTE });
-    expect(st).not.toHaveProperty('rxMhz');
+    expect(st).toEqual({ firmware: 'HN5RV011', workmode: 'vfo', squelch: 3, voice: 'eng', beep: 'on', abr: 5 });
+    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxMhz', 'name', 'note']) expect(st).not.toHaveProperty(key);
   });
   it('reads the settings block from the page values despite the 16-byte read alias', async () => {
     const radio = new FakeRadio();
