@@ -30,7 +30,7 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 - After a `check` write, the slot keeps the receive-only record. After `sweep`, slot 0
   keeps the write that `slot0` names; `null` means unknown. Nothing restores slot 0.
 - Run `uv5r sweep channels.json --seconds 30 --out-dir rx` after the human sets MR mode and
-  selects slot 0. The human plays the WAVs in `rx` after the run.
+  selects slot 0. The human plays the WAVs in `rx` after the run; each holds a full dwell.
 - Write a plan to its own slots with one `uv5r load PLAN.json`.
 - Write public-safety listening channels with `--rx-only`.
 - The radio speaker is silent while the AIOC is plugged in. The human hears receive audio

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -9,7 +9,7 @@ import { BusyError, TransportError } from '../src/errors.ts';
 import { cli, type OpenTransport } from '../src/main.ts';
 import { readPlan } from '../src/plan.ts';
 import { KEY_SIGNALS } from '../src/radio.ts';
-import { captureName, newProgress, runSweep, slotZero, type SweepSteps } from '../src/sweep.ts';
+import { captureName, dwell, newProgress, runSweep, slotZero, type SweepSteps } from '../src/sweep.ts';
 import { FakeRadio } from './fake.ts';
 
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
@@ -71,14 +71,16 @@ function heard(seconds: number, activeSeconds: number, warnings: string[] = []):
   };
 }
 
-/** Answer the check listen with activity, then each sweep listen with `activity[i]` active seconds, echoing `out`. */
+/** Answer the check listen with activity, then each sweep listen with `activity[i]` active seconds, writing and echoing `out`. */
 function listenSequence(activity: number[]): void {
   let call = 0;
   listenMock.mockImplementation(async (_device, seconds, _floor, options) => {
     const i = call++;
     if (i === 0) return heard(seconds, seconds);
     const result = heard(seconds, activity[i - 1] ?? 0);
-    return options?.out === undefined ? result : { ...result, out: options.out };
+    if (options?.out === undefined) return result;
+    writeFileSync(options.out, 'RIFF');
+    return { ...result, out: options.out };
   });
 }
 
@@ -236,9 +238,11 @@ describe('sweep', () => {
     await run([...SWEEP, '--out-dir', dir, '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     expect(existsSync(dir)).toBe(true);
-    const outs = listenMock.mock.calls.slice(1).map((c) => c[3]?.out);
-    expect(outs).toHaveLength(7);
-    outs.forEach((out, i) => expect(out).toMatch(new RegExp(`^${dir}/ch0${PLAN_CHANNELS[i]}-\\d{4}-\\d\\d-\\d\\dT\\d\\d-\\d\\d-\\d\\d\\.wav$`)));
+    const parts = listenMock.mock.calls.slice(1).map((c) => c[3]?.out);
+    expect(parts).toHaveLength(7);
+    parts.forEach((part, i) => expect(part).toMatch(new RegExp(`^${dir}/ch0${PLAN_CHANNELS[i]}-\\d{4}-\\d\\d-\\d\\dT\\d\\d-\\d\\d-\\d\\d\\.wav\\.part$`)));
+    const outs = parts.map((part) => part!.replace(/\.part$/, ''));
+    expect(readdirSync(dir).sort()).toEqual(outs.map((out) => out.slice(dir.length + 1)).sort());
     expect(outJson()).toMatchObject({
       active: [
         { channel: 1, activeSeconds: 2, out: outs[0] },
@@ -574,6 +578,22 @@ describe('runSweep', () => {
     expect(listenMock).toHaveBeenCalledTimes(1);
   });
 
+  it('removes the part file of a dwell a signal cut short and keeps the finished WAVs', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    const signals = new EventEmitter();
+    let call = 0;
+    listenMock.mockImplementation(async (_device, seconds, _floor, opts) => {
+      writeFileSync(opts!.out!, 'RIFF');
+      if (call++ === 0) return heard(seconds, 1);
+      signals.emit('SIGINT');
+      await opts!.stop;
+      throw new TransportError('audio-process-failed', 'ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"');
+    });
+    const summary = await runSweep(entries, idle, { ...options, outDir: dir }, newProgress(), signals);
+    expect(summary).toMatchObject({ swept: 1, interrupted: 'SIGINT', active: [{ channel: 1, out: expect.stringMatching(/\.wav$/) }] });
+    expect(readdirSync(dir).map((f) => join(dir, f))).toEqual([summary.active[0]!.out]);
+  });
+
   it('runs no entry when the check throws and leaves the dwells in progress', async () => {
     const prepare = vi.fn(async () => {});
     const progress = newProgress();
@@ -587,6 +607,40 @@ describe('runSweep', () => {
     await expect(runSweep(entries, steps, options, progress, new EventEmitter())).rejects.toThrow('ffmpeg exited 1');
     expect(prepare).not.toHaveBeenCalled();
     expect(progress).toEqual({ dwells: [], checkWarnings: [], slot0: { channel: null, name: '162.4' } });
+  });
+});
+
+describe('dwell', () => {
+  const entry = readPlan(EXAMPLE_PLAN).entries[0]!;
+  const options = { device: 'AIOC Audio', seconds: 2 };
+
+  it('captures to a part file and renames it to the captureName', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    listenMock.mockImplementation(async (_device, seconds, _floor, opts) => {
+      writeFileSync(opts!.out!, 'RIFF');
+      return { ...heard(seconds, 0), out: opts!.out! };
+    });
+    const record = await dwell(entry, { ...options, outDir: dir });
+    expect(listenMock.mock.calls[0]![3]?.out).toBe(`${record.out}.part`);
+    expect(record.out).toBe(join(dir, captureName(entry.channel, new Date())));
+    expect(readdirSync(dir).map((f) => join(dir, f))).toEqual([record.out]);
+  });
+
+  it('removes the part file when the capture fails and rethrows', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    listenMock.mockImplementation(async (_device, _seconds, _floor, opts) => {
+      writeFileSync(opts!.out!, 'RIFF');
+      throw new TransportError('capture-incomplete', 'ffmpeg captured 1 of 3 seconds from "AIOC Audio"');
+    });
+    await expect(dwell(entry, { ...options, outDir: dir })).rejects.toMatchObject({ reason: 'capture-incomplete' });
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it('rethrows the capture error when ffmpeg wrote no part file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    listenMock.mockRejectedValue(new TransportError('audio-process-failed', 'ffmpeg exited with code 1 capturing from "AIOC Audio"'));
+    await expect(dwell(entry, { ...options, outDir: dir })).rejects.toMatchObject({ reason: 'audio-process-failed' });
+    expect(readdirSync(dir)).toEqual([]);
   });
 });
 

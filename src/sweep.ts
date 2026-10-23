@@ -1,6 +1,7 @@
 import type { EventEmitter } from 'node:events';
+import { renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_FLOOR_DBFS, listen } from './audio.ts';
+import { DEFAULT_FLOOR_DBFS, listen, type ListenResult } from './audio.ts';
 import { CHECK_SECONDS, judgeCheck, receiveOnly, refuseOpenSquelch } from './check.ts';
 import { formatMhz, type ChannelSpec } from './codec.ts';
 import { withDetail } from './errors.ts';
@@ -112,12 +113,21 @@ export function captureName(channel: number, start: Date): string {
 
 /**
  * Capture `options.seconds` on the channel the radio is on, judge activity against DEFAULT_FLOOR_DBFS,
- * and report it as `entry`. With `outDir` the capture goes to a WAV named by captureName. When `stop`
- * resolves, the capture kills ffmpeg and rejects once ffmpeg exits.
+ * and report it as `entry`. With `outDir` ffmpeg writes the captureName plus .part, and the dwell renames
+ * it to the captureName once the capture finishes. A failed capture removes the part file, so every WAV in
+ * `outDir` holds a full dwell. When `stop` resolves, the capture kills ffmpeg and rejects once ffmpeg exits.
  */
 export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Promise<unknown>): Promise<DwellRecord> {
   const out = options.outDir === undefined ? undefined : join(options.outDir, captureName(entry.channel, new Date()));
-  const heard = await listen(options.device, options.seconds, DEFAULT_FLOOR_DBFS, { out, stop });
+  const part = out === undefined ? undefined : `${out}.part`;
+  let heard: ListenResult;
+  try {
+    heard = await listen(options.device, options.seconds, DEFAULT_FLOOR_DBFS, { out: part, stop });
+  } catch (err) {
+    if (part !== undefined) rmSync(part, { force: true });
+    throw err;
+  }
+  if (part !== undefined && out !== undefined) renameSync(part, out);
   return {
     channel: entry.channel,
     slot: SWEEP_SLOT,
