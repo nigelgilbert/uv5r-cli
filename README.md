@@ -189,6 +189,83 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 - PTT on the AIOC is DTR high with RTS low. Opening the port raises DTR, so the transport
   drops both lines before anything else.
 
+### Ident
+
+- On firmware BFB291 and later the 8-byte ident appears to hold the band limits in BCD, an
+  inference in `docs/clone-protocol.md` section 4.4. Byte 1 is the VHF lower limit minus
+  100 MHz, byte 2 the VHF upper limit minus 100 MHz, bytes 3-4 the second-band lower limit
+  and bytes 5-6 its upper limit. The bench ident reads 130-176 MHz and 400-520 MHz.
+- Byte 3 equal to `02` marks a 220-260 MHz second band. `flags.band220` reports it on radios
+  that are not orig.
+- Orig radios, before BFB291, spell the version in ASCII: `aa 42 46 42 32 33 31 dd` reads
+  `BFB231`.
+- The ident names neither the model nor the firmware. Different models return identical
+  idents. `family` comes from the magic that answered and the firmware string at `0x1EF0`.
+- Bench question 3 in `docs/clone-protocol-plan.md` tests the band-limit reading.
+
+### Classic magics
+
+From `docs/clone-protocol.md` section 4.1. `identify` tries them in table order, with the
+magic `UV5R_MAGIC` names first.
+
+| Name | Bytes | Answered by |
+|---|---|---|
+| `291` | `50 bb ff 20 12 07 25` | UV-5R, UV-5G Pro, UV-5RX3, GT-5R, KT-980HP, BF-F8HP; UV-S9X3 and 5RX of the WP970I family |
+| `ORIG` | `50 bb ff 01 25 98 4d` | UV-5R, UV-5G Pro, UV-5RX3, GT-5R |
+| `UV82` | `50 bb ff 20 13 01 05` | UV-82, UV-82X3, UV-82HP |
+| `A58` | `50 bb ff 20 14 04 13` | BF-F8HP; WP970I and BF-A58 |
+| `UV5G` | `50 bb ff 20 12 06 25` | Radioddity UV-5G |
+| `F11` | `50 bb ff 13 a1 11 dd` | F-11 |
+| `UV6` | `50 bb ff 20 12 08 23` | UV-6 |
+| `UV6_ORIG` | `50 bb ff 12 03 98 4d` | UV-6 |
+
+### Foreign radios
+
+From `docs/clone-protocol.md` sections 4.2 and 9. A reply to one of these magics at 9600
+names a radio of another driver with its own memory layout.
+
+| Bytes | Radio |
+|---|---|
+| `50 0d 0c 20 16 03 28` | BTECH UV-5X3 |
+| `50 0d 0c 20 17 09 19` | MTC UV-5R-3 |
+| `50 bb ff 20 14 11 22` | UV-6R |
+| `50 bb ff 20 12 05 25` | UV-9G |
+| `50 bb dd 55 63 98 4d` | Baojie BJ-UV55 |
+
+Radios sold as UV-5RH, UV-5RM Plus, UV-5R Mini or UV-5G Plus speak the UV17Pro protocol at
+115200. Each model group answers its 16-byte ASCII magic, sent in one write, with one `06`.
+
+| Magic | Model group |
+|---|---|
+| `PROGRAMBFNORMALU` | UV-17Pro, UV-21ProV2, UV-25, 5RM, P15, MT-5RM, K5-Plus, UV-5RM Plus, UV-17R-Plus, UV-5RH |
+| `PROGRAMCOLORPROU` | UV-17ProGPS, GM-21, GM-30 Plus/Pro, UV-32, UV-21ProGPS, UV-28Plus, UV-5R Mini, UV-5G Mini fw 0.01 |
+| `PROGRAMBFGMRS05U` | GM-5RH, Radioddity UV-5G Plus |
+| `PROGRAMBF5RTECHU` | BF-F8HP-PRO |
+| `PROGRAMBF-K6PROU` | K6 |
+| `PROGRAMGMRS5RMIU` | UV-5G Mini fw 0.05 |
+
+### `identify` timing
+
+| Phase | Attempts | Each silent attempt | Pause after each |
+|---|---|---|---|
+| Classic magics at 9600 | 9, the first magic twice | 1.27 s | 3 s after the first attempt, 2 s after the rest |
+| Foreign magics at 9600 | 5 | 1.27 s | 2 s |
+| UV17Pro magics at 115200 | 6 | 1.2 s | 1 s, none after the last |
+
+A silent attempt at 9600 costs 70 ms of paced magic and the 1200 ms ack wait. The 3 s pauses
+are `SETTLE_MS` in `src/core/protocol.ts`. The 2 s pauses are `SCAN_SILENT_PAUSE_MS` and the
+1 s pauses `PROGRAM_PAUSE_MS`, both in `src/core/radio.ts`. An invalid ident or a refused
+closing `06` pauses `SETTLE_MS` before the next magic.
+
+### Bench questions
+
+- **Does the unit ack `ORIG`?** Not measured yet. Run `UV5R_MAGIC=ORIG uv5r status --json`.
+  The answer picks the pin for the pause test below.
+- **Does a silent magic need a pause before the next?** Not measured yet. Set
+  `SCAN_SILENT_PAUSE_MS` to 0 in a local edit and run `UV5R_MAGIC=ORIG uv5r identify`, or
+  `UV5R_MAGIC=UV82 uv5r identify` when the unit acks `ORIG`. Check that `291` still acks.
+  The answer decides `SCAN_SILENT_PAUSE_MS`; at 0 a silent radio costs about 26 s less.
+
 ## Bench files
 
 - `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the radio on the bench on 2026-10-12,
