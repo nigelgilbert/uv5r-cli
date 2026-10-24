@@ -557,6 +557,32 @@ describe('identify', () => {
     expect(errJson()).toMatchObject({ reason: 'radio-unsupported', retry: 'no', radio: 'Baofeng UV-6', magic: 'UV6' });
   });
 
+  it('exits 5 with radio-unsupported naming the BTECH UV-5X3 on a foreign magic ident', async () => {
+    const radio = new FakeRadio();
+    radio.magics = [];
+    radio.foreignMagic = Uint8Array.from([0x50, 0x0d, 0x0c, 0x20, 0x16, 0x03, 0x28]);
+    await run(['identify', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({ reason: 'radio-unsupported', retry: 'no', radio: 'BTECH UV-5X3' });
+  });
+
+  it('prints the 115200 attempts with the baud and exits 5 with powerCycle and the power-cycle remedy on a program magic ack', async () => {
+    const radio = new FakeRadio();
+    radio.magics = [];
+    radio.programMagic = Uint8Array.from(Buffer.from('PROGRAMCOLORPROU', 'latin1'));
+    await onTerminal(() => run(['identify'], opener(radio)));
+    expect(process.exitCode).toBe(5);
+    expect(stderr.join('')).toContain('Baojie BJ-UV55 at 9600: silent\nPROGRAMBFNORMALU at 115200: silent\nPROGRAMCOLORPROU at 115200: ack\n');
+    expect(stderr.join('')).toContain('ask the human to power-cycle the radio and report the radio name; this CLI speaks the classic UV-5R protocol');
+    expect(radio.rate).toBe(9600);
+    stderr = [];
+    const json = new FakeRadio();
+    json.magics = [];
+    json.programMagic = radio.programMagic;
+    await run(['identify', '--json'], opener(json));
+    expect(errJson()).toMatchObject({ reason: 'radio-unsupported', retry: 'no', magic: 'PROGRAMCOLORPROU', powerCycle: true, radio: expect.stringContaining('UV-5R Mini') });
+  });
+
   it('exits 2 on UV5R_MAGIC=UV6 before opening the port', async () => {
     vi.stubEnv('UV5R_MAGIC', 'UV6');
     const open = opener(new FakeRadio());
@@ -565,10 +591,11 @@ describe('identify', () => {
     expect(open.calls).toBe(0);
   });
 
-  it('has a help entry that states the minute, a help --json entry and a README verb table row', async () => {
+  it('has a help entry that states the 59 s budget, a help --json entry and a README verb table row', async () => {
     await onTerminal(() => cli(['help', 'identify']));
     expect(process.exitCode).toBe(0);
-    expect(stdout.join('')).toContain('about a minute');
+    expect(stdout.join('')).toContain('A silent radio takes up to 59 s');
+    expect(readFileSync(README, 'utf8')).toContain('A silent radio takes up to 59 s');
     stdout = [];
     await cli(['help', '--json']);
     expect((outJson() as { verbs: Record<string, unknown> }).verbs).toHaveProperty('identify');
