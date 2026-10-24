@@ -58,14 +58,14 @@ one they may transmit on, after asking the human what the display shows.
 
 | Verb | Writes to radio | Time | Result keys |
 |---|---|---|---|
-| `status` | no | one clone session | `firmware`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
+| `status` | no | one clone session | `firmware`, `firmwareHex`, `family`, `magic`, `ident`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
 | `tune` | record and name of slot N | one clone session | `channel`, record keys, `appliesAfterSeconds` |
 | `check` | receive-only record and name of slot N | one clone session, 3 s reload, 5 s listen | `slot`, `requestedMhz`, `listen` keys |
 | `load` | record and name of each plan slot | one clone session | array of `tune` results |
 | `read` | no | one clone session | `channel`, record keys; `empty` for an empty slot; `malformed` and `raw`, the record bytes as hex, for a record whose frequency bytes are not valid BCD |
 | `erase` | 0xFF over the record and name of slot N | one clone session | `channel`, `empty`, `appliesAfterSeconds` |
 | `key` | no; raises PTT | `--seconds` | `pttAsserted`, `seconds`, `released`; `interrupted` on a signal |
-| `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware` |
+| `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware`, `family`, `magic` |
 | `restore` | channels, names and settings from the image | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
 | `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
 | `listen` | no; opens no serial port | `--seconds` | `device`, `seconds`, `rmsDbfs`, `zeroSeconds`, `meanRmsDbfs`, `peakDbfs`, `active`, `activeSeconds`, `warnings`, `out` |
@@ -96,6 +96,12 @@ on a signal with no output.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
+`UV5R_MAGIC=NAME` opens every clone session with another classic magic: `291`, the default,
+`ORIG`, `UV82`, `A58` or `UV5G`. An unknown or unsupported name exits 2 before the port
+opens. `key`, `listen` and `help` ignore it. `status` and `dump` report the `magic` that
+answered and the radio `family`, which reads `unknown` when the magic and firmware string
+do not settle it.
+
 ## How the radio takes a frequency
 
 The radio speaks the CHIRP clone protocol over the AIOC's serial port at 9600 baud.
@@ -104,6 +110,8 @@ ignores them. The CLI does not offer those writes, so the human selects the chan
 session ends after 2.5 s of silence. The radio then reloads from EEPROM and the new
 frequency is live about 3 s after the command ends. When the handshake gets no ack, the CLI
 waits 3 s and retries it once, which covers a session still closing from the previous verb.
+A 14-byte ident names a UV-5X3-type radio, which speaks another protocol; the verb exits 5
+with `radio-unsupported`.
 
 Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows it.
 
