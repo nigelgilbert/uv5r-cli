@@ -647,11 +647,14 @@ describe('runSweep', () => {
     const steps: SweepSteps = {
       check: async (p) => {
         p.slot0 = { channel: null, name: '162.4' };
-        throw new TransportError('audio-process-failed', 'ffmpeg exited 1');
+        throw new TransportError('audio-process-failed', 'ffmpeg exited 1', { requestedMhz: '162.4' });
       },
       prepare,
     };
-    await expect(runSweep(entries, steps, options, progress, new EventEmitter())).rejects.toThrow('ffmpeg exited 1');
+    await expect(runSweep(entries, steps, options, progress, new EventEmitter())).rejects.toMatchObject({
+      message: 'ffmpeg exited 1',
+      detail: { phase: 'check', slot: 0, channel: null, requestedMhz: '162.4' },
+    });
     expect(prepare).not.toHaveBeenCalled();
     expect(progress).toEqual({ dwells: [], checkWarnings: [], slot0: { channel: null, name: '162.4' } });
   });

@@ -392,7 +392,7 @@ const verbs: Record<string, Verb> = {
     args: [{ name: 'PLAN', help: 'plan JSON with a top-level checkMhz' }],
     flags: [
       { name: 'seconds', value: 'S', default: SWEEP_SECONDS, help: `dwell per entry, whole number 1..${MAX_LISTEN_SECONDS}` },
-      { name: 'out-dir', value: 'DIR', help: 'keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR; an unwritable DIR exits 2 before the port opens' },
+      { name: 'out-dir', value: 'DIR', help: 'keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR after the ffmpeg check; an unwritable DIR exits 2 before the port opens' },
       CAPTURE_DEVICE_FLAG,
       ...COMMON_FLAGS,
     ],
