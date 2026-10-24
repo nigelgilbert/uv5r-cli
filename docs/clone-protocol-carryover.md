@@ -1,17 +1,6 @@
 # Carryover: clone protocol work, 2026-10-24
 
-Six branches stack on `main` at `d5b439e`. Merge in order. Review: [clone-protocol-review.md](clone-protocol-review.md). Plan: [clone-protocol-plan.md](clone-protocol-plan.md). Spec: [clone-protocol.md](clone-protocol.md).
-
-| Branch | Tip | Holds |
-|---|---|---|
-| `feature/001-magic-table` | `086507b` | issue 001 |
-| `feature/002-identify-classic` | `8e2bb3c` | issue 002 |
-| `feature/003-identify-foreign-115200` | `c505c3b` | issue 003 |
-| `feature/004-bench-and-readme-notes` | `1878f32` | issue 004 README text |
-| `feature/005-review-and-cleanup` | `2304eb4` | review doc, Sol nits, cleanup |
-| `feature/006-bench-results` | `e05d360` | bench results, issue 004 closed, issue 005 opened |
-
-Typecheck and 553 tests pass at every tip. Each commit carries the Fable trailer.
+All work sits on `feature/clone-protocol`, 28 commits on `main`. Review: [clone-protocol-review.md](clone-protocol-review.md). Plan: [clone-protocol-plan.md](clone-protocol-plan.md). Spec: [clone-protocol.md](clone-protocol.md). Typecheck and 553 tests pass.
 
 ## Decisions
 

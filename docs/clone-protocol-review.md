@@ -2,18 +2,9 @@
 
 Date: 2026-10-24. Plan: [clone-protocol-plan.md](clone-protocol-plan.md). Spec: [clone-protocol.md](clone-protocol.md).
 
-## Branches
+## Branch
 
-Each issue landed on its own branch, stacked on the previous one. Nothing is merged into `main`.
-
-| Issue | Branch | Tip | Base | Tests |
-|---|---|---|---|---|
-| 001 magic table, `Session.start(magic)`, `UV5R_MAGIC` | `feature/001-magic-table` | `086507b` | `d5b439e` (main) | 520 |
-| 002 `identify` classic scan | `feature/002-identify-classic` | `8e2bb3c` | `086507b` | 540 |
-| 003 foreign probes and 115200 phase | `feature/003-identify-foreign-115200` | `c505c3b` | `8e2bb3c` | 553 |
-| 004 README protocol notes | `feature/004-bench-and-readme-notes` | `1878f32` | `c505c3b` | 553 |
-
-`npm run typecheck` and `npm test` pass at every tip. The overseer reran both on each branch.
+Issues 001 to 004, the review fixes, the cleanup pass and the bench results sit on `feature/clone-protocol` as 28 commits on `main`. Tests grew from 520 after issue 001 to 553 from issue 003 on. `npm run typecheck` and `npm test` pass.
 
 ## Overseer review
 
