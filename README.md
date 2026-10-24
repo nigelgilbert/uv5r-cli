@@ -59,6 +59,7 @@ one they may transmit on, after asking the human what the display shows.
 | Verb | Writes to radio | Time | Result keys |
 |---|---|---|---|
 | `status` | no | one clone session | `firmware`, `firmwareHex`, `family`, `magic`, `ident`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
+| `identify` | no | one clone session when the first magic answers; about a minute on a silent radio | `magic`, `ident`, `firmware`, `firmwareHex`, `family`, `flags`, `droppedByte`, `pin` |
 | `tune` | record and name of slot N | one clone session | `channel`, record keys, `appliesAfterSeconds` |
 | `check` | receive-only record and name of slot N | one clone session, 3 s reload, 5 s listen | `slot`, `requestedMhz`, `listen` keys |
 | `load` | record and name of each plan slot | one clone session | array of `tune` results |
@@ -101,6 +102,12 @@ on a signal with no output.
 opens. `key`, `listen` and `help` ignore it. `status` and `dump` report the `magic` that
 answered and the radio `family`, which reads `unknown` when the magic and firmware string
 do not settle it.
+
+Run `uv5r identify` when `status` exits 5 with `session-unavailable` and the human confirms
+the radio is on and the cable is seated. It tries each classic magic and prints one line per
+attempt on stderr; a silent radio takes about a minute. Export the `pin` line it prints, as
+in `export UV5R_MAGIC=ORIG`. `pin` is `null` when the verbs already open with the magic that
+answered. An F11, UV6 or UV6_ORIG answer exits 5 with `radio-unsupported` naming the radio.
 
 ## How the radio takes a frequency
 

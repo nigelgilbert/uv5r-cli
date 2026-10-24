@@ -14,6 +14,7 @@ import {
   encodeName,
   eraseChannel,
   holdPtt,
+  identify,
   IMAGE_HEADER,
   imageSettingsBlock,
   isSettingName,
@@ -30,6 +31,8 @@ import {
   RESTORE_RANGES,
   restoreImage,
   RETRY,
+  SCAN_ORDER,
+  SCAN_SILENT_PAUSE_MS,
   SerialTransport,
   SETTING_NAMES,
   settingValues,
@@ -48,6 +51,7 @@ import {
   type ChannelResult,
   type ChannelSpec,
   type Family,
+  type IdentifyResult,
   type Magic,
   type MagicName,
   type RadioStatus,
@@ -206,6 +210,40 @@ const verbs: Record<string, Verb> = {
     exits: [],
     positionals: 0,
     run: statusVerb,
+  },
+  identify: {
+    summary: 'Try each classic magic and report the one the radio answers, with the UV5R_MAGIC line to export',
+    example: 'uv5r identify',
+    args: [],
+    flags: COMMON_FLAGS,
+    effects: [
+      `Try the classic magics in the order ${SCAN_ORDER.join(', ')}. A magic UV5R_MAGIC names goes first.`,
+      `Give the first magic a second attempt ${SETTLE_MS / 1000} s later on silence or a byte other than 06, as every radio verb does.`,
+      `Pause ${SCAN_SILENT_PAUSE_MS / 1000} s after silence or a wrong ack and ${SETTLE_MS / 1000} s after a bad ident or a refused closing 06, then try the next magic.`,
+      'Stop at the first magic that opens a clone session and read the firmware block. F11, UV6 and UV6_ORIG run without the closing 06 and with no block read.',
+      'pin is the UV5R_MAGIC=NAME line to export when the answering magic differs from the one the other verbs select now, UV5R_MAGIC or else 291. It is null when they match.',
+      'In text mode, print one line per attempt on stderr, as in ORIG at 9600: silent.',
+      'The scan can take about a minute when the radio stays silent.',
+    ],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: false, note: 'reads only' },
+    result: {
+      magic: '291',
+      ident: 'aa 30 76 04 00 05 20 dd',
+      firmware: 'HN5RV011',
+      firmwareHex: '48 4e 35 52 56 30 31 31 ff ff ff ff ff ff',
+      family: 'uv5r',
+      flags: { basetype: 'HN5RV01', orig: false, voiceBool: false, band220: false, triPower: false, dtmfTable: '0123456789ABCD*#' },
+      droppedByte: true,
+      pin: null,
+    },
+    exits: [
+      { code: 5, when: 'radio-unsupported on an F11, UV6 or UV6_ORIG ident or a 14-byte ident, naming the radio' },
+      { code: 5, when: 'protocol-reply-invalid with the first bad ident in got when no magic opened a session' },
+      { code: 5, when: 'otherwise session-unavailable with answers, each wrong ack and refusal by magic name; empty on a silent cable' },
+    ],
+    positionals: 0,
+    run: identifyVerb,
   },
   tune: {
     summary: 'Write a frequency into memory slot N and read it back',
@@ -602,6 +640,15 @@ function statusText(s: RadioStatus): string {
     .join('\n');
 }
 
+function identifyText(r: IdentifyResult): string {
+  const flags = Object.entries(r.flags)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
+  return Object.entries({ ...r, flags, pin: r.pin ?? 'none; the verbs already open with this magic' })
+    .map(([key, value]) => `${key.padEnd(12)} ${value}`)
+    .join('\n');
+}
+
 function settingsText(s: Settings): string {
   return SETTING_NAMES.map((name) => `${name.padEnd(8)} ${s[name]}`).join('\n');
 }
@@ -623,6 +670,23 @@ async function statusVerb(args: Invocation): Promise<number> {
   const magic = selectedMagic();
   const status = await withTransport(args, (t) => withSession(t, readStatus, { magic }));
   print(args, status, () => statusText(status));
+  return EXIT.ok;
+}
+
+async function identifyVerb(args: Invocation): Promise<number> {
+  checkFlags('identify', args.flags, flagNames('identify'));
+  const magic = selectedMagic();
+  const json = wantsJson(args.flags);
+  const result = await withTransport(args, (t) =>
+    identify(
+      t,
+      (a) => {
+        if (!json) process.stderr.write(`${a.name} at ${a.baud}: ${a.outcome}\n`);
+      },
+      { magic },
+    ),
+  );
+  print(args, result, () => identifyText(result));
   return EXIT.ok;
 }
 
