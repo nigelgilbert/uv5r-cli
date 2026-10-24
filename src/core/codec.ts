@@ -1,4 +1,4 @@
-import { parseDecimal } from './args.ts';
+import { parseDecimal } from '../cli/args.ts';
 import { UsageError } from './errors.ts';
 
 /** Radio address of memory channel `n` (16 bytes each). */

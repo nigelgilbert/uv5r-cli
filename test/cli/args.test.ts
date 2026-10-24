@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { parseArgs } from '../src/args.ts';
-import { UsageError } from '../src/errors.ts';
+import { parseArgs } from '../../src/cli/args.ts';
+import { UsageError } from '../../src/core/errors.ts';
 
 const BOOLEAN_FLAGS = new Set(['json', 'help', 'narrow', 'low-power', 'force']);
 
@@ -51,7 +51,7 @@ describe('parseArgs', () => {
 
 describe('cli', () => {
   it('exits 2 with a usage error for --force=no before opening a port', () => {
-    const r = spawnSync(process.execPath, ['src/main.ts', 'restore', 'x.img', '--force=no', '--json'], {
+    const r = spawnSync(process.execPath, ['src/cli/main.ts', 'restore', 'x.img', '--force=no', '--json'], {
       cwd: process.cwd(),
       env: { ...process.env, UV5R_TARGET: '/dev/null-nonexistent' },
       encoding: 'utf8',

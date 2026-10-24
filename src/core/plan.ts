@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { parseDecimal } from './args.ts';
+import { parseDecimal } from '../cli/args.ts';
 import { checkBand, checkChannelNumber, checkTenHz, encodeName, parseFrequency, parseTone, type ChannelSpec } from './codec.ts';
 import { BaofengError, UsageError } from './errors.ts';
 

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { cli } from '../src/main.ts';
+import { cli } from '../../src/cli/main.ts';
 
 /** Build astats stderr for `n` whole-second frames at -30 dBFS. */
 function stderrFrames(n: number): string {

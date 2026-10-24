@@ -12,8 +12,8 @@ import {
   formatMhz,
   parseFrequency,
   parseTone,
-} from '../src/codec.ts';
-import { UsageError } from '../src/errors.ts';
+} from '../../src/core/codec.ts';
+import { UsageError } from '../../src/core/errors.ts';
 
 describe('lbcd', () => {
   it('round-trips the channel encoding seen on the bench radio', () => {

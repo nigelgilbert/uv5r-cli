@@ -2,20 +2,20 @@ import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, symlinkSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { encodeChannel } from '../src/codec.ts';
-import { BusyError, REASONS, TransportError } from '../src/errors.ts';
-import { cli, type OpenTransport } from '../src/main.ts';
-import type { Transport } from '../src/transport.ts';
-import { FakeRadio } from './fake.ts';
+import { encodeChannel } from '../../src/core/codec.ts';
+import { BusyError, REASONS, TransportError } from '../../src/core/errors.ts';
+import { cli, type OpenTransport } from '../../src/cli/main.ts';
+import type { Transport } from '../../src/core/transport.ts';
+import { FakeRadio } from '../core/fake.ts';
 
-const FIXTURE = new URL('../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url).pathname;
-const README = new URL('../README.md', import.meta.url).pathname;
-const SKILL = new URL('../.claude/skills/uv5r/SKILL.md', import.meta.url).pathname;
-const PACKAGE = new URL('../package.json', import.meta.url).pathname;
+const FIXTURE = new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url).pathname;
+const README = new URL('../../README.md', import.meta.url).pathname;
+const SKILL = new URL('../../.claude/skills/uv5r/SKILL.md', import.meta.url).pathname;
+const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. ' +
   'The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.';
-const EXAMPLE_PLAN = new URL('../channels.example.json', import.meta.url).pathname;
+const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 const REASON_ENUM = [
   'device-unavailable',
   'serial-io-failed',

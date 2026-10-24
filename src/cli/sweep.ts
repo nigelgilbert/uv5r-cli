@@ -3,12 +3,12 @@ import { renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_FLOOR_DBFS, listen, type ListenResult } from './audio.ts';
 import { CHECK_SECONDS, judgeCheck, receiveOnly, refuseOpenSquelch } from './check.ts';
-import { formatMhz, type ChannelSpec } from './codec.ts';
-import { TransportError, UsageError, withDetail } from './errors.ts';
-import type { PlanEntry } from './plan.ts';
-import { settle, type Session } from './protocol.ts';
-import { KEY_SIGNALS, withSession, writeChannel } from './radio.ts';
-import type { Transport } from './transport.ts';
+import { formatMhz, type ChannelSpec } from '../core/codec.ts';
+import { TransportError, UsageError, withDetail } from '../core/errors.ts';
+import type { PlanEntry } from '../core/plan.ts';
+import { settle, type Session } from '../core/protocol.ts';
+import { KEY_SIGNALS, withSession, writeChannel } from '../core/radio.ts';
+import type { Transport } from '../core/transport.ts';
 
 /** Seconds `sweep` dwells on each entry when the caller gives no length. */
 export const SWEEP_SECONDS = 30;

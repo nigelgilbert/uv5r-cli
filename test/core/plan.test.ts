@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { UsageError } from '../src/errors.ts';
-import { parsePlan } from '../src/plan.ts';
+import { UsageError } from '../../src/core/errors.ts';
+import { parsePlan } from '../../src/core/plan.ts';
 
 /** Parse a one-entry plan and return the UsageError it throws. */
 function failure(entry: object): UsageError {

@@ -4,20 +4,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CLIP_WARNING, listen, type ListenResult } from '../src/audio.ts';
-import { BusyError, TransportError } from '../src/errors.ts';
-import { cli, type OpenTransport } from '../src/main.ts';
-import { readPlan } from '../src/plan.ts';
-import { KEY_SIGNALS } from '../src/radio.ts';
-import { captureName, dwell, newProgress, runSweep, slotZero, type SweepSteps } from '../src/sweep.ts';
-import { FakeRadio } from './fake.ts';
+import { CLIP_WARNING, listen, type ListenResult } from '../../src/cli/audio.ts';
+import { BusyError, TransportError } from '../../src/core/errors.ts';
+import { cli, type OpenTransport } from '../../src/cli/main.ts';
+import { readPlan } from '../../src/core/plan.ts';
+import { KEY_SIGNALS } from '../../src/core/radio.ts';
+import { captureName, dwell, newProgress, runSweep, slotZero, type SweepSteps } from '../../src/cli/sweep.ts';
+import { FakeRadio } from '../core/fake.ts';
 
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
-vi.mock('../src/audio.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/audio.ts')>()), listen: vi.fn() }));
+vi.mock('../../src/cli/audio.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../src/cli/audio.ts')>()), listen: vi.fn() }));
 
 const listenMock = vi.mocked(listen);
-const EXAMPLE_PLAN = new URL('../channels.example.json', import.meta.url).pathname;
+const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 const PLAN_CHANNELS = [1, 2, 3, 4, 5, 6, 7];
 
 let stdout: string[];

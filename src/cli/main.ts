@@ -17,11 +17,11 @@ import {
   type ChannelSpec,
   type SettingName,
   type Settings,
-} from './codec.ts';
-import { BaofengError, EXIT, REASONS, RETRY, TransportError, UnexpectedError, UsageError, exitCodeFor, signalExitCode, withDetail } from './errors.ts';
-import { readPlan } from './plan.ts';
+} from '../core/codec.ts';
+import { BaofengError, EXIT, REASONS, RETRY, TransportError, UnexpectedError, UsageError, exitCodeFor, signalExitCode, withDetail } from '../core/errors.ts';
+import { readPlan } from '../core/plan.ts';
 import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
-import { SETTLE_MS } from './protocol.ts';
+import { SETTLE_MS } from '../core/protocol.ts';
 import {
   channelPayload,
   dumpImage,
@@ -43,9 +43,9 @@ import {
   writeSettings,
   type ChannelResult,
   type RadioStatus,
-} from './radio.ts';
+} from '../core/radio.ts';
 import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type Slot0, type SweepSummary } from './sweep.ts';
-import { SerialTransport, resolveTarget, type Transport } from './transport.ts';
+import { SerialTransport, resolveTarget, type Transport } from '../core/transport.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
 export type OpenTransport = (target: string | undefined) => Promise<Transport>;
@@ -447,7 +447,7 @@ function unknownVerb(what: string, name: string): UsageError {
 }
 
 function packageVersion(): string {
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string };
+  const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version?: string };
   return pkg.version ?? 'unknown';
 }
 

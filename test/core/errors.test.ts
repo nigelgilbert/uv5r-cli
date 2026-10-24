@@ -11,7 +11,7 @@ import {
   UsageError,
   exitCodeFor,
   withDetail,
-} from '../src/errors.ts';
+} from '../../src/core/errors.ts';
 
 const REASON_ENUM = [
   'device-unavailable',

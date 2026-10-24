@@ -2,12 +2,12 @@ import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { TransportError, signalExitCode } from '../src/errors.ts';
-import { KEY_SIGNALS, holdPtt } from '../src/radio.ts';
-import type { Transport } from '../src/transport.ts';
-import { FakeRadio } from './fake.ts';
+import { TransportError, signalExitCode } from '../../src/core/errors.ts';
+import { KEY_SIGNALS, holdPtt } from '../../src/core/radio.ts';
+import type { Transport } from '../../src/core/transport.ts';
+import { FakeRadio } from '../core/fake.ts';
 
-const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url));
+const MAIN = fileURLToPath(new URL('../../src/cli/main.ts', import.meta.url));
 
 function listeners(em: EventEmitter): number {
   return KEY_SIGNALS.reduce((n, s) => n + em.listenerCount(s), 0);

@@ -1,4 +1,4 @@
-import { UsageError } from './errors.ts';
+import { UsageError } from '../core/errors.ts';
 
 export interface ParsedArgs {
   verb: string | undefined;

@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_FIELDS, SETTINGS_SIZE, applySettings, decodeSettings, parseSettingValue } from '../src/codec.ts';
-import { MAGIC, Session } from '../src/protocol.ts';
-import { imageSettingsBlock, restoreImage, startFreshSession, verifyRestoredRanges, verifySettingsBlock, verifySettingsInFreshSession, writeSettings } from '../src/radio.ts';
+import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_FIELDS, SETTINGS_SIZE, applySettings, decodeSettings, parseSettingValue } from '../../src/core/codec.ts';
+import { MAGIC, Session } from '../../src/core/protocol.ts';
+import { imageSettingsBlock, restoreImage, startFreshSession, verifyRestoredRanges, verifySettingsBlock, verifySettingsInFreshSession, writeSettings } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
-const fixture = new Uint8Array(readFileSync(new URL('../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url)));
+const fixture = new Uint8Array(readFileSync(new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url)));
 const FIXTURE_SETTINGS = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'name', mdfb: 'name' };
 const FIELD_OFFSETS = new Set<number>(Object.values(SETTINGS_FIELDS).map((f) => f.offset));
 

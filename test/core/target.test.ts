@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveTarget } from '../src/transport.ts';
+import { resolveTarget } from '../../src/core/transport.ts';
 
 const { list } = vi.hoisted(() => ({ list: vi.fn(async (): Promise<unknown[]> => []) }));
 

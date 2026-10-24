@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { CLIP_WARNING, KILL_GRACE_MS, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
+import { CLIP_WARNING, KILL_GRACE_MS, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../../src/cli/audio.ts';
 
 /** Pre-high-pass astats fields for one frame: sample min and max on the float scale, and the count of samples at either. */
 interface Raw {

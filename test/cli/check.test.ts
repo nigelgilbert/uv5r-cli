@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { listen, type ListenResult } from '../src/audio.ts';
-import { TransportError } from '../src/errors.ts';
-import { cli, type OpenTransport } from '../src/main.ts';
-import { SETTLE_MS } from '../src/protocol.ts';
-import { FakeRadio } from './fake.ts';
+import { listen, type ListenResult } from '../../src/cli/audio.ts';
+import { TransportError } from '../../src/core/errors.ts';
+import { cli, type OpenTransport } from '../../src/cli/main.ts';
+import { SETTLE_MS } from '../../src/core/protocol.ts';
+import { FakeRadio } from '../core/fake.ts';
 
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
-vi.mock('../src/audio.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/audio.ts')>()), listen: vi.fn() }));
+vi.mock('../../src/cli/audio.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../src/cli/audio.ts')>()), listen: vi.fn() }));
 
 const listenMock = vi.mocked(listen);
 

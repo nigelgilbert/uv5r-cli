@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile } from 'node:child_process';
-import { TransportError, UsageError } from './errors.ts';
+import { TransportError, UsageError } from '../core/errors.ts';
 
 export interface ListenResult {
   device: string;

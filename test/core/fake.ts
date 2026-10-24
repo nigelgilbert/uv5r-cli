@@ -1,5 +1,5 @@
-import { MAGIC } from '../src/protocol.ts';
-import type { Transport } from '../src/transport.ts';
+import { MAGIC } from '../../src/core/protocol.ts';
+import type { Transport } from '../../src/core/transport.ts';
 
 /** Start of the page the radio serves from its reload snapshot and aliases for 16-byte reads. */
 const PAGE = 0x0e00;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../src/codec.ts';
-import { BaofengError } from '../src/errors.ts';
-import { Session, hex } from '../src/protocol.ts';
-import { channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../src/radio.ts';
+import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../../src/core/codec.ts';
+import { BaofengError } from '../../src/core/errors.ts';
+import { Session, hex } from '../../src/core/protocol.ts';
+import { channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
 /** Write channel `n` in a new session, as the tune verb does. */

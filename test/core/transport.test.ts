@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TransportError } from '../src/errors.ts';
-import { SerialTransport } from '../src/transport.ts';
+import { TransportError } from '../../src/core/errors.ts';
+import { SerialTransport } from '../../src/core/transport.ts';
 
 type Cb = (err?: Error | null) => void;
 

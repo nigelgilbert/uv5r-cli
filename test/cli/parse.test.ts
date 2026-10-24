@@ -3,12 +3,12 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { numberFlag, parseDecimal } from '../src/args.ts';
-import { checkTenHz, parseFrequency } from '../src/codec.ts';
-import { UsageError } from '../src/errors.ts';
+import { numberFlag, parseDecimal } from '../../src/cli/args.ts';
+import { checkTenHz, parseFrequency } from '../../src/core/codec.ts';
+import { UsageError } from '../../src/core/errors.ts';
 
 function cli(...argv: string[]) {
-  const r = spawnSync(process.execPath, ['src/main.ts', ...argv], {
+  const r = spawnSync(process.execPath, ['src/cli/main.ts', ...argv], {
     cwd: process.cwd(),
     env: { ...process.env, UV5R_TARGET: '/dev/null-nonexistent' },
     encoding: 'utf8',
@@ -112,7 +112,7 @@ describe('CLI number and file errors', () => {
   });
 
   it('exits 0 with the whole help JSON on a pipe', () => {
-    const r = spawnSync(process.execPath, ['src/main.ts', 'help'], { cwd: process.cwd(), encoding: 'utf8' });
+    const r = spawnSync(process.execPath, ['src/cli/main.ts', 'help'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout).exitCodes['128+signal']).toBe('interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary');
   });

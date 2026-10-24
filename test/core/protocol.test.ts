@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_SIZE } from '../src/codec.ts';
-import { SETTLE_MS, Session, settle } from '../src/protocol.ts';
-import { IMAGE_HEADER, RESTORE_RANGES, imageSettingsBlock, restoreImage, writeSettings } from '../src/radio.ts';
+import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_SIZE } from '../../src/core/codec.ts';
+import { SETTLE_MS, Session, settle } from '../../src/core/protocol.ts';
+import { IMAGE_HEADER, RESTORE_RANGES, imageSettingsBlock, restoreImage, writeSettings } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
-const fixture = new Uint8Array(readFileSync(new URL('../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url)));
+const fixture = new Uint8Array(readFileSync(new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url)));
 const LOW = SETTINGS_BASE;
 const HIGH = SETTINGS_BASE + 0x10;
 
