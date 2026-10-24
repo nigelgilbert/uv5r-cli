@@ -57,7 +57,6 @@ import {
   type IdentifyResult,
   type Magic,
   type MagicName,
-  type RadioStatus,
   type SettingName,
   type Settings,
   type Transport,
@@ -640,8 +639,9 @@ function channelText(c: ChannelResult): string {
   return `ch ${c.channel}: rx ${c.rxMhz} tx ${c.txMhz ?? 'off'} tone ${c.txTone} rx-tone ${c.rxTone} ${c.bandwidth} ${c.power} ${c.name}`;
 }
 
-function statusText(s: RadioStatus): string {
-  return Object.entries(s)
+/** Return each key of `o` padded to 12 columns and its value, one per line. */
+function fieldLines(o: object): string {
+  return Object.entries(o)
     .map(([key, value]) => `${key.padEnd(12)} ${value}`)
     .join('\n');
 }
@@ -650,9 +650,7 @@ function identifyText(r: IdentifyResult): string {
   const flags = Object.entries(r.flags)
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
-  return Object.entries({ ...r, flags, pin: r.pin ?? 'none; the verbs already open with this magic' })
-    .map(([key, value]) => `${key.padEnd(12)} ${value}`)
-    .join('\n');
+  return fieldLines({ ...r, flags, pin: r.pin ?? 'none; the verbs already open with this magic' });
 }
 
 function settingsText(s: Settings): string {
@@ -675,7 +673,7 @@ async function statusVerb(args: Invocation): Promise<number> {
   checkFlags('status', args.flags, flagNames('status'));
   const magic = selectedMagic();
   const status = await withTransport(args, (t) => withSession(t, readStatus, { magic }));
-  print(args, status, () => statusText(status));
+  print(args, status, () => fieldLines(status));
   return EXIT.ok;
 }
 

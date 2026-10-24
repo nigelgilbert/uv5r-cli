@@ -7,7 +7,7 @@ import type { Transport } from './transport.ts';
 const DEFAULT = magicByName(DEFAULT_MAGIC);
 /** Bytes of the default 291 magic, for tests that watch the wire. */
 export const MAGIC = DEFAULT.bytes;
-const ACK = 0x06;
+export const ACK = 0x06;
 const CMD_READ = 0x53; // 'S'
 const CMD_WRITE = 0x58; // 'X'
 const REPLY = 0x58; // 'X'

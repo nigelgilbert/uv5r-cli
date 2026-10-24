@@ -21,8 +21,8 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
-import { DEFAULT_MAGIC, FOREIGN_MAGICS, MAGICS, PROGRAM_MAGICS, SCAN_ORDER, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
-import { SETTLE_MS, Session, attempt, hex, radioUnsupported, settle, sleep, type AttemptOutcome } from './protocol.ts';
+import { DEFAULT_MAGIC, FOREIGN_MAGICS, MAGICS, PROGRAM_MAGICS, SCAN_ORDER, magicByName, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
+import { ACK, SETTLE_MS, Session, attempt, hex, radioUnsupported, settle, sleep, type AttemptOutcome } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
 /** Channel fields every channel payload carries. */
@@ -154,7 +154,6 @@ const CLASSIC_BAUD = 9600;
 const PROGRAM_BAUD = 115200;
 /** Wait for the one-byte reply to a program magic. */
 const PROGRAM_ACK_WAIT_MS = 1200;
-const ACK = 0x06;
 /** Remedy for a 115200 ack, which leaves the radio in program mode with no exit command. */
 const POWER_CYCLE_REMEDY = 'ask the human to power-cycle the radio and report the radio name; this CLI speaks the classic UV-5R protocol';
 /** Radio names for the magics this CLI recognizes and refuses, by family. */
@@ -236,7 +235,7 @@ function scanOrder(first: Magic): Magic[] {
  * `powerCycle: true`. Calls `onAttempt` after each attempt.
  */
 export async function identify(transport: Transport, onAttempt: (a: IdentifyAttempt) => void = () => {}, options: SessionOptions = {}): Promise<IdentifyResult> {
-  const selected = options.magic ?? MAGICS.find((m) => m.name === DEFAULT_MAGIC)!;
+  const selected = options.magic ?? magicByName(DEFAULT_MAGIC);
   const scan: Scan = { transport, onAttempt, pauseMs: 0, answers: [], invalid: undefined };
   for (const [i, magic] of scanOrder(selected).entries()) {
     let outcome = await probe(scan, magic.name, magic, magic.supported);

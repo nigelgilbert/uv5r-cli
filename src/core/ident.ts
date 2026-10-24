@@ -2,7 +2,7 @@ import { UsageError } from './errors.ts';
 
 /**
  * Magic tables and radio classification for the clone handshake, from docs/clone-protocol.md
- * sections 4 and 9. Pure data and pure functions; nothing here touches the port.
+ * sections 4 and 9. Nothing here touches the port.
  */
 
 /** Radio families the classification can report; `unknown` keeps every verb working. */
@@ -81,7 +81,7 @@ export const BASETYPES: ReadonlyArray<{ family: Family; strings: readonly string
 const HN5RV01 = 'HN5RV01';
 const HN5RV01_FAMILY: Partial<Record<MagicName, Family>> = { '291': 'uv5r', UV5G: 'uv-5g', UV82: 'uv-82x3' };
 
-/** Families that can be orig; every other family counts as not orig. */
+/** Families that can be orig. */
 const ORIG_FAMILIES: readonly Family[] = ['uv5r', 'uv-5g', 'unknown'];
 /** Orig radios run firmware below BFB291. */
 const ORIG_BELOW = 291;
