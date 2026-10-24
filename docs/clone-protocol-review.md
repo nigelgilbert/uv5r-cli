@@ -5,7 +5,7 @@ Date: 2026-10-24. Spec: [clone-protocol.md](clone-protocol.md).
 ## Branch
 
 The plan's work items, the second-attempt change, the review fixes, the cleanup pass and the bench results sit
-on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass with 553 tests.
+on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass.
 
 ## Overseer review
 
@@ -19,7 +19,7 @@ on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass with 553 te
 
 ### 002
 
-- `identify` moves the pinned magic to the front, gives the first magic its second attempt after `SETTLE_MS`, owes `SCAN_SILENT_PAUSE_MS` or `SETTLE_MS` before the next attempt, probes unsupported magics without the closing `06` and runs no block read on their ident.
+- `identify` moves the pinned magic to the front and gives the first magic its second attempt after `SETTLE_MS`. Before the next attempt it waits nothing after silence, `SCAN_WRONG_ACK_PAUSE_MS` after a wrong ack and `SETTLE_MS` after an invalid ident or a refused closing `06`. It probes unsupported magics without the closing `06` and runs no block read on their ident.
 - `pin` compares against the magic the verbs select, `UV5R_MAGIC` or `291`.
 - End-of-scan errors follow the plan: `protocol-reply-invalid` with the first invalid classic reply, else `session-unavailable` with retry `after-remedy`, an `answers` detail and a remedy without the word `identify`.
 - The verb handshake remedy carries the grill text. SKILL.md stays at 60 lines.

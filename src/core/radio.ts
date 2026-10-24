@@ -278,7 +278,7 @@ async function programScan(scan: Scan): Promise<void> {
   try {
     await transport.setBaud(PROGRAM_BAUD);
     for (const entry of PROGRAM_MAGICS) {
-      const name = Buffer.from(entry.bytes).toString('latin1');
+      const { name } = entry;
       if (scan.pauseMs > 0) await sleep(scan.pauseMs);
       transport.discard();
       transport.write(entry.bytes);
@@ -318,7 +318,7 @@ function scanFailed(scan: Scan): DeviceStateError {
   const heard =
     scan.answers.length === 0
       ? 'did not answer any classic magic, foreign magic or 115200 program magic'
-      : `opened no clone session and answered no foreign or 115200 program magic: ${answers}`;
+      : `opened no clone session; answers: ${answers}`;
   return new DeviceStateError(
     'session-unavailable',
     `radio ${heard}`,

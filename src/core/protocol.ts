@@ -153,7 +153,7 @@ export class Session {
       }
     }
     const got = last.kind === 'wrong-ack' ? last.got : '';
-    const heard = got ? `answered the clone handshake with ${got} in place of 06` : 'did not answer the clone handshake';
+    const heard = got ? `answered the clone handshake with ${got}` : 'did not answer the clone handshake';
     throw new DeviceStateError('session-unavailable', `radio ${heard}; check the radio is on and the cable is seated`, { magic: magic.name, got }, { remedy: NO_HANDSHAKE_REMEDY, retry: 'after-remedy' });
   }
 

@@ -49,13 +49,10 @@ export const FOREIGN_MAGICS: ReadonlyArray<{ radio: string; bytes: Uint8Array }>
 ];
 
 /** 16-byte ASCII magics of the UV17Pro family at 115200 baud, with the model group an ack names. */
-export const PROGRAM_MAGICS: ReadonlyArray<{ radio: string; bytes: Uint8Array }> = [
+export const PROGRAM_MAGICS: ReadonlyArray<{ name: string; radio: string; bytes: Uint8Array }> = [
   ['PROGRAMBFNORMALU', 'UV17Pro family: UV-17Pro, UV-21ProV2, UV-25, 5RM, P15, MT-5RM, K5-Plus, UV-5RM Plus, UV-17R-Plus, UV-5RH'],
   ['PROGRAMCOLORPROU', 'UV17Pro family: UV-17ProGPS, GM-21, GM-30 Plus/Pro, UV-32, UV-21ProGPS, UV-28Plus, UV-5R Mini'],
-  ['PROGRAMBFGMRS05U', 'UV17Pro family: GM-5RH, Radioddity UV-5G Plus'],
-  ['PROGRAMBF5RTECHU', 'UV17Pro family: BF-F8HP-PRO'],
-  ['PROGRAMBF-K6PROU', 'UV17Pro family: K6'],
-].map(([ascii, radio]) => ({ radio: radio!, bytes: Uint8Array.from(Buffer.from(ascii!, 'latin1')) }));
+].map(([name, radio]) => ({ name: name!, radio: radio!, bytes: Uint8Array.from(Buffer.from(name!, 'latin1')) }));
 
 /**
  * Firmware substrings by family in match order, most specific first, after spec section 4.6
@@ -63,7 +60,6 @@ export const PROGRAM_MAGICS: ReadonlyArray<{ radio: string; bytes: Uint8Array }>
  * magic resolves the overlaps of `N5R2` and `N5RV`.
  */
 export const BASETYPES: ReadonlyArray<{ family: Family; strings: readonly string[] }> = [
-  { family: 'uv-82x3', strings: ['HN5RV01'] },
   { family: 'kt-980hp', strings: ['BFP3V3 B'] },
   { family: 'bf-f8hp', strings: ['BFP3V3 F', 'N5R-3', 'N5R3', 'F5R3', 'BFT'] },
   { family: 'uv-82hp', strings: ['N82-3', 'N823'] },
@@ -96,9 +92,9 @@ export interface IdentFlags {
   basetype: string | null;
   /** Firmware before BFB291 on a magic and family that can be orig. */
   orig: boolean;
-  /** The voice prompt setting is on/off instead of a language list. */
+  /** The voice prompt setting is on/off. */
   voiceBool: boolean;
-  /** The second band is 220-260 MHz in place of UHF. */
+  /** The second band is 220-260 MHz. */
   band220: boolean;
   triPower: boolean;
   /** DTMF characters in code order. */

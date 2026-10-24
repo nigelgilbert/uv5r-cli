@@ -197,7 +197,7 @@ describe('handshake', () => {
     const err = await settled(new Session(radio).start());
     expect((err as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
-      message: 'radio answered the clone handshake with 15 in place of 06; check the radio is on and the cable is seated',
+      message: 'radio answered the clone handshake with 15; check the radio is on and the cable is seated',
       remedy: NO_HANDSHAKE_REMEDY,
       retry: 'after-remedy',
       got: '15',
@@ -275,20 +275,20 @@ describe('identify', () => {
   const FINISH_MS = 150;
   /** Ack wait of each attempt that gets no 06; the fake answers at once, so the budget adds it per attempt. */
   const ACK_WAIT_MS = 1200;
-  /** The budget for a silent cable across the three phases: 38.06 s rounded up. */
-  const BUDGET_MS = 38_100;
-  /** Fake time of a silent scan: 18 attempts at 9600, SETTLE_MS before the second 291 and PROGRAM_PAUSE_MS between the five at 115200. */
-  const SILENT_ELAPSED_MS = 18 * SEND_MS + SETTLE_MS + 4 * PROGRAM_PAUSE_MS;
+  /** The budget for a silent cable across the three phases: 29.26 s rounded up. */
+  const BUDGET_MS = 29_300;
+  /** Fake time of a silent scan: 18 attempts at 9600, SETTLE_MS before the second 291 and PROGRAM_PAUSE_MS between the two at 115200. */
+  const SILENT_ELAPSED_MS = 18 * SEND_MS + SETTLE_MS + PROGRAM_PAUSE_MS;
   const CLASSIC = ['291', '291', 'ORIG', 'ORIG', 'UV82', 'UV82', 'A58', 'A58', 'UV5G', 'UV5G', 'F11', 'UV6', 'UV6_ORIG'];
   const FOREIGN = FOREIGN_MAGICS.map((m) => m.radio);
-  const PROGRAM = PROGRAM_MAGICS.map((m) => Buffer.from(m.bytes).toString('latin1'));
+  const PROGRAM = PROGRAM_MAGICS.map((m) => m.name);
   const POWER_CYCLE_REMEDY = 'ask the human to power-cycle the radio and report the radio name; this CLI speaks the classic UV-5R protocol';
   const resetFails = (rate: number) => new TransportError('serial-io-failed', `cannot set ${rate} baud: EIO`, { target: 'fake', baud: rate });
 
   /** Return the bytes of the foreign magic for `radio`. */
   const foreignMagic = (radio: string) => FOREIGN_MAGICS.find((m) => m.radio === radio)!.bytes;
   /** Return the bytes of the program magic `ascii`. */
-  const programMagic = (ascii: string) => PROGRAM_MAGICS.find((m) => Buffer.from(m.bytes).toString('latin1') === ascii)!.bytes;
+  const programMagic = (ascii: string) => PROGRAM_MAGICS.find((m) => m.name === ascii)!.bytes;
 
   /** Return a fake radio that acks no classic magic. */
   function silentRadio(): FakeRadio {
@@ -389,11 +389,11 @@ describe('identify', () => {
     const radio = silentRadio();
     const { result, attempts, names, elapsed } = await scan(radio);
     expect(names).toEqual([...CLASSIC, ...FOREIGN, ...PROGRAM].map((n) => `${n} silent`));
-    expect(attempts.map((a) => a.baud)).toEqual([...new Array(18).fill(9600), ...new Array(5).fill(115200)]);
+    expect(attempts.map((a) => a.baud)).toEqual([...new Array(18).fill(9600), ...new Array(2).fill(115200)]);
     const gaps = attempts.slice(1).map((a, i) => a.at - attempts[i]!.at);
-    expect(gaps).toEqual([SETTLE_MS + SEND_MS, ...new Array(16).fill(SEND_MS), 0, ...new Array(4).fill(PROGRAM_PAUSE_MS)]);
+    expect(gaps).toEqual([SETTLE_MS + SEND_MS, ...new Array(16).fill(SEND_MS), 0, PROGRAM_PAUSE_MS]);
     expect(elapsed).toBe(SILENT_ELAPSED_MS);
-    expect(elapsed + 24 * ACK_WAIT_MS).toBeLessThanOrEqual(BUDGET_MS);
+    expect(elapsed + 20 * ACK_WAIT_MS).toBeLessThanOrEqual(BUDGET_MS);
     const json = (result as BaofengError).toJSON();
     expect(json).toMatchObject({
       reason: 'session-unavailable',
@@ -412,7 +412,7 @@ describe('identify', () => {
     const { result, attempts, names, elapsed } = await scan(radio);
     expect(names.slice(13, 18)).toEqual(['BTECH UV-5X3 silent', 'MTC UV-5R-3 silent', 'UV-6R invalid', 'UV-9G silent', 'Baojie BJ-UV55 silent']);
     expect(attempts[16]!.at - attempts[15]!.at).toBe(SETTLE_MS + SEND_MS);
-    expect(names).toHaveLength(23);
+    expect(names).toHaveLength(20);
     expect(elapsed).toBe(SILENT_ELAPSED_MS + SETTLE_MS);
     expect(elapsed).toBeLessThanOrEqual(BUDGET_MS);
     expect((result as BaofengError).toJSON()).toMatchObject({
@@ -504,7 +504,7 @@ describe('identify', () => {
       if (rate === 9600) throw resetFails(rate);
     });
     const { result, names } = await scan(radio);
-    expect(names).toHaveLength(23);
+    expect(names).toHaveLength(20);
     expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'serial-io-failed', baud: 9600 });
   });
 
@@ -527,6 +527,7 @@ describe('identify', () => {
     expect(names.slice(18)).toEqual(PROGRAM.map((n) => `${n} wrong-ack`));
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
+      message: 'radio opened no clone session; answers: PROGRAMBFNORMALU wrong-ack 15, PROGRAMCOLORPROU wrong-ack 15',
       answers: PROGRAM.map((magic) => ({ magic, outcome: 'wrong-ack', got: '15' })),
     });
   });

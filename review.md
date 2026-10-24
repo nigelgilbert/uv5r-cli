@@ -14,6 +14,8 @@ Example: the radio sends 15 to the BTECH UV-5X3 foreign magic and to PROGRAMBFNO
 
 Fix: change the text to "opened no clone session; answers: ${answers}".
 
+Resolved: the message reads "opened no clone session; answers: ${answers}".
+
 ### 2. README gives one wrong-ack pause for every case
 
 `README.md:249`
@@ -25,6 +27,8 @@ The README says "A wrong ack pauses 2 s". Two cases differ:
 
 The identify help (`src/cli/main.ts:223`) and the docstring (`radio.ts:227`) already state the 3 s first-magic retry. Fix: add both cases to the README sentence.
 
+Resolved: the README states the 3 s first-magic retry, the 1 s pause at 115200 and the 2 s pause for other wrong acks. The identify help already stated each case.
+
 ### 3. UV-5G Mini named under two magics with no firmware split
 
 `src/core/ident.ts:54` and `:58`
@@ -33,13 +37,15 @@ PROGRAMCOLORPROU and PROGRAMGMRS5RMIU both list "UV-5G Mini". `README.md:234/238
 
 Fix: write "UV-5G Mini fw 0.01" and "UV-5G Mini fw 0.05" in the two strings.
 
-Resolved: removed UV-5G Mini. PROGRAMGMRS5RMIU is gone and PROGRAMCOLORPROU no longer names it. The silent scan drops to about 36 s.
+Resolved: removed UV-5G Mini. PROGRAMGMRS5RMIU is gone and PROGRAMCOLORPROU no longer names it. PROGRAMBFGMRS05U, PROGRAMBF5RTECHU and PROGRAMBF-K6PROU are also gone, since they name no UV-5R. The 115200 phase keeps PROGRAMBFNORMALU and PROGRAMCOLORPROU, and the silent scan takes about 29 s.
 
 ### 4. Contrastive wording in comments and one runtime message
 
 - `src/core/ident.ts:100`: "The voice prompt setting is on/off instead of a language list." Write "The voice prompt setting is on/off."
 - `src/core/ident.ts:102`: "The second band is 220-260 MHz in place of UHF." Write "The second band is 220-260 MHz."
 - `src/core/protocol.ts:156`: "answered the clone handshake with ${got} in place of 06". This message is new on the branch. Update the expectation at `test/core/radio.test.ts:200` with it.
+
+Resolved: both comments use the suggested text. The handshake message reads "answered the clone handshake with ${got}", and the test expectation matches.
 
 ### 5. Review doc names a removed constant
 
@@ -49,6 +55,8 @@ The line says identify "owes `SCAN_SILENT_PAUSE_MS` or `SETTLE_MS` before the ne
 
 Fix: update the line to the current pauses, or mark the section as describing an earlier stage of the branch.
 
+Resolved: the line names no pause after silence, `SCAN_WRONG_ACK_PAUSE_MS` after a wrong ack and `SETTLE_MS` after an invalid ident or a refused closing `06`.
+
 ### 6. Dead BASETYPES entry
 
 `src/core/ident.ts:67`
@@ -56,6 +64,8 @@ Fix: update the line to the current pauses, or mark the section as describing an
 `{ family: 'uv-82x3', strings: ['HN5RV01'] }` never matches. UV82 is the only magic that lists `uv-82x3` (`ident.ts:29`), and `HN5RV01_FAMILY` returns `uv-82x3` for UV82 before the loop runs (`ident.ts:82,149`).
 
 Fix: delete the entry.
+
+Resolved: deleted the entry. The basetype test drops its two cases for it.
 
 ### 7. Core barrel exports names the CLI does not use
 
@@ -65,6 +75,8 @@ The barrel now exports `attempt`, `BASETYPES`, `DTMF_TABLES`, `parseIdent`, `cla
 
 Fix: remove the unused names from the barrel.
 
+Resolved: removed the six names and the `AttemptOutcome` and `ParsedIdent` types from the barrel.
+
 ### 8. PROGRAM_MAGICS drops its names (optional)
 
 `src/core/ident.ts:53-59`
@@ -73,7 +85,17 @@ Each entry starts as an ASCII name and keeps only the bytes. Three places decode
 
 Fix: add a `name` field to each entry, as the classic `Magic` type has, and read `entry.name`.
 
+Resolved: each entry has a `name` field. The three decodes and the two in `test/core/radio.test.ts` read `.name`.
+
 ## Dropped
 
 - Duplicate magic lookups in `radio.ts:220,238`. `magicByName` rejects unsupported magics (`ident.ts:120-125`), so it cannot serve the scan lookup. The remaining duplication is a few lines.
 - Public `Session.finish`. It has one internal caller (`radio.ts:249`), its docstring states the confirmed-handshake precondition (`protocol.ts:160-164`), and misuse fails at the first block-header check (`protocol.ts:205-207`).
+
+## Follow-ups from the adversarial review
+
+- `docs/clone-protocol-review.md:8`: dropped the stale test count.
+- `README.md`: deleted "A wrong ack at 115200 pauses 1 s"; the timing table covers it.
+- `test/core/radio.test.ts`: the 115200 wrong-ack test asserts the full session-unavailable message.
+- `test/core/ident.test.ts`: added HN5RV011 with A58, which gives `bf-f8hp` from `N5RV`; the PROGRAM_MAGICS test checks the bytes decode to `name`.
+- `src/core/index.ts`: removed `Classification`.

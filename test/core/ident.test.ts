@@ -61,8 +61,11 @@ describe('magic table', () => {
       ['UV-9G', '50 bb ff 20 12 05 25'],
       ['Baojie BJ-UV55', '50 bb dd 55 63 98 4d'],
     ]);
-    for (const p of PROGRAM_MAGICS) expect(Buffer.from(p.bytes).toString('latin1')).toMatch(/^PROGRAM.{8}U$/);
-    expect(PROGRAM_MAGICS).toHaveLength(5);
+    for (const p of PROGRAM_MAGICS) {
+      expect(p.name).toMatch(/^PROGRAM.{8}U$/);
+      expect(Buffer.from(p.bytes).toString('latin1')).toBe(p.name);
+    }
+    expect(PROGRAM_MAGICS).toHaveLength(2);
   });
 });
 
@@ -115,6 +118,10 @@ describe('basetypes', () => {
     expect(classify('291', version('HN5RV011'), IDENT)).toMatchObject({ family: 'uv5r', flags: { basetype: 'HN5RV01' } });
     expect(family('UV82', 'HN5RV011')).toBe('uv-82x3');
     expect(family('UV5G', 'HN5RV011')).toBe('uv-5g');
+  });
+
+  it('skips the HN5RV01 rule for a magic outside HN5RV01_FAMILY: HN5RV011 with A58 gives bf-f8hp from N5RV', () => {
+    expect(classify('A58', version('HN5RV011'), IDENT)).toMatchObject({ family: 'bf-f8hp', flags: { basetype: 'N5RV' } });
   });
 
   it('runs the HN5RV01 rule first: HN5RV01N5R3 with magic 291 gives uv5r', () => {
