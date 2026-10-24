@@ -10,11 +10,11 @@ radio at what the sweep finds. The phase 2 sequencer lives on top of both.
 ## Quickstart
 
 Requires Node 24, which runs the `.ts` sources directly. `uv5r` below means
-`node src/main.ts`, also `npm run uv5r --`.
+`node src/cli/main.ts`, also `npm run uv5r --`.
 
 ```sh
 npm install
-node src/main.ts status
+node src/cli/main.ts status
 ```
 
 1. Ask the human to set MR mode with the VFO/MR key and select slot 0.
@@ -216,6 +216,11 @@ npm run typecheck
 npm test
 ```
 
-`test/fake.ts` is an in-memory radio with the bench behaviour: aligned reads, acked writes,
+`src/core/` talks to the radio: transport, protocol, codec, radio, plan and errors.
+`src/cli/` parses arguments, prints and exits. `cli` imports `core` through
+`src/core/index.ts`; `core` imports nothing from `cli`, and `test/core/imports.test.ts`
+fails on any import path under `src/core/` that contains `cli/`.
+
+`test/core/fake.ts` is an in-memory radio with the bench behaviour: aligned reads, acked writes,
 VFO writes ignored, settings reload on session drop, the 16-byte read alias in
 `0x0E10..0x0E4F`, and the staged settings block committed by a write at `0x0E40`.
