@@ -77,14 +77,16 @@ the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` 
 as JSON.
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. A failed
-command prints nothing on stdout and one error object on stderr with `reason`, `message`,
-`remedy`, `retry` and detail fields when output is JSON, piped or with `--json`.
+command prints nothing on stdout and one error object on stderr when output is JSON, piped
+or with `--json`. The object has `reason`, `message`, `remedy` and `retry`, and each detail
+field below sits at its top level beside them.
 On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
 and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
 A `load` error from a plan entry write adds `slot`. A `sweep` error after the port is
 requested adds `summary`, the sweep result so far. An error inside the sweep loop adds
-`phase` (`check`, `entry` or `dwell`), `slot` (0) and `channel` (the plan channel, `null`
-during the check). `summary.slot0` says whether a write landed. A failed check also carries
+`phase` (`check`, `entry` or `dwell`), `slot` (0), `channel` (the plan channel, `null`
+during the check) and `requestedMhz` (the entry frequency, or the `checkMhz` frequency during
+the check). `summary.slot0` says whether a write landed. A failed check also carries
 the check result fields.
 
 On SIGINT, SIGTERM or SIGHUP once `key` or `sweep` has opened the port, the verb prints its

@@ -360,6 +360,7 @@ describe('sweep', () => {
       phase: 'dwell',
       slot: 0,
       channel: 2,
+      requestedMhz: '162.475',
       summary: {
         swept: 1,
         seconds: 2,
@@ -388,6 +389,7 @@ describe('sweep', () => {
       phase: 'entry',
       slot: 0,
       channel: 3,
+      requestedMhz: '162.55',
       summary: { swept: 2, slot0: null },
     });
     expect(errJson()).not.toHaveProperty('written');
@@ -420,9 +422,17 @@ describe('sweep', () => {
       phase: 'check',
       slot: 0,
       channel: null,
+      requestedMhz: '162.4',
       summary: { swept: 0, active: [], slot0: null },
     });
     expect(stdout).toEqual([]);
+  });
+
+  it('carries the checkMhz frequency in requestedMhz when the check capture fails', async () => {
+    listenMock.mockRejectedValue(new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"'));
+    await run(['sweep', planFile({ checkMhz: 162.55, channels: [{ channel: 9, rxMhz: 162.4, name: 'WX' }] }), '--seconds', '2', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'audio-process-failed', phase: 'check', slot: 0, channel: null, requestedMhz: '162.55' });
   });
 
   it.each([
@@ -437,6 +447,17 @@ describe('sweep', () => {
     expect(errJson()).not.toHaveProperty('summary');
     expect(open.calls).toBe(0);
     expect(listenMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves no --out-dir behind when ffmpeg is missing', async () => {
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('ffmpeg failed'), { code: 'ENOENT' }), '', ''));
+    const parent = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    const dir = join(parent, 'new', 'wavs');
+    await run([...SWEEP, '--out-dir', dir, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'dependency-missing' });
+    expect(existsSync(join(parent, 'new'))).toBe(false);
+    expect(existsSync(parent)).toBe(true);
   });
 
   it('exits 2 on an --out-dir it cannot write before testing ffmpeg or opening the transport', async () => {

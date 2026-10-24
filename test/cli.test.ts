@@ -184,7 +184,7 @@ describe('help', () => {
       'On SIGINT, SIGTERM or SIGHUP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
     );
     expect(help.errors.format).toContain('A failed PTT release after the signal exits 3 with interrupted in the error.');
-    expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0) and channel (the plan channel, null during the check).');
+    expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check).');
     expect(Object.keys(help.errors.reasons)).toEqual(REASON_ENUM);
     for (const line of Object.values(help.errors.reasons)) expect(line).toMatch(/^exit \d: /);
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
