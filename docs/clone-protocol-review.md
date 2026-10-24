@@ -62,6 +62,8 @@ The full round log sits in the overseer's session scratchpad as `sol-review.md`.
 
 ## Open items
 
-- Bench verification for 004: `uv5r identify` with the radio off, exit 5 with `session-unavailable` within 65 s by wall clock. Decide the dump criterion: on 2026-10-24 the aux area matched the fixture and main memory differed in channels 0, 1, 126 and 127, names 0, 126 and 127, the display line and work mode bytes, and VFO A and B. Then set issue 004 to Done.
+- Bench verification for 004 is complete. On 2026-10-24 `uv5r identify` with the radio off exited 5 with `session-unavailable` and empty `answers` in 59.3 s. The dump criterion is ticked: the aux area and settings block match the fixture and the 72 differing bytes sit in slots the bench verbs wrote.
+- Stale pin: in 2 of 15 pinned scans `291`, second in the order, stayed silent on its single attempt and the scan ran to `session-unavailable`. Unpinned `identify` and `status` never failed. A second attempt for every supported magic would cover it at the cost of budget.
+- Issue 005 proposes `SCAN_SILENT_PAUSE_MS` at 0 from the pause test.
 - `port.update({ baudRate })` ran on the AIOC in two full `identify` scans on 2026-10-24 with no error. No radio has answered at 115200.
 - S2: decide whether `help --json` reason strings gain a retry value.

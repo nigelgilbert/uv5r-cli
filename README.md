@@ -270,6 +270,8 @@ the next magic.
   the one failed run of each set `291` got no reply and the scan ran on to exit 5 with
   `session-unavailable`, after 33.4 s at 0 and 59.4 s at 2 s. The pause can drop to 0.
   `SCAN_SILENT_PAUSE_MS` in `src/core/radio.ts` holds it; issue 005 proposes the change.
+- **How long does a silent scan take?** On 2026-10-24 `uv5r identify --json` with the radio
+  off exited 5 with `session-unavailable` and empty `answers` after 59.3 s by wall clock.
 
 ## Bench files
 
