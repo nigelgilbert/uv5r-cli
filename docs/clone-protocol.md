@@ -507,7 +507,7 @@ Rules that follow:
 
 "UV-5R Plus" is ambiguous: the Baofeng UV-5R+ is classic and the Quansheng UV-5R Plus is a UV-K5. "UV-5R Pro 2nd gen" and "UV-5R EX Gen3" have no Chirp entry.
 
-UV17Pro magics:
+UV17Pro magics. The CLI probes the first two, since the others name no radio sold as a UV-5R.
 
 | ASCII | Models |
 |---|---|
@@ -527,7 +527,7 @@ Probe sequence:
 | 1 | 9600 | Classic magic, byte-paced | `06` within 1 s | Chirp has no record of a UV17 or UV17Pro reply at 9600 |
 | 2 | 9600 | `02` after `06` | 8 or 12 bytes, `AA` .. `DD` | 14 bytes `AA` .. `DD`: UV-5X3 or UV-5R-3 |
 | 3 | 9600 | Foreign magics as probes | No `06` | `06` names the radio in section 4.2 |
-| 4 | 115200 | Each 16-byte `PROGRAM...U` magic | - | `06`: UV17Pro family; the magic narrows the model group |
+| 4 | 115200 | Each of the two 16-byte `PROGRAM...U` magics | - | `06`: UV17Pro family; the magic narrows the model group |
 | 5 | 57600 | `PSEARCH` | - | `06 UV15999`: UV-17 or UV-13Pro. `06 DMR1702`: GA-510 V2. |
 | 6 | 38400 | UV-K5 hello frame | - | Reply starting `AB CD`: Quansheng UV-K5 family |
 
