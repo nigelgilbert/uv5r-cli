@@ -191,10 +191,10 @@ interface Scan {
   invalid: { magic: string; got: string } | undefined;
 }
 
-/** Wait the pause the last attempt owes, run one attempt with `bytes`, report it and record its answer. */
-async function probe(scan: Scan, name: string, bytes: Pick<Magic, 'bytes'>, confirm: boolean): Promise<AttemptOutcome> {
+/** Wait the pause the last attempt owes, run one attempt with `magic`, report it and record its answer. */
+async function probe(scan: Scan, name: string, magic: Pick<Magic, 'bytes'>, confirm: boolean): Promise<AttemptOutcome> {
   if (scan.pauseMs > 0) await sleep(scan.pauseMs);
-  const outcome = await attempt(scan.transport, bytes, { confirm });
+  const outcome = await attempt(scan.transport, magic, { confirm });
   scan.onAttempt({ name, baud: CLASSIC_BAUD, outcome: outcome.kind });
   if (outcome.kind === 'wrong-ack' || outcome.kind === 'refused') scan.answers.push({ magic: name, outcome: outcome.kind, got: outcome.got });
   if (outcome.kind === 'invalid') scan.invalid ??= { magic: name, got: outcome.got };
