@@ -67,7 +67,7 @@ one they may transmit on, after asking the human what the display shows.
 | `erase` | 0xFF over the record and name of slot N | one clone session | `channel`, `empty`, `appliesAfterSeconds` |
 | `key` | no; raises PTT | `--seconds` | `pttAsserted`, `seconds`, `released`; `interrupted` on a signal |
 | `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware`, `family`, `magic` |
-| `restore` | channels, names and settings from the image | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
+| `restore` | channels, names and settings from the image. On post-291 firmware the ident appears to encode the band limits, so a restore after a band-limit change exits 5 with `image-incompatible`; dump again first | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
 | `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
 | `listen` | no; opens no serial port | `--seconds` | `device`, `seconds`, `rmsDbfs`, `zeroSeconds`, `meanRmsDbfs`, `peakDbfs`, `active`, `activeSeconds`, `warnings`, `out` |
 | `sweep` | slot 0, once for the check and once per entry | the check, then the dwell plus about 3 s per entry | `swept`, `seconds`, `device`, `active`, `warnings`, `slot0`; `interrupted` on a signal |
