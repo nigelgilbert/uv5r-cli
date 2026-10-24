@@ -1,4 +1,3 @@
-import { parseDecimal } from '../cli/args.ts';
 import { UsageError } from './errors.ts';
 
 /** Radio address of memory channel `n` (16 bytes each). */
@@ -84,6 +83,16 @@ export function decodeTone(value: number): Tone {
   const code = DCS_CODES[index];
   if (code === undefined) return { kind: 'none' };
   return { kind: 'dcs', code, inverted };
+}
+
+const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+/** Parse a plain decimal with an optional sign and exponent, and throw UsageError naming `what` on anything else. */
+export function parseDecimal(text: string, what: string): number {
+  const trimmed = text.trim();
+  const n = DECIMAL.test(trimmed) ? Number(trimmed) : NaN;
+  if (!Number.isFinite(n)) throw new UsageError(`${what} needs a number; got ${JSON.stringify(text)}`);
+  return n;
 }
 
 /** Parse a frequency in MHz (`154.68`), Hz (`154680000`) or exponent form (`154.68e6`). */

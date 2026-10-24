@@ -1,4 +1,7 @@
+import { parseDecimal } from '../core/codec.ts';
 import { UsageError } from '../core/errors.ts';
+
+export { parseDecimal };
 
 export interface ParsedArgs {
   verb: string | undefined;
@@ -71,14 +74,4 @@ export function numberFlag(flags: Map<string, string | true>, name: string): num
   const raw = stringFlag(flags, name);
   if (raw === undefined) return undefined;
   return parseDecimal(raw, `--${name}`);
-}
-
-const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
-
-/** Parse a plain decimal with an optional sign and exponent, and throw UsageError naming `what` on anything else. */
-export function parseDecimal(text: string, what: string): number {
-  const trimmed = text.trim();
-  const n = DECIMAL.test(trimmed) ? Number(trimmed) : NaN;
-  if (!Number.isFinite(n)) throw new UsageError(`${what} needs a number; got ${JSON.stringify(text)}`);
-  return n;
 }
