@@ -80,6 +80,13 @@ async function onTerminal(fn: () => Promise<void>): Promise<void> {
   }
 }
 
+/** Run the CLI under fake timers until it finishes. */
+async function run(argv: string[], open: OpenTransport): Promise<void> {
+  const done = cli(argv, open);
+  await vi.runAllTimersAsync();
+  await done;
+}
+
 const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unknown>;
 const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, any>;
 
@@ -362,9 +369,7 @@ describe('status output', () => {
     try {
       const radio = new FakeRadio();
       radio.handshakesIgnored = 2;
-      const done = cli(['status', '--json'], opener(radio));
-      await vi.runAllTimersAsync();
-      await done;
+      await run(['status', '--json'], opener(radio));
     } finally {
       vi.useRealTimers();
     }
@@ -393,13 +398,6 @@ describe('UV5R_MAGIC', () => {
   });
 
   const UV82 = '50 bb ff 20 13 01 05';
-
-  /** Run the CLI under fake timers until it finishes. */
-  async function run(argv: string[], open: OpenTransport): Promise<void> {
-    const done = cli(argv, open);
-    await vi.runAllTimersAsync();
-    await done;
-  }
 
   /** Return a fake radio that acks only the UV82 magic. */
   function uv82Radio(): FakeRadio {
@@ -483,7 +481,7 @@ describe('UV5R_MAGIC', () => {
     expect(existsSync(out)).toBe(false);
   });
 
-  it('leaves key alone, since it opens no clone session', async () => {
+  it('ignores UV5R_MAGIC for key', async () => {
     vi.useRealTimers();
     vi.stubEnv('UV5R_MAGIC', 'BOGUS');
     await cli(['key', '--seconds', '0.1', '--json'], opener(new FakeRadio()));
@@ -498,13 +496,6 @@ describe('identify', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  /** Run the CLI under fake timers until it finishes. */
-  async function run(argv: string[], open: OpenTransport): Promise<void> {
-    const done = cli(argv, open);
-    await vi.runAllTimersAsync();
-    await done;
-  }
 
   it('reports the bench radio at the first magic with pin null and the keys of the help result', async () => {
     await run(['identify', '--json'], opener(new FakeRadio()));
@@ -770,13 +761,6 @@ describe('restore verification', () => {
     vi.useRealTimers();
   });
 
-  /** Run the CLI under fake timers until it finishes. */
-  async function run(argv: string[], open: OpenTransport): Promise<void> {
-    const done = cli(argv, open);
-    await vi.runAllTimersAsync();
-    await done;
-  }
-
   it('reports the channel and name blocks it read back', async () => {
     await run(['restore', FIXTURE, '--force', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
@@ -812,13 +796,6 @@ describe('settings write errors', () => {
     vi.useRealTimers();
   });
 
-  /** Run the CLI under fake timers until it finishes. */
-  async function run(argv: string[], open: OpenTransport): Promise<void> {
-    const done = cli(argv, open);
-    await vi.runAllTimersAsync();
-    await done;
-  }
-
   it('exits 5 with the settings remedy when the radio does not ack a settings write', async () => {
     const radio = new FakeRadio();
     radio.refuseWriteAt = 0x0e20;
@@ -836,13 +813,6 @@ describe('dump output file', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  /** Run the CLI under fake timers until it finishes. */
-  async function run(argv: string[], open: OpenTransport): Promise<void> {
-    const done = cli(argv, open);
-    await vi.runAllTimersAsync();
-    await done;
-  }
 
   it.each([
     ['a missing directory', (dir: string) => join(dir, 'missing', 'radio.img')],
@@ -1040,13 +1010,6 @@ describe('load', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  /** Run the CLI under fake timers until it finishes. */
-  async function run(argv: string[], open: OpenTransport): Promise<void> {
-    const done = cli(argv, open);
-    await vi.runAllTimersAsync();
-    await done;
-  }
 
   /** Write `plan` to a temp file and return its path. */
   function planFile(plan: object): string {

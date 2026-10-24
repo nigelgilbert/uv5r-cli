@@ -87,7 +87,7 @@ describe('magicByName', () => {
 });
 
 describe('basetypes', () => {
-  /** A magic whose families include `f`. */
+  /** A magic whose families include each family. */
   const HOME: Record<Exclude<Family, 'unknown' | 'uv-5g'>, MagicName> = {
     uv5r: 'ORIG',
     'bf-f8hp': 'A58',
@@ -105,7 +105,7 @@ describe('basetypes', () => {
     expect(classify(magic, version(s), IDENT)).toMatchObject({ family: f, flags: { basetype: s } });
   });
 
-  it.each(cases)('counts %s (%s) for nothing with a magic whose families exclude it', (s, f) => {
+  it.each(cases)('ignores %s (%s) with a magic whose families exclude it', (s, f) => {
     const magic: MagicName = f === 'uv-6' ? 'ORIG' : 'UV6';
     const blank = classify(magic, version(''), IDENT);
     expect(classify(magic, version(s), IDENT)).toMatchObject({ family: blank.family, flags: { basetype: null } });

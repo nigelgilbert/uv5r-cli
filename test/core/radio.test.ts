@@ -68,6 +68,16 @@ describe('erase', () => {
   });
 });
 
+/** A 9-byte ident, one byte longer than the bench ident. */
+const NINE_BYTES = Uint8Array.from([0xaa, 0x30, 0x76, 0x04, 0x00, 0x05, 0x20, 0x00, 0xdd]);
+
+/** Make `radio` answer the closing 06 with nothing. */
+function refuseClosingAck(radio: FakeRadio): void {
+  const read = radio.read.bind(radio);
+  let reads = 0;
+  vi.spyOn(radio, 'read').mockImplementation(async (n, ms) => (++reads === 3 ? new Uint8Array() : read(n, ms)));
+}
+
 /** Run fake timers alongside `p` and return its result, or its rejection as the value. */
 async function settled<T>(p: Promise<T>): Promise<T | BaofengError> {
   const caught = p.catch((err: unknown) => err as BaofengError);
@@ -175,7 +185,7 @@ describe('handshake', () => {
 
   it('fails with protocol-reply-invalid and the bytes in got on a 9-byte ident with magic 291, once', async () => {
     const radio = new FakeRadio();
-    radio.identReply = Uint8Array.from([0xaa, 0x30, 0x76, 0x04, 0x00, 0x05, 0x20, 0x00, 0xdd]);
+    radio.identReply = NINE_BYTES;
     const err = await settled(new Session(radio).start());
     expect((err as BaofengError).toJSON()).toMatchObject({ reason: 'protocol-reply-invalid', got: 'aa 30 76 04 00 05 20 00 dd', magic: '291' });
     expect(radio.handshakes).toHaveLength(1);
@@ -221,9 +231,7 @@ describe('handshake', () => {
 
   it('fails at once with the wait remedy when the radio refuses the closing 06 with magic 291', async () => {
     const radio = new FakeRadio();
-    const read = radio.read.bind(radio);
-    let reads = 0;
-    vi.spyOn(radio, 'read').mockImplementation(async (n, ms) => (++reads === 3 ? new Uint8Array() : read(n, ms)));
+    refuseClosingAck(radio);
     const err = await settled(new Session(radio).start());
     expect((err as BaofengError).toJSON()).toMatchObject({ reason: 'session-unavailable', message: 'radio refused the clone session', remedy: 'wait 3 s and rerun the command', got: '' });
     expect(radio.handshakes).toHaveLength(1);
@@ -265,7 +273,6 @@ describe('identify', () => {
   const SEND_MS = 70;
   /** Fake time the three post-ident reads cost: 50 ms after each. */
   const FINISH_MS = 150;
-  const NINE_BYTES = Uint8Array.from([0xaa, 0x30, 0x76, 0x04, 0x00, 0x05, 0x20, 0x00, 0xdd]);
   /** Ack wait of each attempt that gets no 06; the fake answers at once, so the budget adds it per attempt. */
   const ACK_WAIT_MS = 1200;
   /** The plan's budget for a silent cable across the three phases. */
@@ -378,7 +385,7 @@ describe('identify', () => {
     expect(writesAfterIdentRequest(write)).toEqual([]);
   });
 
-  it('gives session-unavailable with an empty answers and a remedy without identify on silence through all three phases, within the budget', async () => {
+  it('gives session-unavailable with empty answers and a remedy without identify on silence through all three phases, within the budget', async () => {
     const radio = silentRadio();
     const { result, attempts, names, elapsed } = await scan(radio);
     expect(names).toEqual([...CLASSIC, ...FOREIGN, ...PROGRAM].map((n) => `${n} silent`));
@@ -541,9 +548,7 @@ describe('identify', () => {
 
   it('lists a refused closing 06 in answers and pauses SETTLE_MS before the next magic', async () => {
     const radio = new FakeRadio();
-    const read = radio.read.bind(radio);
-    let reads = 0;
-    vi.spyOn(radio, 'read').mockImplementation(async (n, ms) => (++reads === 3 ? new Uint8Array() : read(n, ms)));
+    refuseClosingAck(radio);
     const { result, attempts, names } = await scan(radio);
     expect(names.slice(0, 2)).toEqual(['291 refused', 'ORIG silent']);
     expect(attempts[1]!.at - attempts[0]!.at).toBe(SETTLE_MS + SEND_MS);

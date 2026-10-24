@@ -70,7 +70,7 @@ export class FakeRadio implements Transport {
   private lastByteAt = 0;
   ptt = false;
   /** Baud rate the host set last. */
-  rate = 9600;
+  rate = CLASSIC_RATE;
   /** Addresses of every write command the radio received, in order. */
   readonly writes: number[] = [];
   /** Number of magic sequences to leave unanswered, as a radio still in a dying clone session. */
