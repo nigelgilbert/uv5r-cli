@@ -37,13 +37,13 @@ afterEach(() => {
 });
 
 const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unknown>;
-const errJson = () => JSON.parse(stderr.join('').trim()) as { kind: string; message: string };
+const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, unknown>;
 
 describe('listen --out and --play', () => {
   it('exits 2 naming --out when --play comes without it, before running ffmpeg', async () => {
     await cli(['listen', '--seconds', '3', '--play', '--json']);
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ kind: 'usage', message: expect.stringContaining('--out') });
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining('--out') });
     expect(execFile).not.toHaveBeenCalled();
   });
 
@@ -65,15 +65,52 @@ describe('listen --out and --play', () => {
     ]);
   });
 
+  it('accepts --floor at both ends of -100..0', async () => {
+    for (const floor of ['-100', '0']) {
+      stdout = [];
+      await cli(['listen', '--seconds', '3', '--floor', floor, '--json']);
+      expect(process.exitCode).toBe(0);
+      expect(outJson()).toMatchObject({ seconds: 3 });
+    }
+  });
+
   it('leaves out off the JSON result without --out', async () => {
     await cli(['listen', '--seconds', '3', '--json']);
     expect(outJson()).not.toHaveProperty('out');
   });
 
-  it('names --out and --play in the help text', async () => {
-    await cli(['help']);
+  it('exits 2 on --out - before running ffmpeg', async () => {
+    await cli(['listen', '--seconds', '3', '--out', '-', '--json']);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', flag: 'out', message: expect.stringContaining('--out takes a file path') });
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  it('exits 3 with retry no and a remedy that keeps the capture when afplay fails', async () => {
+    execFile.mockImplementation((file, _args, _opts, cb) =>
+      file === 'afplay' ? cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', '') : cb(null, '', stderrFrames(4)),
+    );
+    await cli(['listen', '--seconds', '3', '--out', 'rx.wav', '--play', '--json']);
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({
+      reason: 'audio-process-failed',
+      file: 'rx.wav',
+      remedy: 'the capture is saved at file; ask the human to play it; do not capture again',
+      retry: 'no',
+    });
+    expect(stdout).toEqual([]);
+  });
+
+  it('names --out and --play in help listen', async () => {
+    const tty = process.stdout.isTTY;
+    process.stdout.isTTY = true;
+    try {
+      await cli(['help', 'listen']);
+    } finally {
+      process.stdout.isTTY = tty;
+    }
     const help = stdout.join('');
-    expect(help).toMatch(/--out FILE .*listen: write the capture as a 48 kHz mono WAV/);
-    expect(help).toMatch(/--play .*needs --out/);
+    expect(help).toMatch(/--out FILE +write the capture as a 48 kHz mono WAV and report out; overwrites FILE/);
+    expect(help).toMatch(/--play +play .*needs --out/);
   });
 });

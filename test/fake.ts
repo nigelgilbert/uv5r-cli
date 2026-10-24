@@ -44,6 +44,10 @@ export class FakeRadio implements Transport {
   writesIgnoredAbove = 0x0f40;
   /** Address of a write whose first byte the radio stores inverted, to fail a read-back. */
   corruptWriteAt: number | undefined;
+  /** Address of a write the radio drops without an ack. */
+  refuseWriteAt: number | undefined;
+  /** Address of a read the radio leaves unanswered, to time out the read. */
+  silentReadAt: number | undefined;
 
   constructor() {
     this.eeprom.set(Buffer.from('HN5RV011', 'latin1'), 0x1ec0 + 48);
@@ -53,7 +57,6 @@ export class FakeRadio implements Transport {
       SETTINGS,
     );
     this.eeprom[0x0e4c] = 0;
-    this.eeprom[0x0e4a] = 0x9f;
     this.eeprom.set([4, 4, 6, 0, 0, 0, 0, 0], 0x0f08);
     this.reload();
   }
@@ -139,6 +142,7 @@ export class FakeRadio implements Transport {
         if (this.inbox.length < 4) return;
         const [, hi, lo, size] = this.inbox.splice(0, 4) as number[];
         const addr = ((hi! << 8) | lo!) & ~0x0f;
+        if (addr === this.silentReadAt) continue;
         if (this.pendingAckForRead) this.outbox.push(0x06);
         this.pendingAckForRead = true;
         this.outbox.push(0x58, hi!, lo!, size!, ...this.serve(addr, size!));
@@ -152,6 +156,7 @@ export class FakeRadio implements Transport {
         const data = this.inbox.splice(0, len);
         const addr = (hi! << 8) | lo!;
         this.writes.push(addr);
+        if (addr === this.refuseWriteAt) continue;
         this.store(addr, data);
         this.outbox.push(0x06);
         continue;

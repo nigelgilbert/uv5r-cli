@@ -61,6 +61,18 @@ beforeEach(() => {
 });
 
 describe('SerialTransport', () => {
+  it('reports a missing device path as device-unavailable with a remedy', async () => {
+    const err = await SerialTransport.open('/dev/uv5r-nonexistent').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    expect((err as TransportError).toJSON()).toEqual({
+      reason: 'device-unavailable',
+      message: 'no device at /dev/uv5r-nonexistent',
+      remedy: 'reseat the cable or pass --target with an existing path',
+      retry: 'after-remedy',
+      target: '/dev/uv5r-nonexistent',
+    });
+  });
+
   it('buffers data events and returns them from read', async () => {
     const { t, port } = await openFake();
     port.emit('data', Buffer.from([1, 2, 3]));
@@ -77,6 +89,7 @@ describe('SerialTransport', () => {
     expect(Date.now() - start).toBeLessThan(500);
     expect(err).toBeInstanceOf(TransportError);
     expect((err as TransportError).message).toContain('EIO');
+    expect((err as TransportError).reason).toBe('serial-io-failed');
     expect((err as TransportError).detail).toEqual({ target: '/dev/null' });
     expect(() => t.write(Uint8Array.of(0x50))).toThrow(TransportError);
     await expect(t.setPtt(true)).rejects.toBeInstanceOf(TransportError);
@@ -99,6 +112,7 @@ describe('SerialTransport', () => {
     const err = await t.setPtt(false).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     expect((err as TransportError).message).toBe('set EIO');
+    expect((err as TransportError).toJSON()).toMatchObject({ reason: 'ptt-control-failed', retry: 'no' });
   });
 
   it('lowers DTR before closing and ignores a failed release', async () => {

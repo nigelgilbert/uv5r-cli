@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_SIZE } from '../src/codec.ts';
-import { Session } from '../src/protocol.ts';
+import { SETTLE_MS, Session, settle } from '../src/protocol.ts';
 import { IMAGE_HEADER, RESTORE_RANGES, imageSettingsBlock, restoreImage, writeSettings } from '../src/radio.ts';
 import { FakeRadio } from './fake.ts';
 
@@ -150,5 +150,40 @@ describe('settings page reads', () => {
     await drive(s.readBlock(addr, 0x10));
     const reads = write.mock.calls.map(([bytes]) => [...bytes]).filter((b) => b[0] === 0x53);
     expect(reads).toEqual([[0x53, addr >> 8, addr & 0xff, 0x10]]);
+  });
+});
+
+describe('settle', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("waits on a ref'd timer so a port that closes mid-wait leaves the loop alive", () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    void settle();
+    const timer = setTimeoutSpy.mock.results[0]!.value as NodeJS.Timeout;
+    expect(timer.hasRef()).toBe(true);
+    clearTimeout(timer);
+  });
+
+  it('waits SETTLE_MS while stop stays pending', async () => {
+    vi.useFakeTimers();
+    let done = false;
+    void settle(new Promise(() => {})).then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+  });
+
+  it('resolves at once and clears its timer when stop resolves', async () => {
+    vi.useFakeTimers();
+    let stop = () => {};
+    const done = settle(new Promise<void>((resolve) => (stop = resolve)));
+    expect(vi.getTimerCount()).toBe(1);
+    stop();
+    await done;
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

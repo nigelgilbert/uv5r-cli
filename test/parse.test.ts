@@ -13,7 +13,7 @@ function cli(...argv: string[]) {
     env: { ...process.env, UV5R_TARGET: '/dev/null-nonexistent' },
     encoding: 'utf8',
   });
-  const body = JSON.parse(r.stderr.trim()) as { kind: string; message: string };
+  const body = JSON.parse(r.stderr.trim()) as { reason: string; message: string };
   return { status: r.status, body };
 }
 
@@ -64,19 +64,19 @@ describe('CLI number and file errors', () => {
   it('exits 2 on an empty channel', () => {
     const { status, body } = cli('read', '', '--json');
     expect(status).toBe(2);
-    expect(body.kind).toBe('usage');
+    expect(body.reason).toBe('invalid-argument');
   });
 
   it('exits 2 on a hex channel', () => {
     const { status, body } = cli('read', '0x5', '--json');
     expect(status).toBe(2);
-    expect(body.kind).toBe('usage');
+    expect(body.reason).toBe('invalid-argument');
   });
 
   it('exits 2 when the restore image is missing', () => {
     const { status, body } = cli('restore', '/nonexistent/x.img', '--force', '--json');
     expect(status).toBe(2);
-    expect(body.kind).toBe('usage');
+    expect(body.reason).toBe('invalid-argument');
     expect(body.message).toContain('cannot read');
   });
 
@@ -102,18 +102,18 @@ describe('CLI number and file errors', () => {
     expect(cli('tune', '146.82', '--channel', '5', '--offset', '-0.6000049', '--json').status).toBe(2);
     const ok = cli('tune', '146.82', '--channel', '5', '--offset', '-0.6', '--json');
     expect(ok.status).toBe(3);
-    expect(ok.body.kind).toBe('transport');
+    expect(ok.body.reason).toBe('device-unavailable');
   });
 
   it('exits 2 on a non-ASCII name without a device', () => {
     const { status, body } = cli('tune', '146.82', '--channel', '5', '--name', 'CAFÉ', '--json');
     expect(status).toBe(2);
-    expect(body.kind).toBe('usage');
+    expect(body.reason).toBe('invalid-argument');
   });
 
-  it('exits 0 with the whole help text on a pipe', () => {
+  it('exits 0 with the whole help JSON on a pipe', () => {
     const r = spawnSync(process.execPath, ['src/main.ts', 'help'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(r.status).toBe(0);
-    expect(r.stdout.trimEnd().endsWith('128+signal key or sweep interrupted')).toBe(true);
+    expect(JSON.parse(r.stdout).exitCodes['128+signal']).toBe('interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary');
   });
 });

@@ -9,12 +9,9 @@ export const CHANNEL_COUNT = 128;
 
 /** Radio addresses of the state page fields and the firmware block; CHIRP image offsets minus 8. */
 export const ADDR = {
-  /** Start of the 64-byte page holding the flags, work mode and channel A/B numbers. */
+  /** Start of the 64-byte page holding the work mode. */
   statePage: 0x0e40,
-  flags: 0x0e4a,
   workmode: 0x0e4c,
-  mrcha: 0x0e76,
-  mrchb: 0x0e77,
   firmwareBlock: 0x1ec0,
 } as const;
 

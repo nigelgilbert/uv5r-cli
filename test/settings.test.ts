@@ -92,6 +92,16 @@ describe('settings write', () => {
     expect(await drive(verifySettingsInFreshSession(radio, block))).toEqual({ ...FIXTURE_SETTINGS, voice: 'off' });
     expect(handshakes(write)).toBe(1);
   });
+  it('names the settings block in the remedy when the radio does not ack a write', async () => {
+    const radio = new FakeRadio();
+    radio.refuseWriteAt = SETTINGS_BASE + 0x10;
+    const s = await startSession(radio);
+    await expect(drive(writeSettings(s, { squelch: 3 }))).rejects.toMatchObject({
+      reason: 'write-unacknowledged',
+      remedy: 'run uv5r settings to read the block, then rerun',
+      retry: 'after-remedy',
+    });
+  });
   it('restores the eight exposed fields of a zeroed block and leaves the other bytes zero', async () => {
     const radio = new FakeRadio();
     radio.eeprom.fill(0, SETTINGS_BASE, SETTINGS_BASE + SETTINGS_SIZE);
@@ -118,6 +128,17 @@ describe('restore', () => {
     const fresh = await drive(startFreshSession(radio));
     expect(await drive(verifySettingsBlock(fresh, imageSettingsBlock(fixture)))).toEqual(FIXTURE_SETTINGS);
     expect(await drive(verifyRestoredRanges(fresh, fixture))).toBe(64);
+  });
+  it('says to rerun the restore when the radio does not ack a write', async () => {
+    const radio = new FakeRadio();
+    radio.refuseWriteAt = 0x0100;
+    const s = await startSession(radio);
+    await expect(drive(restoreImage(s, fixture))).rejects.toMatchObject({
+      reason: 'write-unacknowledged',
+      message: 'radio refused write at 0x100',
+      remedy: 'rerun the restore',
+      retry: 'once',
+    });
   });
   it('reports dropped name writes as a device-state error naming the first address', async () => {
     const radio = new FakeRadio();

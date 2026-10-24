@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { CLIP_WARNING, captureSeconds, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
+import { CLIP_WARNING, KILL_GRACE_MS, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../src/audio.ts';
 
 /** Pre-high-pass astats fields for one frame: sample min and max on the float scale, and the count of samples at either. */
 interface Raw {
@@ -179,13 +179,13 @@ describe('listen', () => {
 
   it('reports a missing ffmpeg', async () => {
     ffmpegReturns({ code: 'ENOENT' }, '');
-    await expect(listen('AIOC Audio', 2)).rejects.toMatchObject({ kind: 'transport', message: expect.stringMatching(/ffmpeg not found on PATH/) });
+    await expect(listen('AIOC Audio', 2)).rejects.toMatchObject({ kind: 'transport', reason: 'dependency-missing', message: expect.stringMatching(/ffmpeg not found on PATH/) });
   });
   it('rejects a killed run even when astats output already arrived', async () => {
     const stderr = [STDERR, 'Input #0, avfoundation, from \':AIOC Audio\':', 'Exiting normally, received signal 15.'].join('\n');
     ffmpegReturns({ killed: true, signal: 'SIGTERM', code: undefined }, stderr);
     const err = await listen('AIOC Audio', 3).catch((e) => e);
-    expect(err).toMatchObject({ kind: 'transport', detail: { signal: 'SIGTERM' } });
+    expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { signal: 'SIGTERM' } });
     expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio": /);
     expect(err.message).toContain('Number_of_samples=48000.000000 | Input #0, avfoundation');
     expect(err.message).toMatch(/received signal 15\.$/);
@@ -197,7 +197,7 @@ describe('listen', () => {
   it('rejects a clean exit with fewer whole seconds than requested plus the dropped first second', async () => {
     ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-40', '-35'), frame(2, '-40', '-35'), frame(3, '-40', '-35', 12000)].join('\n'));
     const err = await listen('AIOC Audio', 3).catch((e) => e);
-    expect(err).toMatchObject({ kind: 'transport', detail: { captured: 3, requested: 4 } });
+    expect(err).toMatchObject({ kind: 'transport', reason: 'capture-incomplete', retry: 'once', detail: { captured: 3, requested: 4 } });
     expect(err.message).toMatch(/^ffmpeg captured 3 of 4 seconds from "AIOC Audio": /);
   });
   it('rejects an empty capture with the stderr tail', async () => {
@@ -222,6 +222,148 @@ describe('listen', () => {
     ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-45', '-40'), frame(2, '-35', '-30')].join('\n'));
     const r = await listen('AIOC Audio', 2, -40);
     expect(r).toMatchObject({ active: [false, true], activeSeconds: 1 });
+  });
+});
+
+describe('listen with stop', () => {
+  beforeEach(() => {
+    execFile.mockReset();
+  });
+
+  it('kills ffmpeg when stop resolves and rejects only once ffmpeg exits', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), '', STDERR);
+      return { kill };
+    });
+    let stop = () => {};
+    const stopped = new Promise<void>((resolve) => (stop = resolve));
+    let settled = false;
+    const done = listen('AIOC Audio', 3, -50, { stop: stopped }).finally(() => (settled = true));
+    stop();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(settled).toBe(false);
+    exit();
+    const err = await done.catch((e) => e);
+    expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed' });
+    expect(err.message).toMatch(/^ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"/);
+  });
+  it('kills ffmpeg at once when stop resolved before the capture started', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), '', STDERR);
+      return { kill };
+    });
+    const done = listen('AIOC Audio', 3, -50, { stop: Promise.resolve() });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    exit();
+    await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringMatching(/^ffmpeg killed after a signal to uv5r/) });
+  });
+  it('resolves normally when stop lands after ffmpeg exited but before the callback', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    const child = { kill, exitCode: null as number | null, signalCode: null };
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => {
+        child.exitCode = 0;
+        cb(null, '', STDERR);
+      };
+      return child;
+    });
+    let stop = () => {};
+    const done = listen('AIOC Audio', 3, -50, { stop: new Promise<void>((resolve) => (stop = resolve)) });
+    child.exitCode = 0;
+    stop();
+    await new Promise((r) => setTimeout(r, 0));
+    exit();
+    expect(kill).not.toHaveBeenCalled();
+    expect((await done).activeSeconds).toBe(2);
+  });
+  it('leaves a finished capture untouched when a later stop resolves', async () => {
+    let exit = () => {};
+    const kill = vi.fn();
+    const reads: PropertyKey[] = [];
+    let finished = false;
+    // Keep exitCode null so only the callback flag can tell the handler ffmpeg exited.
+    const child = new Proxy(
+      { kill, exitCode: null, signalCode: null },
+      {
+        get(target, key, receiver) {
+          if (finished) reads.push(key);
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      exit = () => cb(null, '', STDERR);
+      return child;
+    });
+    let stop = () => {};
+    const done = listen('AIOC Audio', 3, -50, { stop: new Promise<void>((resolve) => (stop = resolve)) });
+    exit();
+    expect((await done).activeSeconds).toBe(2);
+    finished = true;
+    stop();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(kill).not.toHaveBeenCalled();
+    expect(reads).toEqual([]);
+  });
+  it('sends SIGKILL when ffmpeg ignores SIGTERM for the grace period', async () => {
+    vi.useFakeTimers();
+    try {
+      let exit = () => {};
+      const kill = vi.fn();
+      execFile.mockImplementation((_file, _args, _opts, cb) => {
+        exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGKILL' }), '', STDERR);
+        return { kill, exitCode: null, signalCode: null };
+      });
+      const done = listen('AIOC Audio', 3, -50, { stop: Promise.resolve() });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(kill).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(KILL_GRACE_MS);
+      expect(kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+      exit();
+      await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringMatching(/^ffmpeg killed after a signal to uv5r/) });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('leaves ffmpeg running while stop stays pending', async () => {
+    const kill = vi.fn();
+    execFile.mockImplementation((_file, _args, _opts, cb) => {
+      setTimeout(() => cb(null, '', STDERR), 0);
+      return { kill };
+    });
+    const r = await listen('AIOC Audio', 3, -50, { stop: new Promise(() => {}) });
+    expect(r.activeSeconds).toBe(2);
+    expect(kill).not.toHaveBeenCalled();
+  });
+});
+
+describe('checkFfmpeg', () => {
+  beforeEach(() => {
+    execFile.mockReset();
+  });
+
+  it('runs ffmpeg -version with a short timeout and resolves on exit 0', async () => {
+    ffmpegReturns(null, '');
+    await checkFfmpeg();
+    expect(execFile.mock.calls[0]!.slice(0, 3)).toEqual(['ffmpeg', ['-version'], { timeout: 5000 }]);
+  });
+  it('maps a missing ffmpeg to dependency-missing', async () => {
+    ffmpegReturns({ code: 'ENOENT' }, '');
+    await expect(checkFfmpeg()).rejects.toMatchObject({ kind: 'transport', reason: 'dependency-missing', remedy: 'run brew install ffmpeg' });
+  });
+  it('maps any other failure to audio-process-failed with the stderr tail', async () => {
+    ffmpegReturns({ code: 1 as unknown as string }, 'dyld: Library not loaded: libavdevice.62.dylib');
+    const err = await checkFfmpeg().catch((e) => e);
+    expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { code: 1 } });
+    expect(err.message).toBe('ffmpeg -version exited with code 1: dyld: Library not loaded: libavdevice.62.dylib');
+    expect(err.remedy).not.toContain('--device');
   });
 });
 
@@ -274,14 +416,24 @@ describe('play', () => {
 
   it('reports a missing afplay as a transport error naming the file', async () => {
     execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('spawn afplay ENOENT'), { code: 'ENOENT' }), '', ''));
-    await expect(play('rx.wav', 3)).rejects.toMatchObject({ kind: 'transport', message: 'afplay not found on PATH; cannot play rx.wav', detail: { file: 'rx.wav' } });
+    await expect(play('rx.wav', 3)).rejects.toMatchObject({
+      kind: 'transport',
+      reason: 'dependency-missing',
+      message: 'afplay not found on PATH; cannot play rx.wav',
+      detail: { file: 'rx.wav' },
+      remedy: 'the capture is saved at file; ask the human to play it; do not capture again',
+      retry: 'no',
+    });
   });
   it('reports a non-zero afplay exit as a transport error naming the file', async () => {
     execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', "Error: AudioFileOpen failed ('dta?')\n"));
     await expect(play('rx.wav', 3)).rejects.toMatchObject({
       kind: 'transport',
+      reason: 'audio-process-failed',
       message: "afplay exited with code 1 playing rx.wav: Error: AudioFileOpen failed ('dta?')",
       detail: { file: 'rx.wav', code: 1 },
+      remedy: 'the capture is saved at file; ask the human to play it; do not capture again',
+      retry: 'no',
     });
   });
   it('passes the file to afplay with a timeout past its length', async () => {

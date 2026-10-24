@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { signalExitCode } from '../src/errors.ts';
+import { TransportError, signalExitCode } from '../src/errors.ts';
 import { KEY_SIGNALS, holdPtt } from '../src/radio.ts';
 import type { Transport } from '../src/transport.ts';
 import { FakeRadio } from './fake.ts';
@@ -56,7 +56,13 @@ describe('holdPtt', () => {
     expect(radio.ptt).toBe(false);
   });
 
-  it('throws the release error and removes its listeners', async () => {
+  it('reports pttAsserted, seconds and released on success', async () => {
+    const result = await holdPtt(new FakeRadio(), 0.1, new EventEmitter());
+    expect(Object.keys(result)).toEqual(['pttAsserted', 'seconds', 'released']);
+    expect(result).toMatchObject({ pttAsserted: true, released: true });
+  });
+
+  it('throws a transport error with the unplug remedy when the release fails after the assertion', async () => {
     const em = new EventEmitter();
     const radio: Transport = Object.assign(new FakeRadio(), {
       async setPtt(on: boolean): Promise<void> {
@@ -65,8 +71,48 @@ describe('holdPtt', () => {
     });
     const pending = holdPtt(radio, 5, em);
     setTimeout(() => em.emit('SIGINT'), 50);
-    await expect(pending).rejects.toThrow('release failed');
+    const err = await pending.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    const body = (err as TransportError).toJSON();
+    expect(body).toMatchObject({ reason: 'ptt-control-failed', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT', interrupted: 'SIGINT' });
+    expect(body).not.toHaveProperty('phase');
+    expect(body).not.toHaveProperty('pttAsserted');
+    expect(body).not.toHaveProperty('released');
+    expect(body.message).toContain('PTT rose and the release is unconfirmed: release failed');
+    expect(body.message).toContain('unplug the AIOC');
+    expect(body.message).not.toMatch(/retry/i);
     expect(listeners(em)).toBe(0);
+  });
+
+  it('tells the human to unplug when both steps fail', async () => {
+    const em = new EventEmitter();
+    const radio: Transport = Object.assign(new FakeRadio(), {
+      async setPtt(on: boolean): Promise<void> {
+        throw new Error(on ? 'assert failed' : 'release failed');
+      },
+    });
+    const err = await holdPtt(radio, 5, em).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    const body = (err as TransportError).toJSON();
+    expect(body).toMatchObject({ retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT' });
+    expect(body).not.toHaveProperty('pttAsserted');
+    expect(body).not.toHaveProperty('released');
+    expect(body.message).toContain('assert failed');
+    expect(body.message).toContain('unplug the AIOC');
+    expect(listeners(em)).toBe(0);
+  });
+
+  it('reports the release and the cable remedy when only the assertion fails', async () => {
+    const radio = new FakeRadio();
+    radio.setPtt = async (on: boolean) => {
+      if (on) throw new TransportError('ptt-control-failed', 'assert failed', { target: 'fake' });
+      radio.ptt = false;
+    };
+    const err = await holdPtt(radio, 5, new EventEmitter()).catch((e: unknown) => e);
+    expect((err as TransportError).toJSON()).toMatchObject({ target: 'fake', retry: 'no', remedy: 'report the error and ask the human to check the AIOC cable before keying again' });
+    expect((err as TransportError).toJSON()).not.toHaveProperty('pttAsserted');
+    expect((err as TransportError).toJSON()).not.toHaveProperty('released');
+    expect((err as TransportError).message).not.toContain('unplug');
   });
 });
 
@@ -79,7 +125,7 @@ describe('signalExitCode', () => {
 });
 
 describe('key verb', () => {
-  it('exits 3 with a transport error when the target does not exist', () => {
+  it('exits 3 with the device-unavailable retry and no PTT fields when the target does not exist', () => {
     const res = spawnSync(process.execPath, [MAIN, 'key', '--seconds', '5', '--json'], {
       env: { ...process.env, UV5R_TARGET: '/dev/does-not-exist-uv5r' },
       encoding: 'utf8',
@@ -87,6 +133,10 @@ describe('key verb', () => {
     });
     expect(res.status).toBe(3);
     expect(res.stdout).toBe('');
-    expect(JSON.parse(res.stderr.trim())).toMatchObject({ kind: 'transport' });
+    const err = JSON.parse(res.stderr.trim());
+    expect(err).toMatchObject({ reason: 'device-unavailable', retry: 'after-remedy' });
+    expect(err).not.toHaveProperty('pttAsserted');
+    expect(err).not.toHaveProperty('released');
+    expect(err).not.toHaveProperty('phase');
   });
 });

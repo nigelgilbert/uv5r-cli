@@ -2,237 +2,135 @@
 
 Control a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable from the
 command line: put a frequency in a memory channel, read the radio's state, back up and
-restore its memory, and key PTT.
+restore its memory, listen to receive audio and key PTT.
 
 Phase 1 of the sweep-and-listen bench: the sibling `tinysa-cli` sweeps, this CLI points the
 radio at what the sweep finds. The phase 2 sequencer lives on top of both.
 
-Requires Node 24. Node runs the `.ts` sources directly.
+## Quickstart
+
+Requires Node 24, which runs the `.ts` sources directly. `uv5r` below means
+`node src/main.ts`, also `npm run uv5r --`.
 
 ```sh
 npm install
 node src/main.ts status
 ```
 
-`uv5r` below means `node src/main.ts` (also `npm run uv5r --`).
+1. Ask the human to set MR mode with the VFO/MR key and select slot 0.
+2. Run `uv5r check 162.400 --channel 0` once per session with a NOAA weather frequency that
+   carries audio at the location. Exit 0 means audio above the floor after writing slot 0,
+   consistent with the radio receiving slot 0. Exit 5 lists the causes: VFO mode, another
+   slot selected, volume knob down, plug unseated, quiet frequency. Ask the human to set MR
+   mode and select slot 0, then check again.
+3. Run `uv5r tune 154.680 --channel 0`. The CLI writes the record and name and reads both
+   back. The radio applies the write about 3 s after the command ends.
+4. Run `uv5r sweep channels.json --seconds 30 --out-dir rx`. It checks slot 0 with
+   the plan's `checkMhz`, then writes each plan entry into slot 0 with its own TX setting
+   and listens. The human plays the WAVs in `rx` after the run. Each WAV holds a full
+   dwell; a dwell cut short by a signal or a failed capture leaves no WAV.
+
+**Channel rule.** `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
+
+Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0.
+`tune` and `load` write any slot. Once the `check` write succeeds, the slot keeps the
+receive-only record, also after a capture failure. A failure before or during the write
+leaves the slot state unknown. After `sweep`, slot 0 keeps the last write and the summary's
+`slot0` names it: `{channel, name}` of the last verified entry write, `{channel: null, name}`
+after only the check write, or `null` when unknown. Nothing restores slot 0. Run
+`uv5r load PLAN.json` to put a plan in its own slots.
+
+The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only
+through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
+`uv5r sweep PLAN --out-dir DIR` renames each capture into DIR after its dwell.
+
+A radio verb runs one or more short clone sessions. `sweep` runs one per write, `settings`
+with pairs and `restore` add a verification session, and `key` opens no session. The
+receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the
+handshake retry. Run one verb at a time. Do not open, `cat`, `screen` or `stty` the serial
+port.
+
+`key` raises PTT on the channel the radio display shows. The CLI cannot read that channel,
+and a receive-only slot radiates nothing. Key only when the human asked and the frequency is
+one they may transmit on, after asking the human what the display shows.
+
+## Verbs
+
+| Verb | Writes to radio | Time | Result keys |
+|---|---|---|---|
+| `status` | no | one clone session | `firmware`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
+| `tune` | record and name of slot N | one clone session | `channel`, record keys, `appliesAfterSeconds` |
+| `check` | receive-only record and name of slot N | one clone session, 3 s reload, 5 s listen | `slot`, `requestedMhz`, `listen` keys |
+| `load` | record and name of each plan slot | one clone session | array of `tune` results |
+| `read` | no | one clone session | `channel`, record keys; `empty` for an empty slot; `malformed` and `raw`, the record bytes as hex, for a record whose frequency bytes are not valid BCD |
+| `erase` | 0xFF over the record and name of slot N | one clone session | `channel`, `empty`, `appliesAfterSeconds` |
+| `key` | no; raises PTT | `--seconds` | `pttAsserted`, `seconds`, `released`; `interrupted` on a signal |
+| `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware` |
+| `restore` | channels, names and settings from the image | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
+| `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
+| `listen` | no; opens no serial port | `--seconds` | `device`, `seconds`, `rmsDbfs`, `zeroSeconds`, `meanRmsDbfs`, `peakDbfs`, `active`, `activeSeconds`, `warnings`, `out` |
+| `sweep` | slot 0, once for the check and once per entry | the check, then the dwell plus about 3 s per entry | `swept`, `seconds`, `device`, `active`, `warnings`, `slot0`; `interrupted` on a signal |
+
+Record keys are `rxMhz`, `txMhz`, `txTone`, `rxTone`, `bandwidth`, `power` and `name`.
+Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, result example and
+the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` for the same
+as JSON.
+
+Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. A failed
+command prints nothing on stdout and one error object on stderr when output is JSON, piped
+or with `--json`. The object has `reason`, `message`, `remedy` and `retry`, and each detail
+field below sits at its top level beside them.
+On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
+and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
+A `load` error from a plan entry write adds `slot`. A `sweep` error after the port is
+requested adds `summary`, the sweep result so far. An error inside the sweep loop adds
+`phase` (`check`, `entry` or `dwell`), `slot` (0), `channel` (the plan channel, `null`
+during the check) and `requestedMhz` (the entry frequency, or the `checkMhz` frequency during
+the check). `summary.slot0` says whether a write landed. A failed check also carries
+the check result fields.
+
+On SIGINT, SIGTERM or SIGHUP once `key` or `sweep` has opened the port, the verb prints its
+result on stdout with `interrupted` and no error, and exits 128 plus the signal number. A
+failed PTT release after the signal exits 3 with `interrupted` in the error. Other verbs end
+on a signal with no output.
+
+`UV5R_DEBUG=1` logs every serial byte to stderr.
 
 ## How the radio takes a frequency
 
 The radio speaks the CHIRP clone protocol over the AIOC's serial port at 9600 baud.
 On firmware HN5RV011 the radio acks writes to channel select, work mode and the VFO, then
-ignores them. The CLI does not offer those writes. An early version of this CLI wrote one
-half of the menu settings block and the radio zeroed the block. The silent receive audio
-seen at the same time traced to the volume knob and the seating of the 2.5 mm plug.
+ignores them. The CLI does not offer those writes, so the human selects the channel. A clone
+session ends after 2.5 s of silence. The radio then reloads from EEPROM and the new
+frequency is live about 3 s after the command ends. When the handshake gets no ack, the CLI
+waits 3 s and retries it once, which covers a session still closing from the previous verb.
 
-`tune` writes the memory channel the radio is parked on:
+Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows it.
 
-1. Run `uv5r check 162.400 --channel 0` with a NOAA weather frequency that carries audio
-   at the location. Exit 0 shows the radio is in MR mode on slot 0; call it N.
-2. On exit 5, set MR mode with the VFO/MR key, read the channel number N off the display
-   and run `uv5r check 162.400 --channel N`.
-3. Run `uv5r tune FREQ --channel N`. The CLI writes the channel record and name and
-   reads both back; a mismatch exits 5.
-4. The radio leaves clone mode after 2.5 s of silence and reloads from EEPROM. The new
-   frequency is live about 3 s after the command ends.
+An early version of this CLI wrote one half of the menu settings block and the radio zeroed
+the block. The silent receive audio seen at the same time traced to the volume knob and the
+seating of the 2.5 mm plug. `settings` restores only its eight fields; bring back a zeroed
+block in full with `restore` from an image. Reports say voice or beep off mutes receive audio
+on this firmware family; the bench unit has not confirmed it.
 
-`tune` reads the old record before it writes. Over an existing record it keeps BCL,
-PTT-ID, S-code and scan as they were. An empty slot gets BCL off, PTT-ID 0, S-code 0 and
-scan on. Frequency, offset, tones, bandwidth, power and name come from the command line.
-A receive-only record tuned without `--rx-only` gets a TX frequency again.
+## Receive audio
 
-Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows
-it. `listen` captures receive audio through the AIOC sound card with ffmpeg and reports
-levels, so the receiver check is one command; macOS blocks microphone access for the
-terminal until it is granted in System Settings, Privacy & Security, Microphone.
-
-A clone session ends after 2.5 s of silence, so every verb does its work in one quick
-session. Do not open, `cat` or `screen` the serial port while a verb runs.
-
-## Verbs
-
-```sh
-uv5r status                                # firmware, channel A/B, audio settings, active channel record
-uv5r tune 154.680 --channel 5              # write 154.680 into channel 5
-uv5r tune 146.820 --channel 5 --offset -0.6 --tone 82.5 --name "BIG SKY"
-uv5r tune 462.5625 --channel 5 --narrow --low-power
-uv5r tune 155.475 --channel 6 --rx-only    # receive only, TX inhibited
-uv5r check 162.400 --channel 0             # write 162.400 into channel 0, listen 5 s, exit 5 on silence
-uv5r load channels.json                    # write every plan entry to its slot, read each back
-uv5r read 5                                # read channel record 5
-uv5r erase 127                             # clear channel record 127 and its name
-uv5r key --seconds 2                       # DTR high, RTS low; releases on exit or Ctrl-C
-uv5r dump --out radio.img                  # full image, CHIRP layout, about 14 s
-uv5r restore radio.img --force             # main memory back from an image, about 30 s
-uv5r settings                              # squelch, save, abr, beep, timeout, voice, mdfa, mdfb
-uv5r settings voice eng beep on            # set fields, commit, verify in a fresh session
-uv5r listen --seconds 5                    # capture RX audio through ffmpeg, report dBFS
-uv5r listen --seconds 5 --out rx.wav --play # keep the capture as a WAV and play it back
-uv5r listen --seconds 30 --floor -40       # count the seconds with RMS above -40 dBFS
-uv5r sweep channels.json                   # prompt for the knob at each plan channel, dwell 30 s on each
-uv5r sweep channels.json --scratch 0 --check 162.400  # dwell 30 s on each plan entry through slot 0
-uv5r sweep channels.json --scratch 0 --check 162.400 --seconds 60 --out-dir rx --play --verbose
-uv5r help                                  # list verbs, flags and exit codes
-```
-
-Options:
-
-| Flag | Meaning |
-|---|---|
-| `--target PATH` | serial device, every verb except `listen`; default `UV5R_TARGET`, else the AIOC found by USB id 1209:7388 |
-| `--json` | JSON output |
-| `--text` | text output |
-| `--channel N` | `tune`, `check`: channel to write, 0..127, required |
-| `--tone HZ` | TX CTCSS from the standard table (`82.5`), DCS (`D023`, `D023I`) or `none` |
-| `--rx-tone HZ` | RX tone, default `none` |
-| `--offset MHZ` | signed repeater offset in 10 Hz steps; default simplex |
-| `--rx-only` | `tune`: receive only. Writes `FF FF FF FF` as the TX frequency so PTT does not transmit. Conflicts with `--offset`; both together exit 2 |
-| `--narrow` | 12.5 kHz bandwidth |
-| `--low-power` | low power |
-| `--name TEXT` | channel name, printable ASCII, uppercased, cut to 7 characters; other characters exit 2 before the port opens. Default the frequency |
-| `--seconds S` | `key`: seconds to transmit, up to 60, required. `listen`: whole seconds to capture, 1..600. `sweep`: whole seconds to dwell per entry, 1..600, default 30 |
-| `--out FILE` | `dump`: image path; default `uv5r-YYYY-MM-DDTHH-MM-SS.img` in the working directory. `listen`: write the capture as a 48 kHz mono WAV |
-| `--force` | `restore`: confirm the bulk write, required |
-| `--device NAME` | `listen`, `check`, `sweep`: avfoundation audio input by name or index, default `AIOC Audio`. List inputs with `ffmpeg -f avfoundation -list_devices true -i ""` |
-| `--floor DBFS` | `listen`, `check`, `sweep`: a second is active when its RMS is above DBFS; default -50 |
-| `--play` | `listen`: play the `--out` file through `afplay` after the capture; needs `--out`. `sweep`: play each active capture after its dwell; needs `--out-dir` |
-| `--scratch N` | `sweep`: write each plan entry in turn into slot N, 0..127. Without it `sweep` runs in knob mode |
-| `--check MHZ` | `sweep --scratch`: run `check` on the scratch slot with MHZ before the loop |
-| `--no-check` | `sweep --scratch`: skip the check. `--scratch` needs `--check` or `--no-check`; either one without `--scratch` exits 2 |
-| `--out-dir DIR` | `sweep`: keep each capture as `DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav`; creates DIR |
-| `--verbose` | `sweep`: write one JSON line per entry to stderr as each dwell ends |
-
-Frequencies take MHz (`154.680`), Hz (`154680000`) or exponent form (`154.68e6`) and lie
-in 136-174 or 400-520 MHz. Frequencies and offsets finer than 10 Hz exit 2.
-
-A verb given more positional arguments than it takes exits 2 before opening the port, so
-`dump radio.img` fails; use `dump --out radio.img`.
-
-CTCSS tones take the 50 standard tones from 67.0 to 254.1 Hz, the same table CHIRP uses.
-
-Output is JSON when stdout is a pipe or `--json` is given, and text on a TTY or with
-`--text`. Each JSON object is one line. Errors go to stderr in the same format; JSON errors
-carry `kind`, `message` and any detail fields, such as `file`, `got` or `unexpected`.
-
-`status` returns one flat object: `firmware`, `workmode` (`vfo` or `channel`), `channelA`,
-`channelB`, `squelch`, `voice`, `beep`, `abr`, `channel`, then the record fields `rxMhz`,
-`txMhz`, `txTone`, `rxTone`, `bandwidth`, `power` and `name`. `txMhz` is `null` for a
-receive-only channel, such as one written with `tune --rx-only`. An empty record gives
-`"empty": true` in place of the record fields. The `note` field always reads "channelA/B
-are the values stored in EEPROM; the radio display shows the channel the knob selected".
-Trust the display for the active channel.
-
-`tune` returns the written record plus `"appliesAfterSeconds": 3`. `read` returns the
-record, or `{"channel": N, "empty": true}`. `load PLAN.json` returns an array of the
-written records in plan order, each with `"appliesAfterSeconds": 3`; see "Plan fields".
-`erase` writes 0xFF over the record and the name, reads both back and returns
-`{"channel": N, "empty": true, "appliesAfterSeconds": 3}`. `key` returns `{"keyed": true, "seconds": S}` with the measured hold time. A key cut short by a signal
-adds `"interrupted": "SIGINT"` and `"released": true`.
-
-`check FREQ --channel N` takes the `tune` flags plus `--device` and `--floor`, which work
-as for `listen`. It writes the record the way `tune` does, waits 3 s for the reload,
-listens 5 s and returns the `listen` fields plus `channel` and `rxMhz`. `--seconds S` sets
-another listen time. An active second exits 0. Silence exits 5 with `no audio on channel
-N: set MR mode and select N`, and the JSON error carries the same fields. Silence means
-the radio is in VFO mode, sits on another slot, or the frequency is quiet.
-
-`settings` with no arguments returns the eight fields. With `field value` pairs it writes
-and commits the block, waits for the reload, reads it back in a fresh session and returns
-the verified fields; a mismatch is a device-state error. Values are the radio's menu index
-or a name: `voice off|eng|chi`, `beep off|on`, `mdfa`/`mdfb` `freq|ch|name`,
-`squelch 0..9`, `save 0..4`, `abr 0..5`, `timeout 0..39` (15 s steps). Squelch applies as
-soon as the session ends. Reports say voice or beep off mutes receive audio on this
-firmware family; the bench unit has not confirmed it. `settings` restores only its eight fields; bring back a zeroed block in full with
-`restore` from an image.
-
-`restore` verifies the settings block the same way. In that fresh session it also reads
-back the channel records `0x0000..0x07FF` and names `0x1000..0x17FF` and compares them
-with the image. A mismatch is a device-state error that names the first differing address.
-It returns `{"file", "blocks", "verifiedBlocks", "settings"}`, where `verifiedBlocks` counts
-the 64-byte blocks compared. An image shorter than 6152 bytes exits 2 before
-the port opens. `dump` returns `{"out", "bytes", "firmware"}`.
-
-`listen` runs `ffmpeg -f avfoundation -i ":AIOC Audio"` for `--seconds` at 48 kHz mono,
-removes DC with a 50 Hz high-pass and returns `rmsDbfs` per second, `meanRmsDbfs`,
-`peakDbfs`, `zeroSeconds`, `active`, `activeSeconds` and `warnings`. A second of digital
-zero reads `null` in `rmsDbfs` and counts in `zeroSeconds`. `meanRmsDbfs` and `peakDbfs`
-are `null` when every second is zero. Denied microphone access gives digital zero.
-
-The first captured second holds a capture-start burst. Every field drops it and covers
-captured seconds 2 to `--seconds` + 1, so `rmsDbfs[i]` and `active[i]` describe the same
-second.
-
-`active` holds one true or false per second and `activeSeconds` counts the true entries. A
-second is active when its RMS is above -50 dBFS; `--floor DBFS` sets another threshold.
-Text output prints `active` as a timeline, `#` for an active second and `.` for a quiet one.
-
-`warnings` lists level problems and is empty on a good capture. It holds `input clips: turn
-the volume knob down` when more than 1 percent of samples sit at full scale. An astats pass
-ahead of the high-pass counts those samples. Text output prints one line per warning.
-
-`--out FILE` writes the capture as a 48 kHz mono 16-bit WAV from the same ffmpeg run and
-adds `out` with the path to the result. The WAV holds the seconds that `rmsDbfs` covers,
-without the high-pass, and overwrites an existing file. `--play` runs `afplay` on it once
-ffmpeg exits, so `listen --seconds 5 --out rx.wav --play` records and plays in one command.
-`--play` without `--out` exits 2. A missing `afplay` or an `afplay` error exit is a
-transport error that names the file.
+`listen` captures through the AIOC sound card with ffmpeg. macOS blocks microphone access
+for the terminal until it is granted in System Settings, Privacy & Security, Microphone.
+Denied access gives digital zero.
 
 The AIOC's bare ADC floor at 1x gain reads about -66 dBFS; open-squelch static reads well
 above -30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug
-is short of its contact. `peakDbfs` above 0 also means the input clips; set the knob so
-static reads around -20 to -12. A missing ffmpeg, an ffmpeg error exit, a timeout, or fewer
-whole seconds captured than `--seconds` + 1 is a transport error. ffmpeg 9 on macOS 26
-returns about 88 percent of the `-t` length as samples. The CLI asks ffmpeg for
-`ceil(seconds / 0.88) + 2`, which covers the extra second.
+is short of its contact. Set the knob so static reads around -20 to -12. The `input clips:
+turn the volume knob down` warning means more than 1 percent of samples sit at full scale;
+ask the human to turn the knob down, then listen again.
 
-`sweep PLAN.json` runs in knob mode and writes nothing to the radio. Load the plan first
-with `load PLAN.json`. In one clone session `sweep` reads every plan slot and compares it
-with its plan entry. A slot that differs exits 5 with the channel, the plan record and the
-radio record, and names `load` as the fix. The port then closes. For each entry, in plan
-order, `sweep` prints `turn the knob to channel N (NAME) and press Enter` on stderr, waits
-for Enter and captures `--seconds` (default 30). Set the radio to MR mode before the run.
-Knob mode needs a terminal on stdin. Piped stdin exits 2 and names `--scratch`.
+Open-squelch noise reads as audio on any frequency. `check` and `sweep` read the squelch
+setting first and exit 5 with `squelch-open` when it is 0. Run `uv5r settings squelch 3`
+after setting the knob.
 
-```sh
-uv5r load channels.json
-uv5r sweep channels.json --seconds 30 --out-dir rx --play
-```
-
-`sweep PLAN.json --scratch N` dwells on every plan entry through slot N with no human at
-the knob. It checks the plan before the port opens. With `--check MHZ` it then runs
-`check MHZ --channel N --rx-only` and exits 5 on silence; `--no-check` skips that step. Passing neither exits 2, and so does
-passing both. For each entry, in plan order, `sweep` writes the record into slot N in a
-fresh clone session, waits 3 s for the reload and captures `--seconds` (default 30) with
-the `listen` pipeline. `--device` and `--floor` pass through to `listen`. Slot N ends up
-holding the last entry.
-
-`--out-dir DIR` keeps each capture as a WAV named by plan channel and local start time,
-such as `rx/ch07-2026-10-18T00-15-00.wav`, and creates DIR when it is missing. `--play`
-runs `afplay` on a capture after its dwell when `activeSeconds` is above 0, and needs
-`--out-dir`.
-
-stdout gets one object when the loop ends: `swept` (entries finished), `seconds` (the
-dwell), `active` and `warnings`. `active` lists `channel`, `name`, `rxMhz`, `activeSeconds`
-and `out` for each entry with an active second. `channel` is the plan channel. `name` is the
-plan name, or the frequency when the entry has none. `warnings` collects every dwell's
-warnings, each prefixed with its plan channel, as in `channel 4: input clips: turn the
-volume knob down`. `--verbose` writes one JSON line per entry to stderr as its dwell ends,
-with `channel`, `name`, `rxMhz`, `activeSeconds`, `active`, `meanRmsDbfs`, `peakDbfs`,
-`warnings` and `out`.
-
-Ctrl-C, SIGTERM or SIGHUP ends the loop. `sweep` prints the summary for the entries finished
-so far, adds `"interrupted": "SIGINT"` and exits 128 plus the signal number. A capture the
-signal cut short is left out of the summary.
-
-If the handshake gets no ack, the CLI waits 3 s and retries it once. This covers a clone
-session still closing from the previous verb.
-
-Exit codes: 0 ok, 1 unexpected, 2 usage, 3 transport (no device, serial or ffmpeg
-failure), 4 timeout (no ack, short read), 5 device-state (no handshake, bad reply, refused
-write, failed verification, image ident mismatch, a silent `check`, a plan slot that differs from the plan in a knob-mode `sweep` or a session idle past 2.2 s), 6 busy (port held by another process),
-128+signal (key or sweep interrupted by SIGINT, SIGTERM or SIGHUP; key releases PTT,
-sweep prints its summary).
-
-`UV5R_DEBUG=1` logs every serial byte to stderr.
+ffmpeg 9 on macOS 26 returns about 88 percent of the `-t` length as samples. The CLI asks
+ffmpeg for `ceil(seconds / 0.88) + 2`, which also covers the first second the CLI drops.
 
 ## Protocol notes from the bench
 
@@ -277,23 +175,24 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 - `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the radio on the bench on 2026-10-12,
   before any write. Channel 127 holds a corrupted 155.700 record. Dumps since 2026-10-13
   differ in the aux area; see `docs/rx-audio-investigation.md`.
-- `scenarios/big-sky-2026-10.json`: the non-encrypted channels and sweep windows from the
-  Big Sky SITREP. Phase 2 reads it to drive the tinySA sweeps and the tune queue.
-- `channels.example.json`: the channel plan written to the bench radio on 2026-10-13, and
-  the reference shape for generated plans.
+- `scenarios/big-sky-2026-10.json`: historical test data from 2026-10, the non-encrypted
+  channels and sweep windows from the Big Sky SITREP. Nothing current reads it.
+- `channels.example.json`: the channel plan written to the bench radio on 2026-10-13, kept
+  as historical test data and as the reference shape for generated plans.
 - `channels.json`: the plan the `channel-plan` skill writes for the current location.
   Ignored by git.
 - `docs/rx-audio-investigation.md`: the settings block wipe, its repair, the clone protocol
   rules measured on the bench, and the receive audio findings.
-- `.claude/skills/uv5r/SKILL.md`: the operating notes an agent loads to drive the radio.
+- `.claude/skills/uv5r/SKILL.md`: the operating rules an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
 
 ### Plan fields
 
-A plan has a top-level `name`, `notes` and a `channels` array. Each entry is one `tune`
-call, and each entry field maps onto one `tune` flag. `uv5r load PLAN.json` writes the
-whole plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
+A plan has a top-level `name`, `notes`, `checkMhz` and a `channels` array. Any other
+top-level key exits 2. `name` and `notes` take strings. Each entry is
+one `tune` call, and each entry field maps onto one `tune` flag. `uv5r load PLAN.json` writes
+the whole plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
 tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
 
 | Field | `tune` flag |
@@ -308,12 +207,7 @@ tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
 | `rxOnly` | `--rx-only` when true |
 | `name` | `--name TEXT` |
 | `notes` | none |
-
-`load` checks every entry before the port opens. A bad field, an unknown field, a channel
-outside 0..127 or a channel listed twice exits 2; the message and the `channel` and `field`
-detail fields name the entry. `load` then writes each entry to its slot and reads the slot
-back. A mismatch exits 5 naming the channel. Slots absent from the plan keep their records
-and names. Text output prints one line per written record.
+| `checkMhz` | none; top level. `sweep` runs `check` on slot 0 with it. It takes the band and 10 Hz rules of `rxMhz`. `load` validates it and writes nothing for it |
 
 ## Development
 

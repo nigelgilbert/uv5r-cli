@@ -13,8 +13,13 @@ export interface PlanEntry {
 export interface Plan {
   name?: string;
   notes?: string;
+  /** Frequency in Hz that `sweep` checks slot 0 with, from the top-level `checkMhz`; `load` writes nothing for it. */
+  checkHz?: number;
   entries: PlanEntry[];
 }
+
+/** Top-level fields a plan takes. */
+const PLAN_FIELDS = ['name', 'notes', 'checkMhz', 'channels'];
 
 /** Entry fields a plan takes; each one except `notes` maps onto one `tune` flag. */
 const ENTRY_FIELDS = ['channel', 'rxMhz', 'offsetMhz', 'tone', 'rxTone', 'narrow', 'lowPower', 'rxOnly', 'name', 'notes'];
@@ -48,8 +53,15 @@ export function readPlan(file: string): Plan {
 
 /** Validate a parsed plan object and build one ChannelSpec per entry. */
 export function parsePlan(json: unknown): Plan {
-  if (!isObject(json) || !Array.isArray(json.channels)) throw new UsageError('a plan is an object with a channels array');
+  if (!isObject(json)) throw new UsageError('a plan is an object with a channels array');
+  const unknown = Object.keys(json).find((name) => !PLAN_FIELDS.includes(name));
+  if (unknown !== undefined) throw new UsageError(`plan ${unknown}: unknown top-level field; top-level fields: ${PLAN_FIELDS.join(', ')}`, { field: unknown });
+  for (const name of ['name', 'notes']) {
+    if (json[name] !== undefined && typeof json[name] !== 'string') throw new UsageError(`plan ${name}: needs a string; got ${JSON.stringify(json[name])}`, { field: name });
+  }
+  if (!Array.isArray(json.channels)) throw new UsageError('a plan is an object with a channels array');
   if (json.channels.length === 0) throw new UsageError('the plan has no channels');
+  const checkHz = json.checkMhz === undefined ? undefined : parseCheckMhz(json.checkMhz);
   const seen = new Set<number>();
   const entries = json.channels.map((raw, i) => {
     const entry = parseEntry(raw, i + 1);
@@ -60,8 +72,21 @@ export function parsePlan(json: unknown): Plan {
   return {
     ...(typeof json.name === 'string' ? { name: json.name } : {}),
     ...(typeof json.notes === 'string' ? { notes: json.notes } : {}),
+    ...(checkHz === undefined ? {} : { checkHz }),
     entries,
   };
+}
+
+/** Parse the top-level `checkMhz` with the band and 10 Hz rules of an entry `rxMhz`, and name `checkMhz` in any error. */
+function parseCheckMhz(v: unknown): number {
+  try {
+    const hz = parseFrequency(numberText(v));
+    checkBand(hz);
+    return hz;
+  } catch (err) {
+    if (!(err instanceof BaofengError)) throw err;
+    throw new UsageError(`plan checkMhz: ${err.message}`, { ...err.detail, field: 'checkMhz' });
+  }
 }
 
 function parseEntry(raw: unknown, index: number): PlanEntry {

@@ -20,33 +20,34 @@ import {
   type SettingName,
   type Settings,
 } from './codec.ts';
-import { DeviceStateError } from './errors.ts';
+import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
 import { Session, hex, settle } from './protocol.ts';
 import type { Transport } from './transport.ts';
-
-/** Fixed explanation attached to every status payload. */
-export const STATUS_NOTE = 'channelA/B are the values stored in EEPROM; the radio display shows the channel the knob selected';
 
 /** Channel fields every channel payload carries. */
 export type ChannelPayload = { channel: number } & Omit<ChannelJson, 'scan'>;
 
-export type ChannelResult = ChannelPayload | { channel: number; empty: true };
+/** A record whose first byte is not 0xFF and whose RX or TX frequency bytes are not valid BCD; raw holds its 16 bytes as hex. */
+export interface MalformedRecord {
+  malformed: true;
+  raw: string;
+}
+
+export type ChannelResult = ChannelPayload | { channel: number; empty: true } | ({ channel: number } & MalformedRecord);
 
 export type RadioStatus = {
   firmware: string;
   workmode: 'vfo' | 'channel';
-  channelA: number;
-  channelB: number;
   squelch: number | string;
   voice: number | string;
   beep: number | string;
   abr: number | string;
-  note: string;
-} & ChannelResult;
+};
 
 /** Build the flat payload for channel `n`; an undefined record gives `empty: true`. */
-export function channelPayload(n: number, ch: Channel | undefined): ChannelResult {
+export function channelPayload(n: number, ch: Channel | MalformedRecord | undefined): ChannelResult {
   if (!ch) return { channel: n, empty: true };
+  if ('malformed' in ch) return { channel: n, ...ch };
   // Destructure the first three keys to keep the documented order, which puts txTone before rxTone.
   const { scan: _scan, rxMhz, txMhz, txTone, ...rest } = channelToJson(ch);
   return { channel: n, rxMhz, txMhz, txTone, ...rest };
@@ -78,17 +79,32 @@ export async function readSettings(s: Session): Promise<Settings> {
 export async function writeSettings(s: Session, patch: Partial<Record<SettingName, number>>): Promise<Uint8Array> {
   const block = applySettings(await readSettingsBlock(s), patch);
   const commit = (await s.readBlock(SETTINGS_COMMIT, 0x40)).subarray(0, 0x10);
-  await s.writeBlock(SETTINGS_BASE, block.subarray(0, 0x10));
-  await s.writeBlock(SETTINGS_BASE + 0x10, block.subarray(0x10, 0x20));
-  await s.writeBlock(SETTINGS_COMMIT, commit);
+  try {
+    await s.writeBlock(SETTINGS_BASE, block.subarray(0, 0x10));
+    await s.writeBlock(SETTINGS_BASE + 0x10, block.subarray(0x10, 0x20));
+    await s.writeBlock(SETTINGS_COMMIT, commit);
+  } catch (err) {
+    throw unacknowledged(err, { remedy: 'run uv5r settings to read the block, then rerun', retry: 'after-remedy' });
+  }
   return block;
+}
+
+/** Return `err`, with `guidance` replacing the slot remedy when the radio did not ack a write. */
+function unacknowledged(err: unknown, guidance: Partial<Guidance>): unknown {
+  if (err instanceof BaofengError && err.reason === 'write-unacknowledged') err.attach({}, guidance);
+  return err;
 }
 
 /** Read the settings block in a fresh session and fail when it differs from `expected`. */
 export async function verifySettingsBlock(s: Session, expected: Uint8Array): Promise<Settings> {
   const back = await readSettingsBlock(s);
   if (hex(back) !== hex(expected)) {
-    throw new DeviceStateError('settings block did not take the write', { wrote: hex(expected), read: hex(back) });
+    throw new DeviceStateError(
+      'verification-failed',
+      'settings block did not take the write',
+      { wrote: hex(expected), read: hex(back) },
+      { remedy: 'run uv5r settings to read the block, then rerun the write' },
+    );
   }
   return decodeSettings(back);
 }
@@ -116,41 +132,36 @@ export async function verifySettingsInFreshSession(t: Transport, expected: Uint8
   return verifySettingsBlock(await startFreshSession(t), expected);
 }
 
-/** Read work mode, both channel numbers, the audio settings and the record on the display line in use. */
+/** Read the firmware, the work mode and the audio settings. */
 export async function readStatus(s: Session): Promise<RadioStatus> {
   const ident = s.startedIdent;
   const settings = await readSettings(s);
   const page = await s.readBlock(ADDR.statePage, 0x40);
   const workmode = page[ADDR.workmode - ADDR.statePage] === 1 ? 'channel' : 'vfo';
-  const lineB = ((page[ADDR.flags - ADDR.statePage] ?? 0) & 0x80) !== 0;
-  const channelA = (page[ADDR.mrcha - ADDR.statePage] ?? 0) & 0x7f;
-  const channelB = (page[ADDR.mrchb - ADDR.statePage] ?? 0) & 0x7f;
-  const active = lineB ? channelB : channelA;
-  const record = channelPayload(active, await readChannel(s, active));
   return {
     firmware: ident.firmware,
     workmode,
-    channelA,
-    channelB,
     squelch: settings.squelch,
     voice: settings.voice,
     beep: settings.beep,
     abr: settings.abr,
-    ...record,
-    note: STATUS_NOTE,
   };
 }
 
-export async function readChannel(s: Session, n: number): Promise<Channel | undefined> {
+/** Read channel `n`; an erased slot gives undefined and a record with bad BCD gives a MalformedRecord. */
+export async function readChannel(s: Session, n: number): Promise<Channel | MalformedRecord | undefined> {
   checkChannelNumber(n);
   const mem = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
   const name = await s.readBlock(NAME_BASE + n * 16, 0x10);
-  return decodeChannel(mem, name);
+  const ch = decodeChannel(mem, name);
+  if (ch === undefined && mem[0] !== 0xff) return { malformed: true, raw: hex(mem) };
+  return ch;
 }
 
 /**
- * Write a channel record and its name; reads back both in the same session. Reads the old
- * record first so encodeChannel keeps its BCL, PTT-ID, S-code and scan settings.
+ * Write a channel record and read it back, then write its name and read that back, all in
+ * one session. Reads the old record first so encodeChannel keeps its BCL, PTT-ID, S-code and
+ * scan settings.
  */
 export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Promise<Channel> {
   checkChannelNumber(n);
@@ -158,28 +169,59 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
   const mem = encodeChannel(spec, prior);
   const name = encodeName(spec.name ?? formatMhz(spec.rxHz));
   await s.writeBlock(CHANNEL_BASE + n * 16, mem);
-  await s.writeBlock(NAME_BASE + n * 16, name);
   const back = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
-  if (hex(back) !== hex(mem)) throw new DeviceStateError(`channel ${n} did not take the write`, { wrote: hex(mem), read: hex(back) });
-  const nameBack = await s.readBlock(NAME_BASE + n * 16, 0x10);
+  if (hex(back) !== hex(mem)) {
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} did not take the write`,
+      { wrote: hex(mem), read: hex(back) },
+      { remedy: `read channel ${n}, then rerun the write` },
+    );
+  }
+  const nameBack = await writeAndReadBack(s, NAME_BASE + n * 16, name);
   if (hex(nameBack) !== hex(name)) {
-    throw new DeviceStateError(`channel ${n} name did not take the write`, { wrote: hex(name), read: hex(nameBack) });
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} record written; name did not take the write`,
+      { wrote: hex(name), read: hex(nameBack) },
+      { remedy: `read channel ${n}; rerun the write to fix the name` },
+    );
   }
   return decodeChannel(back, nameBack)!;
 }
 
-/** Write 0xFF over a channel record and its name; reads back both in the same session. */
+/**
+ * Write 0xFF over a channel record and read it back, then over its name and read that back,
+ * all in one session.
+ */
 export async function eraseChannel(s: Session, n: number): Promise<void> {
   checkChannelNumber(n);
   const blank = new Uint8Array(16).fill(0xff);
   await s.writeBlock(CHANNEL_BASE + n * 16, blank);
-  await s.writeBlock(NAME_BASE + n * 16, blank);
   const back = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
-  if (hex(back) !== hex(blank)) throw new DeviceStateError(`channel ${n} did not take the erase`, { wrote: hex(blank), read: hex(back) });
-  const nameBack = await s.readBlock(NAME_BASE + n * 16, 0x10);
-  if (hex(nameBack) !== hex(blank)) {
-    throw new DeviceStateError(`channel ${n} name did not take the erase`, { wrote: hex(blank), read: hex(nameBack) });
+  if (hex(back) !== hex(blank)) {
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} did not take the erase`,
+      { wrote: hex(blank), read: hex(back) },
+      { remedy: `read channel ${n}, then rerun the erase` },
+    );
   }
+  const nameBack = await writeAndReadBack(s, NAME_BASE + n * 16, blank);
+  if (hex(nameBack) !== hex(blank)) {
+    throw new DeviceStateError(
+      'verification-failed',
+      `channel ${n} record erased; name did not take the erase`,
+      { wrote: hex(blank), read: hex(nameBack) },
+      { remedy: `read channel ${n}; rerun the erase to clear the name` },
+    );
+  }
+}
+
+/** Write one 16-byte block at `addr` and return what reads back there. */
+async function writeAndReadBack(s: Session, addr: number, data: Uint8Array): Promise<Uint8Array> {
+  await s.writeBlock(addr, data);
+  return s.readBlock(addr, 0x10);
 }
 
 /** Full image in CHIRP layout: 8-byte ident, main 0x0000-0x17FF, aux 0x1EC0-0x1FFF. */
@@ -216,18 +258,22 @@ export function imageSettingsBlock(image: Uint8Array): Uint8Array {
  * in address order, so the 0x0E40 write commits the staged settings block.
  */
 export async function restoreImage(s: Session, image: Uint8Array, onProgress?: (addr: number) => void): Promise<number> {
-  if (image.length < IMAGE_HEADER + 0x1800) throw new DeviceStateError(`image too short: ${image.length} bytes`);
+  if (image.length < IMAGE_HEADER + 0x1800) throw new DeviceStateError('image-incompatible', `image too short: ${image.length} bytes`, { bytes: image.length });
   const ident = s.startedIdent;
   if (hex(image.subarray(0, IMAGE_HEADER)) !== hex(ident.bytes)) {
-    throw new DeviceStateError('image ident does not match this radio', { image: hex(image.subarray(0, IMAGE_HEADER)), radio: hex(ident.bytes) });
+    throw new DeviceStateError('image-incompatible', 'image ident does not match this radio', { image: hex(image.subarray(0, IMAGE_HEADER)), radio: hex(ident.bytes) });
   }
   let blocks = 0;
-  for (const [start, end] of RESTORE_RANGES) {
-    for (let a = start; a < end; a += 0x10) {
-      await s.writeBlock(a, image.subarray(IMAGE_HEADER + a, IMAGE_HEADER + a + 0x10));
-      blocks++;
-      onProgress?.(a);
+  try {
+    for (const [start, end] of RESTORE_RANGES) {
+      for (let a = start; a < end; a += 0x10) {
+        await s.writeBlock(a, image.subarray(IMAGE_HEADER + a, IMAGE_HEADER + a + 0x10));
+        blocks++;
+        onProgress?.(a);
+      }
     }
+  } catch (err) {
+    throw unacknowledged(err, { remedy: 'rerun the restore' });
   }
   return blocks;
 }
@@ -261,10 +307,12 @@ export async function verifyRestoredRanges(s: Session, image: Uint8Array): Promi
     }
   }
   if (mismatches.length > 0) {
-    throw new DeviceStateError(`restore did not take ${mismatches.length} blocks; first at ${mismatches[0]!.addr}`, {
-      mismatches: mismatches.length,
-      first: mismatches.slice(0, MISMATCHES_REPORTED),
-    });
+    throw new DeviceStateError(
+      'verification-failed',
+      `restore did not take ${mismatches.length} blocks; first at ${mismatches[0]!.addr}`,
+      { mismatches: mismatches.length, first: mismatches.slice(0, MISMATCHES_REPORTED) },
+      { remedy: 'rerun the restore; ask the human if the same blocks fail again' },
+    );
   }
   return blocks;
 }
@@ -273,12 +321,28 @@ export async function verifyRestoredRanges(s: Session, image: Uint8Array): Promi
 export const KEY_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 export interface HoldResult {
-  /** Seconds PTT stayed keyed, rounded to 0.1. */
+  /** True after setPtt(true) succeeded. */
+  pttAsserted: true;
+  /** Seconds PTT stayed asserted, rounded to 0.1. */
   seconds: number;
+  /** True after setPtt(false) succeeded. */
+  released: true;
   interrupted?: NodeJS.Signals;
 }
 
-/** Key PTT for `seconds`, stop early when `signals` emits SIGINT, SIGTERM or SIGHUP, and release PTT in both cases. */
+/** Message for a failed key, from what the port confirmed. */
+function keyFailureMessage(pttAsserted: boolean, released: boolean, cause: string): string {
+  if (released) return `PTT assertion unconfirmed: ${cause}; PTT released`;
+  const unplug = 'ask the human to unplug the AIOC to drop PTT';
+  if (pttAsserted) return `PTT rose and the release is unconfirmed: ${cause}; ${unplug}`;
+  return `PTT assertion and release unconfirmed: ${cause}; ${unplug}`;
+}
+
+/**
+ * Assert PTT for `seconds`, stop early when `signals` emits SIGINT, SIGTERM or SIGHUP, and
+ * release PTT in both cases. A failure in any step throws a TransportError whose message
+ * and remedy say what the port confirmed.
+ */
 export async function holdPtt(t: Transport, seconds: number, signals: EventEmitter = process): Promise<HoldResult> {
   let interrupted: NodeJS.Signals | undefined;
   let wake = () => {};
@@ -291,26 +355,51 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
     signals.on(signal, handler);
     return [signal, handler] as const;
   });
+  let pttAsserted = false;
+  let released = false;
+  let failure: unknown;
   let heldMs = 0;
   let timer: NodeJS.Timeout | undefined;
   try {
-    await t.setPtt(true);
-    const keyedAt = performance.now();
-    if (!interrupted) {
-      await new Promise<void>((resolve) => {
-        wake = resolve;
-        timer = setTimeout(resolve, seconds * 1000);
-      });
+    try {
+      await t.setPtt(true);
+      pttAsserted = true;
+      const assertedAt = performance.now();
+      if (!interrupted) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          timer = setTimeout(resolve, seconds * 1000);
+        });
+      }
+      heldMs = performance.now() - assertedAt;
+    } catch (err) {
+      failure = err;
     }
-    heldMs = performance.now() - keyedAt;
-  } finally {
     clearTimeout(timer);
     try {
       await t.setPtt(false);
-    } finally {
-      for (const [signal, handler] of handlers) signals.off(signal, handler);
+      released = true;
+    } catch (err) {
+      if (failure === undefined) failure = err;
     }
+  } finally {
+    for (const [signal, handler] of handlers) signals.off(signal, handler);
   }
   const held = Math.round(heldMs / 100) / 10;
-  return interrupted ? { seconds: held, interrupted } : { seconds: held };
+  if (failure !== undefined) {
+    const cause = failure instanceof Error ? failure.message : String(failure);
+    const base = failure instanceof BaofengError ? failure.detail : {};
+    throw new TransportError(
+      'ptt-control-failed',
+      keyFailureMessage(pttAsserted, released, cause),
+      {
+        ...base,
+        ...(pttAsserted ? { seconds: held } : {}),
+        ...(interrupted ? { interrupted } : {}),
+      },
+      { remedy: released ? 'report the error and ask the human to check the AIOC cable before keying again' : 'ask the human to unplug the AIOC to drop PTT', retry: 'no' },
+    );
+  }
+  const result: HoldResult = { pttAsserted: true, seconds: held, released: true };
+  return interrupted ? { ...result, interrupted } : result;
 }

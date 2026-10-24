@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../src/args.ts';
 import { UsageError } from '../src/errors.ts';
 
-const BOOLEAN_FLAGS = new Set(['json', 'text', 'help', 'narrow', 'low-power', 'force']);
+const BOOLEAN_FLAGS = new Set(['json', 'help', 'narrow', 'low-power', 'force']);
 
 describe('parseArgs', () => {
   it('rejects a value on a boolean flag', () => {
@@ -22,6 +22,25 @@ describe('parseArgs', () => {
     expect(parseArgs(['tune', '--channel', '5'], BOOLEAN_FLAGS).flags.get('channel')).toBe('5');
   });
 
+  it('reads -h as --help', () => {
+    expect(parseArgs(['tune', '-h'], BOOLEAN_FLAGS).flags.get('help')).toBe(true);
+    expect(parseArgs(['tune', '-h'], BOOLEAN_FLAGS).positionals).toEqual([]);
+  });
+
+  it('rejects a flag given twice, in either form', () => {
+    expect(() => parseArgs(['tune', '--channel', '1', '--channel', '2'], BOOLEAN_FLAGS)).toThrow('--channel given twice; pass it once');
+    expect(() => parseArgs(['tune', '--channel=1', '--channel', '2'], BOOLEAN_FLAGS)).toThrow(UsageError);
+    expect(() => parseArgs(['status', '--json', '--json'], BOOLEAN_FLAGS)).toThrow('--json given twice');
+  });
+
+  it.each([
+    [['-h', '--help']],
+    [['-h', '-h']],
+    [['--help', '--help']],
+  ])('accepts %j as one --help', (help) => {
+    expect(parseArgs(['tune', ...help], BOOLEAN_FLAGS).flags.get('help')).toBe(true);
+  });
+
   it('leaves the positional after a boolean flag in place', () => {
     const args = parseArgs(['restore', '--force', 'radio.img'], BOOLEAN_FLAGS);
     expect(args.verb).toBe('restore');
@@ -38,8 +57,8 @@ describe('cli', () => {
       encoding: 'utf8',
     });
     expect(r.status).toBe(2);
-    const body = JSON.parse(r.stderr.trim()) as { kind: string; message: string };
-    expect(body.kind).toBe('usage');
+    const body = JSON.parse(r.stderr.trim()) as { reason: string; message: string };
+    expect(body.reason).toBe('invalid-argument');
     expect(body.message).toBe('--force takes no value');
   });
 });
