@@ -1,9 +1,16 @@
 import { DEFAULT_FLOOR_DBFS, listen, type ListenResult } from './audio.ts';
-import { formatMhz, type ChannelSpec } from '../core/codec.ts';
-import { DeviceStateError, withDetail } from '../core/errors.ts';
-import { settle, type Session } from '../core/protocol.ts';
-import { readSettings, withSession, writeChannel } from '../core/radio.ts';
-import type { Transport } from '../core/transport.ts';
+import {
+  DeviceStateError,
+  formatMhz,
+  readSettings,
+  settle,
+  withDetail,
+  withSession,
+  writeChannel,
+  type ChannelSpec,
+  type Session,
+  type Transport,
+} from '../core/index.ts';
 
 /** Seconds `check` listens. */
 export const CHECK_SECONDS = 5;

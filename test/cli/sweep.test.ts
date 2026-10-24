@@ -5,10 +5,8 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIP_WARNING, listen, type ListenResult } from '../../src/cli/audio.ts';
-import { BusyError, TransportError } from '../../src/core/errors.ts';
+import { BusyError, KEY_SIGNALS, readPlan, TransportError } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
-import { readPlan } from '../../src/core/plan.ts';
-import { KEY_SIGNALS } from '../../src/core/radio.ts';
 import { captureName, dwell, newProgress, runSweep, slotZero, type SweepSteps } from '../../src/cli/sweep.ts';
 import { FakeRadio } from '../core/fake.ts';
 

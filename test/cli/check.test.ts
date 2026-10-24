@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listen, type ListenResult } from '../../src/cli/audio.ts';
-import { TransportError } from '../../src/core/errors.ts';
+import { SETTLE_MS, TransportError } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
-import { SETTLE_MS } from '../../src/core/protocol.ts';
 import { FakeRadio } from '../core/fake.ts';
 
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));

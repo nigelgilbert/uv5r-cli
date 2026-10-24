@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../../src/cli/args.ts';
-import { UsageError } from '../../src/core/errors.ts';
+import { UsageError } from '../../src/core/index.ts';
 
 const BOOLEAN_FLAGS = new Set(['json', 'help', 'narrow', 'low-power', 'force']);
 

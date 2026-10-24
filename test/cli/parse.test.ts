@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { numberFlag, parseDecimal } from '../../src/cli/args.ts';
-import { checkTenHz, parseFrequency } from '../../src/core/codec.ts';
-import { UsageError } from '../../src/core/errors.ts';
+import { checkTenHz, parseFrequency, UsageError } from '../../src/core/index.ts';
 
 function cli(...argv: string[]) {
   const r = spawnSync(process.execPath, ['src/cli/main.ts', ...argv], {

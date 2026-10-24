@@ -1,5 +1,4 @@
-import { parseDecimal } from '../core/codec.ts';
-import { UsageError } from '../core/errors.ts';
+import { parseDecimal, UsageError } from '../core/index.ts';
 
 export { parseDecimal };
 

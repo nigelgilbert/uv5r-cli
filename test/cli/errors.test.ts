@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BusyError, DeviceStateError, TimeoutError, TransportError, UnexpectedError, UsageError } from '../../src/core/errors.ts';
+import { BusyError, DeviceStateError, TimeoutError, TransportError, UnexpectedError, UsageError } from '../../src/core/index.ts';
 import { EXIT, exitCodeFor } from '../../src/cli/exit.ts';
 
 describe('exit codes', () => {

@@ -2,10 +2,8 @@ import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, symlinkSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { encodeChannel } from '../../src/core/codec.ts';
-import { BusyError, REASONS, TransportError } from '../../src/core/errors.ts';
+import { BusyError, encodeChannel, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
-import type { Transport } from '../../src/core/transport.ts';
 import { FakeRadio } from '../core/fake.ts';
 
 const FIXTURE = new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url).pathname;

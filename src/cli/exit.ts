@@ -1,5 +1,5 @@
 import { constants } from 'node:os';
-import type { ErrorKind } from '../core/errors.ts';
+import type { ErrorKind } from '../core/index.ts';
 
 export const EXIT = {
   ok: 0,

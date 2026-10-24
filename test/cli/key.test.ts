@@ -2,10 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { TransportError } from '../../src/core/errors.ts';
+import { holdPtt, KEY_SIGNALS, TransportError, type Transport } from '../../src/core/index.ts';
 import { signalExitCode } from '../../src/cli/exit.ts';
-import { KEY_SIGNALS, holdPtt } from '../../src/core/radio.ts';
-import type { Transport } from '../../src/core/transport.ts';
 import { FakeRadio } from '../core/fake.ts';
 
 const MAIN = fileURLToPath(new URL('../../src/cli/main.ts', import.meta.url));

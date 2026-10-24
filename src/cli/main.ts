@@ -4,49 +4,55 @@ import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stri
 import { DEFAULT_FLOOR_DBFS, checkFfmpeg, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
 import {
-  SETTING_NAMES,
+  BaofengError,
+  channelPayload,
   checkBand,
   checkChannelNumber,
   checkTenHz,
+  dumpImage,
   encodeName,
+  eraseChannel,
+  holdPtt,
+  IMAGE_HEADER,
+  imageSettingsBlock,
   isSettingName,
   parseFrequency,
   parseSettingValue,
   parseTone,
-  settingValues,
-  type ChannelSpec,
-  type SettingName,
-  type Settings,
-} from '../core/codec.ts';
-import { BaofengError, REASONS, RETRY, TransportError, UnexpectedError, UsageError, withDetail } from '../core/errors.ts';
-import { EXIT, exitCodeFor, signalExitCode } from './exit.ts';
-import { readPlan } from '../core/plan.ts';
-import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
-import { SETTLE_MS } from '../core/protocol.ts';
-import {
-  channelPayload,
-  dumpImage,
-  eraseChannel,
-  IMAGE_HEADER,
-  RESTORE_RANGES,
-  holdPtt,
-  imageSettingsBlock,
   readChannel,
+  readPlan,
   readSettings,
   readStatus,
+  REASONS,
+  resolveTarget,
+  RESTORE_RANGES,
   restoreImage,
+  RETRY,
+  SerialTransport,
+  SETTING_NAMES,
+  settingValues,
+  SETTLE_MS,
   startFreshSession,
+  TransportError,
+  UnexpectedError,
+  UsageError,
   verifyRestoredRanges,
   verifySettingsBlock,
   verifySettingsInFreshSession,
+  withDetail,
   withSession,
   writeChannel,
   writeSettings,
   type ChannelResult,
+  type ChannelSpec,
   type RadioStatus,
-} from '../core/radio.ts';
+  type SettingName,
+  type Settings,
+  type Transport,
+} from '../core/index.ts';
+import { EXIT, exitCodeFor, signalExitCode } from './exit.ts';
+import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type Slot0, type SweepSummary } from './sweep.ts';
-import { SerialTransport, resolveTarget, type Transport } from '../core/transport.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
 export type OpenTransport = (target: string | undefined) => Promise<Transport>;
