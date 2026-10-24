@@ -68,6 +68,7 @@ export {
   KEY_SIGNALS,
   holdPtt,
   SCAN_SILENT_PAUSE_MS,
+  PROGRAM_PAUSE_MS,
   identify,
 } from './radio.ts';
 export type { ChannelPayload, MalformedRecord, ChannelResult, RadioStatus, HoldResult, SessionOptions, IdentifyAttempt, IdentifyAnswer, IdentifyResult } from './radio.ts';
