@@ -62,6 +62,6 @@ The full round log sits in the overseer's session scratchpad as `sol-review.md`.
 
 ## Open items
 
-- Bench verification for 001, 002 and 004: `uv5r status --json` reporting magic `291`, family `uv5r`, firmware `HN5RV011`; `uv5r identify` stopping at the first magic with `pin` `null`; `UV5R_MAGIC=ORIG uv5r status --json`; `uv5r identify` with the radio off within 65 s; `uv5r dump --out` against the fixture; the pause test with `SCAN_SILENT_PAUSE_MS` at 0. Record the two answers in the README "Bench questions" subsection and set issue 004 to Done.
-- `port.update({ baudRate })` has run only against the fake port.
+- Bench verification for 004: `uv5r identify` with the radio off, exit 5 with `session-unavailable` within 65 s by wall clock. Decide the dump criterion: on 2026-10-24 the aux area matched the fixture and main memory differed in channels 0, 1, 126 and 127, names 0, 126 and 127, the display line and work mode bytes, and VFO A and B. Then set issue 004 to Done.
+- `port.update({ baudRate })` ran on the AIOC in two full `identify` scans on 2026-10-24 with no error. No radio has answered at 115200.
 - S2: decide whether `help --json` reason strings gain a retry value.

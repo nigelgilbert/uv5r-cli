@@ -2,7 +2,7 @@
 
 **Type**: HITL (a human powers the radio off and on and sets the pin for the pause test)
 
-**Status:** 🟡 Partial: bench steps pending
+**Status:** 🟡 Partial: radio-off identify pending
 
 ## Parent
 
@@ -16,14 +16,15 @@ The README section "Protocol notes from the bench" gains the ident meaning, the 
 
 ## Acceptance criteria
 
-- [ ] `uv5r status --json` on the bench reports `magic` `291`, `family` `uv5r`, firmware `HN5RV011`.
-- [ ] `uv5r identify` on the bench stops at the first magic with `pin` `null`.
-- [ ] `UV5R_MAGIC=ORIG uv5r status` result recorded in the README, ack or no ack.
+- [x] `uv5r status --json` on the bench reports `magic` `291`, `family` `uv5r`, firmware `HN5RV011`.
+- [x] `uv5r identify` on the bench stops at the first magic with `pin` `null`.
+- [x] `UV5R_MAGIC=ORIG uv5r status` result recorded in the README, ack or no ack.
 - [ ] `uv5r identify` with the radio off exits 5 with `session-unavailable` and finishes within 65 s by wall clock.
 - [ ] `uv5r dump --out` produces an image equal to the fixture outside the aux area.
-- [ ] The pause test result is recorded in the README and the local edit is reverted (`git diff src/` is empty apart from committed work).
-- [ ] The README "Protocol notes from the bench" section and the `restore` row contain the new text.
-- [ ] No write verb runs against the radio during this issue.
+  - 2026-10-24: the aux area and the settings block `0x0E20`-`0x0E3F` match the fixture. Main memory differs in channel records 0, 1, 126 and 127, names 0, 126 and 127, `0x0E4A`, `0x0E4C`-`0x0E4D`, and VFO A and B at `0x0F08`-`0x0F1A` and `0x0F28`-`0x0F3A`. Slot 0 holds 162.400 receive-only named `162.4`. Slot 126 holds 146.820 with a 146.220 transmit named `BIG SKY`.
+- [x] The pause test result is recorded in the README and the local edit is reverted (`git diff src/` is empty apart from committed work).
+- [x] The README "Protocol notes from the bench" section and the `restore` row contain the new text.
+- [x] No write verb runs against the radio during this issue.
 
 ## Blocked by
 
