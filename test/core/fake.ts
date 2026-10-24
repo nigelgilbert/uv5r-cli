@@ -12,8 +12,10 @@ const IDLE_DROP_MS = 2500;
 const MAGIC_LENGTH = 7;
 /** Bytes of a UV17Pro program magic. */
 const PROGRAM_LENGTH = 16;
-/** Baud of the classic and foreign magics; the fake answers program magics at any other rate. */
+/** Baud of the classic and foreign magics. */
 const CLASSIC_RATE = 9600;
+/** Baud of the program magics. */
+const PROGRAM_RATE = 115200;
 /** Offset of the 14-byte version string in the firmware block at 0x1EC0. */
 const VERSION_AT = 0x1ec0 + 48;
 const VERSION_LENGTH = 14;
@@ -34,8 +36,8 @@ const VERSION_LENGTH = 14;
  * - Outside a session it matches the last 7 bytes received against `magics` and
  *   `foreignMagic`, answers a match with `ackByte`, and stays idle when `ackByte` is not 06.
  *   A `foreignMagic` match answers `02` with `foreignIdent`.
- * - At a rate other than 9600 it ignores every byte except the 16 of `programMagic`, which it
- *   answers with one 06.
+ * - At a rate other than 9600 it ignores every byte. At 115200 it answers the 16 bytes of
+ *   `programMagic` with one 06.
  */
 export class FakeRadio implements Transport {
   readonly target = 'fake';
@@ -124,7 +126,7 @@ export class FakeRadio implements Transport {
   private feedProgram(b: number): void {
     this.lastProgramBytes = [...this.lastProgramBytes, b].slice(-PROGRAM_LENGTH);
     const seen = hex(this.lastProgramBytes);
-    if (!this.programMagic || hex(this.programMagic) !== seen) return;
+    if (this.rate !== PROGRAM_RATE || !this.programMagic || hex(this.programMagic) !== seen) return;
     this.lastProgramBytes = [];
     this.handshakes.push(seen);
     this.outbox.push(0x06);

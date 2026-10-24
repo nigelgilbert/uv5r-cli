@@ -309,7 +309,7 @@ async function programScan(scan: Scan): Promise<void> {
 function scanFailed(scan: Scan): DeviceStateError {
   if (scan.invalid) {
     const { magic, got } = scan.invalid;
-    return new DeviceStateError('protocol-reply-invalid', `radio answered magic ${magic} with ident ${got} of no known shape, as an unknown UV-5R variant`, {
+    return new DeviceStateError('protocol-reply-invalid', `radio answered magic ${magic} with ${got ? `ident ${got} of no known shape` : 'no ident bytes'}, as an unknown UV-5R variant`, {
       magic,
       got,
       answers: scan.answers,
