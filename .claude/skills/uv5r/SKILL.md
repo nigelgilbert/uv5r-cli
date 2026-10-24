@@ -45,10 +45,9 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
 ## On a failed command
 
-- A failed command prints nothing on stdout and one error object on stderr when output is
-  JSON, piped or with `--json`, and the message plus a remedy line as text on a terminal.
-  The object has `reason`, `message`, `remedy` and `retry`, with detail fields at its top level. Act on `reason`,
-  `remedy` and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
+- A failed command prints nothing on stdout and one error object on stderr when output is JSON,
+  piped or with `--json`, and the message plus a remedy line on a terminal. The object has `reason`,
+  `message`, `remedy`, `retry` and the detail fields at its top level. `uv5r help --json` lists each reason and retry value under `errors`.
 - `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun the
   same command once. `after-remedy`: rerun after doing the remedy.
 - A `load` error from a plan entry write carries `slot`. A `sweep` error after the port is

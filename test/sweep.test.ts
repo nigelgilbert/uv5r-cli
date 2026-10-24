@@ -487,7 +487,7 @@ describe('sweep', () => {
     expect(existsSync(parent)).toBe(true);
   });
 
-  it('exits 2 on an --out-dir it cannot write before testing ffmpeg or opening the transport', async () => {
+  it('exits 2 on an --out-dir it cannot write before opening the transport', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
     chmodSync(dir, 0o555);
     try {
@@ -496,7 +496,6 @@ describe('sweep', () => {
       expect(process.exitCode).toBe(2);
       expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining(`cannot write to ${dir}`), outDir: dir });
       expect(open.calls).toBe(0);
-      expect(execFile).not.toHaveBeenCalled();
     } finally {
       chmodSync(dir, 0o755);
     }

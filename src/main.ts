@@ -876,10 +876,10 @@ async function sweepVerb(args: Invocation): Promise<number> {
       });
     }
     const checkSpec: ChannelSpec = { rxHz: plan.checkHz };
-    let created: string | undefined;
+    await checkFfmpeg();
     if (outDir !== undefined) {
       try {
-        created = mkdirSync(outDir, { recursive: true });
+        mkdirSync(outDir, { recursive: true });
       } catch (err) {
         throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
       }
@@ -888,13 +888,6 @@ async function sweepVerb(args: Invocation): Promise<number> {
       } catch (err) {
         throw new UsageError(`cannot write to ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir }, { remedy: 'pass --out-dir with a writable directory' });
       }
-    }
-    try {
-      await checkFfmpeg();
-    } catch (err) {
-      // Remove the directories this run created so a failed ffmpeg leaves nothing written.
-      if (created !== undefined) rmSync(created, { recursive: true, force: true });
-      throw err;
     }
     const options = { device, seconds, outDir };
     transportAsked = true;
