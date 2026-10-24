@@ -5,7 +5,7 @@ description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and t
 
 # uv5r
 
-Run commands from the repo root. `uv5r` means `node src/main.ts`.
+Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
 
 ## Find help
 

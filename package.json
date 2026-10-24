@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
-  "bin": { "uv5r": "./src/main.ts" },
+  "bin": { "uv5r": "./src/cli/main.ts" },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "uv5r": "node src/main.ts"
+    "uv5r": "node src/cli/main.ts"
   },
   "dependencies": { "serialport": "^13.0.0" },
   "devDependencies": {
