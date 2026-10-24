@@ -33,8 +33,8 @@ on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass with 553 te
 
 ### 004
 
-- README only. Work items 6 and 7 are done: Ident, Classic magics, Foreign radios, `identify` timing and Bench questions subsections, and the `restore` row note.
-- The bench steps ran later the same day. Results sit under Bench below and in the README bench questions.
+- README only. Work items 6 and 7 are done: Ident, Classic magics, Foreign radios, `identify` timing subsections, and the `restore` row note.
+- The bench steps ran later the same day. Results sit under Bench below.
 
 ## Sol adversarial review
 

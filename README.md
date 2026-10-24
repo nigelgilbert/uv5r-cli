@@ -67,7 +67,7 @@ one they may transmit on, after asking the human what the display shows.
 | `erase` | 0xFF over the record and name of slot N | one clone session | `channel`, `empty`, `appliesAfterSeconds` |
 | `key` | no; raises PTT | `--seconds` | `pttAsserted`, `seconds`, `released`; `interrupted` on a signal |
 | `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware`, `family`, `magic` |
-| `restore` | channels, names and settings from the image. On post-291 firmware the ident appears to encode the band limits, so a restore after a band-limit change exits 5 with `image-incompatible`; dump again first | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
+| `restore` | channels, names and settings from the image. On post-291 firmware the ident encodes the band limits, so a restore after a band-limit change exits 5 with `image-incompatible`; dump again first | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
 | `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
 | `listen` | no; opens no serial port | `--seconds` | `device`, `seconds`, `rmsDbfs`, `zeroSeconds`, `meanRmsDbfs`, `peakDbfs`, `active`, `activeSeconds`, `warnings`, `out` |
 | `sweep` | slot 0, once for the check and once per entry | the check, then the dwell plus about 3 s per entry | `swept`, `seconds`, `device`, `active`, `warnings`, `slot0`; `interrupted` on a signal |
@@ -125,11 +125,8 @@ with `radio-unsupported`.
 
 Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows it.
 
-An early version of this CLI wrote one half of the menu settings block and the radio zeroed
-the block. The silent receive audio seen at the same time traced to the volume knob and the
-seating of the 2.5 mm plug. `settings` restores only its eight fields; bring back a zeroed
-block in full with `restore` from an image. Reports say voice or beep off mutes receive audio
-on this firmware family; the bench unit has not confirmed it.
+`settings` writes only its eight fields. Bring back a zeroed settings block in full with
+`restore` from an image.
 
 ## Receive audio
 
@@ -190,22 +187,20 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 
 ### Ident
 
-- On firmware BFB291 and later the 8-byte ident appears to hold the band limits in BCD, after
-  `docs/clone-protocol.md` section 4.4. Byte 1 is the VHF lower limit minus 100 MHz, byte 2
-  the VHF upper limit minus 100 MHz, bytes 3-4 the second-band lower limit and bytes 5-6 its
-  upper limit. The bench ident reads 130-176 MHz and 400-520 MHz.
+- On firmware BFB291 and later the 8-byte ident holds the band limits in BCD. Byte 1 is the
+  VHF lower limit minus 100 MHz, byte 2 the VHF upper limit minus 100 MHz, bytes 3-4 the
+  second-band lower limit and bytes 5-6 its upper limit. The bench ident reads 130-176 MHz
+  and 400-520 MHz.
 - Byte 3 equal to `02` marks a 220-260 MHz second band. `flags.band220` reports it on radios
   that are not orig.
 - Orig radios, before BFB291, spell the version in ASCII: `aa 42 46 42 32 33 31 dd` reads
   `BFB231`.
 - Different models return identical idents. `family` comes from the magic that answered and
   the firmware string at `0x1EF0`.
-- Bench question 3 in `docs/clone-protocol-plan.md` tests the band-limit reading.
 
 ### Classic magics
 
-From `docs/clone-protocol.md` section 4.1. `identify` tries them in table order, with the
-magic `UV5R_MAGIC` names first.
+`identify` tries them in table order, with the magic `UV5R_MAGIC` names first.
 
 | Name | Bytes | Answered by |
 |---|---|---|
@@ -220,8 +215,8 @@ magic `UV5R_MAGIC` names first.
 
 ### Foreign radios
 
-From `docs/clone-protocol.md` sections 4.2 and 9. A reply to one of these magics at 9600
-names a radio of another driver with its own memory layout.
+A reply to one of these magics at 9600 names a radio with its own protocol and memory
+layout.
 
 | Bytes | Radio |
 |---|---|
@@ -252,43 +247,20 @@ Radios sold as UV-5RH, UV-5RM Plus, UV-5R Mini or UV-5G Plus speak the UV17Pro p
 | UV17Pro magics at 115200 | 6 | 1.2 s | 1 s, none after the last |
 
 A silent radio takes about 38 s: 20 s for the classic magics, 6 s for the foreign magics
-and 12 s at 115200. A silent attempt at 9600 costs 70 ms of paced magic and the 1200 ms ack
-wait. The 3 s pauses are `SETTLE_MS` in `src/core/protocol.ts`. The 1 s pauses are
-`PROGRAM_PAUSE_MS` in `src/core/radio.ts`. A wrong ack pauses 2 s, `SCAN_WRONG_ACK_PAUSE_MS`
-in the same file. An invalid ident or a refused closing `06` pauses `SETTLE_MS` before the
-next magic.
-
-### Bench questions
-
-- **Does the unit ack `ORIG`?** No. On 2026-10-24 `UV5R_MAGIC=ORIG uv5r status --json`
-  exited 5 after 5.7 s with `session-unavailable`, `magic` `ORIG` and `got` `""`. Both
-  attempts got no reply.
-- **Does a silent magic need a pause before the next?** No. On 2026-10-24, with the
-  silent pause set to 0 in a local edit, `UV5R_MAGIC=ORIG uv5r identify` printed
-  `ORIG at 9600: silent` twice and then `291 at 9600: ident` in 9 of 10 runs, 6.6 s each.
-  With the 2 s pause the same command acked `291` in 4 of 5 runs, 8.6 s each. In the one
-  failed run of each set `291` got no reply and the scan ran on to exit 5 with
-  `session-unavailable`, after 33.4 s at 0 and 59.4 s at 2 s. The pause is now 0 and every
-  supported magic gets a second attempt. With that change `UV5R_MAGIC=ORIG uv5r identify`
-  acked `291` in 20 of 20 runs, two of them on the second attempt.
-- **How long does a silent scan take?** On 2026-10-24 `uv5r identify --json` with the radio
-  off exited 5 with `session-unavailable` and empty `answers` after 59.3 s by wall clock,
-  before the second attempts were added. The budget is now about 38 s.
+and 12 s at 115200. A wrong ack pauses 2 s. An invalid ident or a refused closing `06`
+pauses 3 s before the next magic.
 
 ## Bench files
 
-- `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the radio on the bench on 2026-10-12,
-  before any write. Channel 127 holds a corrupted 155.700 record. Dumps from 2026-10-13
-  differ in the aux area; see `docs/rx-audio-investigation.md`. A dump on 2026-10-24
-  matches the fixture in the aux area.
-- `scenarios/big-sky-2026-10.json`: historical test data from 2026-10, the non-encrypted
-  channels and sweep windows from the Big Sky SITREP. Nothing current reads it.
-- `channels.example.json`: the channel plan written to the bench radio on 2026-10-13, kept
-  as historical test data and as the reference shape for generated plans.
+- `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the bench radio before any write.
+  Channel 127 holds a corrupted 155.700 record.
+- `scenarios/big-sky-2026-10.json`: test data, channels and sweep windows from the Big Sky
+  SITREP. Nothing reads it.
+- `channels.example.json`: the reference shape for generated plans.
 - `channels.json`: the plan the `channel-plan` skill writes for the current location.
   Ignored by git.
-- `docs/rx-audio-investigation.md`: the settings block wipe, its repair, the clone protocol
-  rules measured on the bench, and the receive audio findings.
+- `docs/rx-audio-investigation.md`: the bench measurements behind the protocol notes and the
+  receive audio findings.
 - `.claude/skills/uv5r/SKILL.md`: the operating rules an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
