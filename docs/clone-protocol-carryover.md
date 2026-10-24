@@ -33,3 +33,17 @@ Typecheck and 553 tests pass at every tip. Each commit carries the Fable trailer
 - Radio off: `identify` exits 5 with `session-unavailable` in 59.3 s.
 - `droppedByte` reads true. Firmware `HN5RV011`, firmware bytes `48 4e 35 52 56 30 31 31 1d 20 20 ff ff ff`.
 - `port.update` to 115200 and back ran on the AIOC with no error in three scans.
+
+## Decision log, grill session 2026-10-24
+
+| Item | Decision |
+|---|---|
+| Issue 005 pause | `SCAN_SILENT_PAUSE_MS` to 0. |
+| Stale pin | Every supported classic magic gets a second attempt on `silent` or `wrong-ack`. The first magic keeps its `SETTLE_MS` gap. Later magics retry with no gap. Unsupported and foreign probes keep one attempt. |
+| Pin remedy | When `UV5R_MAGIC` is set and a verb gets no ack, the remedy names the pin first: unset it or run `uv5r identify` and export the line it prints, then check the radio and cable. |
+| Help retry | Every `help --json` reason string gains the retry hint, as `exit 5, retry no: ...`, with a test. |
+| Dump criterion | Stays ticked with the note. The fixture stays the 2026-10-12 snapshot. |
+| Bench unit | Open. Add a dated note to `rx-audio-investigation.md` stating the 2026-10-24 aux match and leave the conclusion open. |
+| 57600 and 38400 probes | Dropped. Nigel has two or three reference UV-5Rs of different manufacturing dates and plans to rebuild the golden files from them later. |
+
+Next: turn the stale pin, pin remedy, help retry and investigation note rows into issues alongside issue 005.
