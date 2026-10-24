@@ -374,9 +374,10 @@ Decisions 1 through 5 above hold as written. Additions:
 - The env var ships alone. A magic describes the radio on the bench, so it lives next to
   `UV5R_TARGET` in the shell. A flag arrives with a second radio, when `--target` is already
   passed per call.
-- The 115200 phase stays in scope with `port.update`. The classic radio never sees it, since
-  it already failed at 9600. Only the fake exercises it until a UV17Pro radio reaches the
-  bench. Bench question 6 stays open in this plan.
+- The 115200 phase stays in scope with `port.update`. A classic radio sees it when every
+  9600 attempt misses; on 2026-10-24 the bench UV-5R did, and answered the next verb 52 s
+  later on its first attempt. Only the fake exercises an ack until a UV17Pro radio reaches
+  the bench. Bench question 6 stays open in this plan.
 - First ack wins. Bench question 2 is a README fact. `291` leads the scan, so a radio that
   acks both `291` and `ORIG` still reports `pin: null`. Work item 5 answers Q2 through
   `UV5R_MAGIC=ORIG uv5r status`.
