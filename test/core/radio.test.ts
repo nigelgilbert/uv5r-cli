@@ -5,7 +5,7 @@ import { FOREIGN_MAGICS, MAGICS, PROGRAM_MAGICS, magicByName } from '../../src/c
 import { SETTLE_MS, Session, attempt, hex } from '../../src/core/protocol.ts';
 import {
   PROGRAM_PAUSE_MS,
-  SCAN_SILENT_PAUSE_MS,
+  SCAN_WRONG_ACK_PAUSE_MS,
   channelPayload,
   eraseChannel,
   identify,
@@ -275,11 +275,11 @@ describe('identify', () => {
   const FINISH_MS = 150;
   /** Ack wait of each attempt that gets no 06; the fake answers at once, so the budget adds it per attempt. */
   const ACK_WAIT_MS = 1200;
-  /** The plan's budget for a silent cable across the three phases. */
-  const BUDGET_MS = 59_000;
-  /** Fake time of a silent scan: 14 attempts at 9600, the pauses between all 20 attempts and none after the last. */
-  const SILENT_ELAPSED_MS = 14 * SEND_MS + SETTLE_MS + 13 * SCAN_SILENT_PAUSE_MS + 5 * PROGRAM_PAUSE_MS;
-  const CLASSIC = ['291', '291', 'ORIG', 'UV82', 'A58', 'UV5G', 'F11', 'UV6', 'UV6_ORIG'];
+  /** The budget for a silent cable across the three phases: 38.06 s rounded up. */
+  const BUDGET_MS = 38_100;
+  /** Fake time of a silent scan: 18 attempts at 9600, SETTLE_MS before the second 291 and PROGRAM_PAUSE_MS between the six at 115200. */
+  const SILENT_ELAPSED_MS = 18 * SEND_MS + SETTLE_MS + 5 * PROGRAM_PAUSE_MS;
+  const CLASSIC = ['291', '291', 'ORIG', 'ORIG', 'UV82', 'UV82', 'A58', 'A58', 'UV5G', 'UV5G', 'F11', 'UV6', 'UV6_ORIG'];
   const FOREIGN = FOREIGN_MAGICS.map((m) => m.radio);
   const PROGRAM = PROGRAM_MAGICS.map((m) => Buffer.from(m.bytes).toString('latin1'));
   const POWER_CYCLE_REMEDY = 'ask the human to power-cycle the radio and report the radio name; this CLI speaks the classic UV-5R protocol';
@@ -332,8 +332,8 @@ describe('identify', () => {
     expect(result).toMatchObject({ magic: 'ORIG', family: 'uv5r', pin: 'UV5R_MAGIC=ORIG' });
     expect(names).toEqual(['291 silent', '291 silent', 'ORIG ident']);
     expect(attempts[1]!.at - attempts[0]!.at).toBe(SETTLE_MS + SEND_MS);
-    expect(attempts[2]!.at - attempts[1]!.at).toBe(SCAN_SILENT_PAUSE_MS + SEND_MS);
-    expect(elapsed).toBe(3 * SEND_MS + SETTLE_MS + SCAN_SILENT_PAUSE_MS + FINISH_MS);
+    expect(attempts[2]!.at - attempts[1]!.at).toBe(SEND_MS);
+    expect(elapsed).toBe(3 * SEND_MS + SETTLE_MS + FINISH_MS);
   });
 
   it('pauses SETTLE_MS after an invalid ident on the first magic and moves on with no second attempt', async () => {
@@ -348,7 +348,7 @@ describe('identify', () => {
     const radio = new FakeRadio();
     radio.identReply = NINE_BYTES;
     const { result, names } = await scan(radio);
-    expect(names).toHaveLength(8 + FOREIGN.length + PROGRAM.length);
+    expect(names).toHaveLength(CLASSIC.length - 1 + FOREIGN.length + PROGRAM.length);
     expect(result).toBeInstanceOf(BaofengError);
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'protocol-reply-invalid',
@@ -362,7 +362,7 @@ describe('identify', () => {
     const radio = radioAcking('UV6');
     const write = vi.spyOn(radio, 'write');
     const { result, names } = await scan(radio);
-    expect(names).toEqual(['291 silent', '291 silent', 'ORIG silent', 'UV82 silent', 'A58 silent', 'UV5G silent', 'F11 silent', 'UV6 ident']);
+    expect(names).toEqual([...CLASSIC.slice(0, 11).map((n) => `${n} silent`), 'UV6 ident']);
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'radio-unsupported',
       message: expect.stringContaining('UV-6'),
@@ -389,13 +389,11 @@ describe('identify', () => {
     const radio = silentRadio();
     const { result, attempts, names, elapsed } = await scan(radio);
     expect(names).toEqual([...CLASSIC, ...FOREIGN, ...PROGRAM].map((n) => `${n} silent`));
-    expect(attempts.map((a) => a.baud)).toEqual([...new Array(14).fill(9600), ...new Array(6).fill(115200)]);
+    expect(attempts.map((a) => a.baud)).toEqual([...new Array(18).fill(9600), ...new Array(6).fill(115200)]);
     const gaps = attempts.slice(1).map((a, i) => a.at - attempts[i]!.at);
-    expect(gaps.slice(8, 13)).toEqual(new Array(5).fill(SCAN_SILENT_PAUSE_MS + SEND_MS));
-    expect(gaps[13]).toBe(SCAN_SILENT_PAUSE_MS);
-    expect(gaps.slice(14)).toEqual(new Array(5).fill(PROGRAM_PAUSE_MS));
+    expect(gaps).toEqual([SETTLE_MS + SEND_MS, ...new Array(16).fill(SEND_MS), 0, ...new Array(5).fill(PROGRAM_PAUSE_MS)]);
     expect(elapsed).toBe(SILENT_ELAPSED_MS);
-    expect(elapsed + 20 * ACK_WAIT_MS).toBeLessThanOrEqual(BUDGET_MS);
+    expect(elapsed + 24 * ACK_WAIT_MS).toBeLessThanOrEqual(BUDGET_MS);
     const json = (result as BaofengError).toJSON();
     expect(json).toMatchObject({
       reason: 'session-unavailable',
@@ -412,10 +410,10 @@ describe('identify', () => {
     radio.foreignMagic = foreignMagic('UV-6R');
     radio.foreignIdent = NINE_BYTES;
     const { result, attempts, names, elapsed } = await scan(radio);
-    expect(names.slice(9, 14)).toEqual(['BTECH UV-5X3 silent', 'MTC UV-5R-3 silent', 'UV-6R invalid', 'UV-9G silent', 'Baojie BJ-UV55 silent']);
-    expect(attempts[12]!.at - attempts[11]!.at).toBe(SETTLE_MS + SEND_MS);
-    expect(names).toHaveLength(20);
-    expect(elapsed).toBe(SILENT_ELAPSED_MS + SETTLE_MS - SCAN_SILENT_PAUSE_MS);
+    expect(names.slice(13, 18)).toEqual(['BTECH UV-5X3 silent', 'MTC UV-5R-3 silent', 'UV-6R invalid', 'UV-9G silent', 'Baojie BJ-UV55 silent']);
+    expect(attempts[16]!.at - attempts[15]!.at).toBe(SETTLE_MS + SEND_MS);
+    expect(names).toHaveLength(24);
+    expect(elapsed).toBe(SILENT_ELAPSED_MS + SETTLE_MS);
     expect(elapsed).toBeLessThanOrEqual(BUDGET_MS);
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
@@ -448,7 +446,7 @@ describe('identify', () => {
     radio.foreignIdent = radio.ident;
     const write = vi.spyOn(radio, 'write');
     const { result, names } = await scan(radio);
-    expect(names.slice(9)).toEqual(['BTECH UV-5X3 silent', 'MTC UV-5R-3 silent', 'UV-6R ident']);
+    expect(names.slice(13)).toEqual(['BTECH UV-5X3 silent', 'MTC UV-5R-3 silent', 'UV-6R ident']);
     expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'radio-unsupported', radio: 'UV-6R', got: 'aa 30 76 04 00 05 20 dd' });
     expect(writesAfterIdentRequest(write)).toEqual([]);
   });
@@ -472,7 +470,7 @@ describe('identify', () => {
     const write = vi.spyOn(radio, 'write');
     const { result, attempts } = await scan(radio);
     expect(attempts.at(-1)).toMatchObject({ name: 'PROGRAMBFNORMALU', baud: 115200, outcome: 'ack' });
-    expect(attempts).toHaveLength(15);
+    expect(attempts).toHaveLength(19);
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'radio-unsupported',
       message: expect.stringContaining('UV17Pro family'),
@@ -506,7 +504,7 @@ describe('identify', () => {
       if (rate === 9600) throw resetFails(rate);
     });
     const { result, names } = await scan(radio);
-    expect(names).toHaveLength(20);
+    expect(names).toHaveLength(24);
     expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'serial-io-failed', baud: 9600 });
   });
 
@@ -516,7 +514,7 @@ describe('identify', () => {
       if (rate === 115200) throw resetFails(rate);
     });
     const { result, names } = await scan(radio);
-    expect(names).toHaveLength(14);
+    expect(names).toHaveLength(18);
     expect(setBaud.mock.calls).toEqual([[115200], [9600]]);
     expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'serial-io-failed', baud: 115200 });
   });
@@ -526,23 +524,27 @@ describe('identify', () => {
     const read = radio.read.bind(radio);
     vi.spyOn(radio, 'read').mockImplementation(async (n, ms) => (radio.rate === 115200 ? Uint8Array.of(0x15) : read(n, ms)));
     const { result, names } = await scan(radio);
-    expect(names.slice(14)).toEqual(PROGRAM.map((n) => `${n} wrong-ack`));
+    expect(names.slice(18)).toEqual(PROGRAM.map((n) => `${n} wrong-ack`));
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
       answers: PROGRAM.map((magic) => ({ magic, outcome: 'wrong-ack', got: '15' })),
     });
   });
 
-  it('lists a wrong ack by magic name and byte in answers when silence follows, after a SCAN_SILENT_PAUSE_MS pause', async () => {
+  it('retries a wrong ack after SCAN_WRONG_ACK_PAUSE_MS and lists both in answers when silence follows', async () => {
     const radio = radioAcking('UV82');
     radio.ackByte = 0x15;
     const { result, attempts, names } = await scan(radio);
-    expect(names.slice(2, 5)).toEqual(['ORIG silent', 'UV82 wrong-ack', 'A58 silent']);
-    expect(attempts[4]!.at - attempts[3]!.at).toBe(SCAN_SILENT_PAUSE_MS + SEND_MS);
+    expect(names.slice(3, 7)).toEqual(['ORIG silent', 'UV82 wrong-ack', 'UV82 wrong-ack', 'A58 silent']);
+    expect(attempts[5]!.at - attempts[4]!.at).toBe(SCAN_WRONG_ACK_PAUSE_MS + SEND_MS);
+    expect(attempts[6]!.at - attempts[5]!.at).toBe(SCAN_WRONG_ACK_PAUSE_MS + SEND_MS);
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
       message: expect.stringContaining('UV82 wrong-ack 15'),
-      answers: [{ magic: 'UV82', outcome: 'wrong-ack', got: '15' }],
+      answers: [
+        { magic: 'UV82', outcome: 'wrong-ack', got: '15' },
+        { magic: 'UV82', outcome: 'wrong-ack', got: '15' },
+      ],
     });
   });
 

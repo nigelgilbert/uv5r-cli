@@ -144,8 +144,8 @@ export async function verifySettingsInFreshSession(t: Transport, expected: Uint8
   return verifySettingsBlock(await startFreshSession(t, options), expected);
 }
 
-/** Pause after an attempt that got no 06 before the next magic in identify. */
-export const SCAN_SILENT_PAUSE_MS = 2000;
+/** Pause after a wrong ack before the next attempt in identify. */
+export const SCAN_WRONG_ACK_PAUSE_MS = 2000;
 /** Pause after a 115200 probe that got no 06 before the next program magic. */
 export const PROGRAM_PAUSE_MS = 1000;
 /** Baud rate of the classic clone protocol. */
@@ -211,7 +211,7 @@ async function probe(scan: Scan, name: string, magic: Pick<Magic, 'bytes'>, conf
   if (outcome.kind === 'wrong-ack' || outcome.kind === 'refused') scan.answers.push({ magic: name, outcome: outcome.kind, got: outcome.got });
   if (outcome.kind === 'invalid' && foreign) scan.answers.push({ magic: name, outcome: 'invalid', got: outcome.got });
   else if (outcome.kind === 'invalid') scan.invalid ??= { magic: name, got: outcome.got };
-  scan.pauseMs = outcome.kind === 'silent' || outcome.kind === 'wrong-ack' ? SCAN_SILENT_PAUSE_MS : SETTLE_MS;
+  scan.pauseMs = outcome.kind === 'silent' ? 0 : outcome.kind === 'wrong-ack' ? SCAN_WRONG_ACK_PAUSE_MS : SETTLE_MS;
   return outcome;
 }
 
@@ -223,11 +223,11 @@ function scanOrder(first: Magic): Magic[] {
 
 /**
  * Try each classic magic in SCAN_ORDER, with `options.magic` moved to the front, and return
- * the first that opens a clone session. The first magic gets a second attempt SETTLE_MS later
- * on silence or a wrong ack. Each later magic waits SCAN_SILENT_PAUSE_MS after silence or a
- * wrong ack, and SETTLE_MS after an invalid ident or a refused closing 06. Unsupported magics
- * run without the closing 06; an ident on one, or a 14-byte ident on any, throws
- * radio-unsupported.
+ * the first that opens a clone session. Each supported magic gets a second attempt on silence
+ * or a wrong ack; the first magic waits SETTLE_MS before it. Other attempts follow silence at
+ * once, a wrong ack after SCAN_WRONG_ACK_PAUSE_MS, and an invalid ident or a refused closing
+ * 06 after SETTLE_MS. Unsupported magics get one attempt and run without the closing 06; an
+ * ident on one, or a 14-byte ident on any, throws radio-unsupported.
  *
  * When no classic magic opens a session, probe each FOREIGN_MAGICS entry at 9600 without the
  * closing 06 and with the same pauses; an ident names that entry's radio. Then send each
@@ -239,8 +239,8 @@ export async function identify(transport: Transport, onAttempt: (a: IdentifyAtte
   const scan: Scan = { transport, onAttempt, pauseMs: 0, answers: [], invalid: undefined };
   for (const [i, magic] of scanOrder(selected).entries()) {
     let outcome = await probe(scan, magic.name, magic, magic.supported);
-    if (i === 0 && (outcome.kind === 'silent' || outcome.kind === 'wrong-ack')) {
-      scan.pauseMs = SETTLE_MS;
+    if (magic.supported && (outcome.kind === 'silent' || outcome.kind === 'wrong-ack')) {
+      if (i === 0) scan.pauseMs = SETTLE_MS;
       outcome = await probe(scan, magic.name, magic, magic.supported);
     }
     if (outcome.kind === 'foreign') throw radioUnsupported(outcome.name, magic.name, outcome.got);

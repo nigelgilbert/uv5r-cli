@@ -582,11 +582,11 @@ describe('identify', () => {
     expect(open.calls).toBe(0);
   });
 
-  it('has a help entry that states the 59 s budget, a help --json entry and a README verb table row', async () => {
+  it('has a help entry that states the 38 s budget, a help --json entry and a README verb table row', async () => {
     await onTerminal(() => cli(['help', 'identify']));
     expect(process.exitCode).toBe(0);
-    expect(stdout.join('')).toContain('A silent radio takes up to 59 s');
-    expect(readFileSync(README, 'utf8')).toContain('A silent radio takes up to 59 s');
+    expect(stdout.join('')).toContain('A silent radio takes about 38 s');
+    expect(readFileSync(README, 'utf8')).toContain('A silent radio takes about 38 s');
     stdout = [];
     await cli(['help', '--json']);
     expect((outJson() as { verbs: Record<string, unknown> }).verbs).toHaveProperty('identify');

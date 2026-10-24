@@ -67,7 +67,7 @@ export {
   verifyRestoredRanges,
   KEY_SIGNALS,
   holdPtt,
-  SCAN_SILENT_PAUSE_MS,
+  SCAN_WRONG_ACK_PAUSE_MS,
   PROGRAM_PAUSE_MS,
   identify,
 } from './radio.ts';
