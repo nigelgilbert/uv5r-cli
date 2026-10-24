@@ -2,7 +2,7 @@
 
 **Type**: HITL (a human powers the radio off and on and sets the pin for the pause test)
 
-**Status:** 🔲 Not started
+**Status:** 🟡 Partial: bench steps pending
 
 ## Parent
 
