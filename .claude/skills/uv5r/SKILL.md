@@ -35,7 +35,7 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 - Write public-safety listening channels with `--rx-only`.
 - The radio speaker is silent while the AIOC is plugged in. The human hears receive audio
   only through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
-  `uv5r sweep PLAN --out-dir DIR` writes to DIR after the run.
+  `uv5r sweep PLAN --out-dir DIR` renames each capture into DIR after its dwell.
 - The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for
   the handshake retry.
 - On `input clips`, ask the human to turn the volume knob down, then listen again.

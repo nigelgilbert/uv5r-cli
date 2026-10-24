@@ -114,7 +114,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'file-write-failed': {
     kind: 'transport',
-    means: 'a WAV rename or image write failed after the port opened, such as a full disk',
+    means: 'a WAV rename or image write failed after the port opened, such as a full disk or a directory changed mid-run',
     remedy: 'free disk space or pass a writable path, then rerun the command',
     retry: 'after-remedy',
   },

@@ -320,7 +320,7 @@ const verbs: Record<string, Verb> = {
     result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011' },
     exits: [
       { code: 2, when: 'FILE not writable, found before the port opens' },
-      { code: 3, when: 'a write that fails after the read, such as a full disk' },
+      { code: 3, when: 'a write that fails after the read, such as a full disk; an existing FILE may be left partial' },
     ],
     positionals: 0,
     run: dumpVerb,

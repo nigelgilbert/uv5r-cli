@@ -42,7 +42,7 @@ after only the check write, or `null` when unknown. Nothing restores slot 0. Run
 
 The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only
 through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
-`uv5r sweep PLAN --out-dir DIR` writes to DIR after the run.
+`uv5r sweep PLAN --out-dir DIR` renames each capture into DIR after its dwell.
 
 A radio verb runs one or more short clone sessions. `sweep` runs one per write, `settings`
 with pairs and `restore` add a verification session, and `key` opens no session. The

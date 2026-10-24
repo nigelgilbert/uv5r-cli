@@ -634,12 +634,12 @@ describe('dump output file', () => {
     expect(existsSync(join(dir, 'target.img'))).toBe(false);
   });
 
-  it('names the check before the port opens in help dump', async () => {
+  it('names the probe exit and the post-read write exit in help dump', async () => {
     await cli(['help', 'dump', '--json']);
     const help = JSON.parse(stdout.join('')) as { exits: Array<{ code: number; when: string }> };
     expect(help.exits).toEqual([
       { code: 2, when: 'FILE not writable, found before the port opens' },
-      { code: 3, when: 'a write that fails after the read, such as a full disk' },
+      { code: 3, when: 'a write that fails after the read, such as a full disk; an existing FILE may be left partial' },
     ]);
   });
 });
