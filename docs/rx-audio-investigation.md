@@ -94,7 +94,7 @@ measured rule supersedes the 32-byte and 64-byte write attempts.
 Run these on the bench with the human present. Steps 1 to 3 write radio EEPROM and need
 explicit permission.
 
-1. Dump first: `node src/main.ts dump --out before-repair.img`.
+1. Dump first: `node src/cli/main.ts dump --out before-repair.img`.
 2. Write the fixture's settings bytes back. Try a 32-byte write at 0x0E20 first. If the
    64-byte readback at 0x0E00 still shows zeros, try a 64-byte write at 0x0E00 using the
    fixture's bytes 0x0E00 to 0x0E3F. Set byte 0x0E20 (squelch) to 0 for the test.

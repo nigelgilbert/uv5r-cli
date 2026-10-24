@@ -6,7 +6,7 @@ Status: plan, revised 2026-10-23 after review. No code yet.
 
 Make `uv5r` open a clone session with any classic UV-5R variant, report which magic and
 firmware it found, and name the radio when the one on the cable speaks a different protocol.
-Today [protocol.ts](../src/protocol.ts) sends one magic, reads a fixed 12 bytes and knows one
+Today [protocol.ts](../src/core/protocol.ts) sends one magic, reads a fixed 12 bytes and knows one
 firmware family.
 
 Every verb that works today keeps its timing and its wire sequence. The scan across magics and
@@ -126,7 +126,7 @@ Pure data and pure functions. No I/O.
 
 ### `Session.start(magic)` in `protocol.ts`
 
-Takes a magic from the table. [radio.ts](../src/radio.ts) resolves `UV5R_MAGIC` once in a
+Takes a magic from the table. [radio.ts](../src/core/radio.ts) resolves `UV5R_MAGIC` once in a
 `selectedMagic()` helper, and both `withSession` and `startFreshSession` pass it, so the
 verification sessions of `settings` and `restore` open with the same magic as the write.
 
@@ -217,7 +217,7 @@ only at 115200.
 
 ### Fake radio
 
-Extend [test/fake.ts](../test/fake.ts) with `magics: Uint8Array[]` it answers, `identReply`
+Extend [test/core/fake.ts](../test/core/fake.ts) with `magics: Uint8Array[]` it answers, `identReply`
 of 8, 12 or 14 bytes, `firmware: string`, `foreignMagic` (a 7-byte magic it acks with a
 14-byte ident) and `programMagic` (a 16-byte magic it acks at 115200 with one `06`). Default
 to the bench unit: magic 291, ident `AA 30 76 04 00 05 20 DD`, firmware `HN5RV011`, rate 9600.
