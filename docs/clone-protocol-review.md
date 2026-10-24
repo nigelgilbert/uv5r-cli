@@ -1,10 +1,11 @@
-# Review: clone protocol implementation, issues 001 to 004
+# Review: clone protocol implementation
 
 Date: 2026-10-24. Plan: [clone-protocol-plan.md](clone-protocol-plan.md). Spec: [clone-protocol.md](clone-protocol.md).
 
 ## Branch
 
-Issues 001 to 004, the review fixes, the cleanup pass and the bench results sit on `feature/clone-protocol` as 28 commits on `main`. Tests grew from 520 after issue 001 to 553 from issue 003 on. `npm run typecheck` and `npm test` pass.
+The plan's work items, the second-attempt change, the review fixes, the cleanup pass and the bench results sit
+on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass with 553 tests.
 
 ## Overseer review
 
@@ -33,7 +34,7 @@ Issues 001 to 004, the review fixes, the cleanup pass and the bench results sit 
 ### 004
 
 - README only. Work items 6 and 7 are done: Ident, Classic magics, Foreign radios, `identify` timing and Bench questions subsections, and the `restore` row note.
-- Every bench step was skipped. No AIOC was attached at any point during the run. The issue status reads Partial. Both bench questions carry "Not measured yet" with the command to run.
+- The bench steps ran later the same day. Results sit under Bench below and in the README bench questions.
 
 ## Sol adversarial review
 
@@ -51,10 +52,19 @@ Rejected: the test-gap half of S1. The tests assert `setBaud` is called with `[[
 
 The full round log sits in the overseer's session scratchpad as `sol-review.md`.
 
+## Bench, 2026-10-24
+
+Firmware `HN5RV011` on the AIOC. The unit does not ack `ORIG`.
+
+- `identify`: `291` acks first, `pin` null, 0.9 s.
+- Radio off: exit 5, `session-unavailable`, empty `answers`, 59.3 s before the second attempts were added.
+- `port.update` to 115200 and back ran with no error in three scans. No radio has answered at 115200.
+- Dump criterion: the aux area and settings block match the 2026-10-12 fixture. The 72 differing bytes sit in slots the bench verbs wrote.
+- Pinned `ORIG` before the second attempts: `291` silent on its single attempt in 2 of 15 runs. Every supported magic now gets a second attempt and the silent pause is 0. After that change, 20 of 20 pinned runs acked `291`.
+
 ## Open items
 
-- Bench verification for 004 is complete. On 2026-10-24 `uv5r identify` with the radio off exited 5 with `session-unavailable` and empty `answers` in 59.3 s. The dump criterion is ticked: the aux area and settings block match the fixture and the 72 differing bytes sit in slots the bench verbs wrote.
-- Stale pin: in 2 of 15 pinned scans `291`, second in the order, stayed silent on its single attempt and the scan ran to `session-unavailable`. Unpinned `identify` and `status` never failed. A second attempt for every supported magic would cover it at the cost of budget.
-- Issue 005 proposes `SCAN_SILENT_PAUSE_MS` at 0 from the pause test.
-- `port.update({ baudRate })` ran on the AIOC in two full `identify` scans on 2026-10-24 with no error. No radio has answered at 115200.
-- S2: decide whether `help --json` reason strings gain a retry value.
+- S2: `help --json` reason strings gain the default retry, as `exit 5, default retry once: ...`, with a note that the error's `retry` field governs. Update the `^exit \d: ` test in `test/cli/cli.test.ts` and the README and SKILL.md lines that say help lists retry values.
+- Pin remedy: when `UV5R_MAGIC` is set and a verb gets no ack, the remedy says to unset it and rerun before pointing at `uv5r identify`. Handshake site in `src/core/protocol.ts` and `src/core/radio.ts`.
+- Bench unit: [rx-audio-investigation.md](rx-audio-investigation.md) concludes the radio since 2026-10-13 is a different unit or the same unit reprogrammed. The 2026-10-24 dump matches the 2026-10-12 fixture outside the 72 bytes and the 7-channel plan from 2026-10-13 is gone. Add a dated note there once Nigel confirms which radio is connected.
+- 57600 and 38400 probes: dropped. The golden files get rebuilt from the reference UV-5Rs later.

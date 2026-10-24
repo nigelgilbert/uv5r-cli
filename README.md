@@ -268,10 +268,12 @@ next magic.
   `ORIG at 9600: silent` twice and then `291 at 9600: ident` in 9 of 10 runs, 6.6 s each.
   With the 2 s pause the same command acked `291` in 4 of 5 runs, 8.6 s each. In the one
   failed run of each set `291` got no reply and the scan ran on to exit 5 with
-  `session-unavailable`, after 33.4 s at 0 and 59.4 s at 2 s. Issue 005 dropped the pause
-  to 0 and gave every supported magic a second attempt.
+  `session-unavailable`, after 33.4 s at 0 and 59.4 s at 2 s. The pause is now 0 and every
+  supported magic gets a second attempt. With that change `UV5R_MAGIC=ORIG uv5r identify`
+  acked `291` in 20 of 20 runs, two of them on the second attempt.
 - **How long does a silent scan take?** On 2026-10-24 `uv5r identify --json` with the radio
-  off exited 5 with `session-unavailable` and empty `answers` after 59.3 s by wall clock.
+  off exited 5 with `session-unavailable` and empty `answers` after 59.3 s by wall clock,
+  before the second attempts were added. The budget is now about 38 s.
 
 ## Bench files
 

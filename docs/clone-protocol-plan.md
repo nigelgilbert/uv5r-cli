@@ -1,6 +1,7 @@
 # Plan: device ID table for the clone handshake
 
-Status: plan, revised 2026-10-23 after review, a grill session and an Astra review. No code yet.
+Status: implemented on `feature/clone-protocol` (PR #3), 2026-10-24. Review:
+[clone-protocol-review.md](clone-protocol-review.md).
 
 ## Goal
 
