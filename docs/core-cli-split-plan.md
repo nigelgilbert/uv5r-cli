@@ -8,7 +8,7 @@ open.
 Divide `src/` into a `core` area that talks to the radio and a `cli` area that parses
 arguments, prints and exits. `core` becomes an npm module later. Adjacent modules such as TTS
 build on `core` and are used by `cli`. The device handshake work in
-[clone-protocol-plan.md](clone-protocol-plan.md) lands inside `core` after this split.
+`uv5r identify` lands inside `core` after this split.
 
 Every verb keeps its output, its timing and its exit codes. The test suite proves the move.
 

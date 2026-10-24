@@ -1,6 +1,6 @@
 # Review: clone protocol implementation
 
-Date: 2026-10-24. Plan: [clone-protocol-plan.md](clone-protocol-plan.md). Spec: [clone-protocol.md](clone-protocol.md).
+Date: 2026-10-24. Spec: [clone-protocol.md](clone-protocol.md).
 
 ## Branch
 
