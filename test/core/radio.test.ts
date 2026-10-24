@@ -6,6 +6,8 @@ import { SETTLE_MS, Session, attempt, hex } from '../../src/core/protocol.ts';
 import { channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
+const NO_HANDSHAKE_REMEDY = 'ask the human to check the radio is on and the cable is seated; if both hold, run uv5r identify and export the UV5R_MAGIC line it prints';
+
 /** Write channel `n` in a new session, as the tune verb does. */
 const tune = (radio: FakeRadio, n: number, spec: ChannelSpec) => withSession(radio, (s) => writeChannel(s, n, spec));
 
@@ -173,7 +175,7 @@ describe('handshake', () => {
     expect((err as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
       message: 'radio answered the clone handshake with 15 in place of 06; check the radio is on and the cable is seated',
-      remedy: 'ask the human to check the radio is on and the cable is seated',
+      remedy: NO_HANDSHAKE_REMEDY,
       retry: 'after-remedy',
       got: '15',
     });
@@ -197,7 +199,7 @@ describe('handshake', () => {
     expect((err as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
       message: 'radio did not answer the clone handshake; check the radio is on and the cable is seated',
-      remedy: 'ask the human to check the radio is on and the cable is seated',
+      remedy: NO_HANDSHAKE_REMEDY,
       retry: 'after-remedy',
       got: '',
     });

@@ -28,6 +28,8 @@ const ACK_WAIT_MS = 1200;
 const IDENT_MAX = 14;
 /** Budget for the one bounded ident read; the whole ident lands within about 10 ms. */
 const IDENT_WAIT_MS = 300;
+/** Remedy for a verb handshake that got no 06. */
+const NO_HANDSHAKE_REMEDY = 'ask the human to check the radio is on and the cable is seated; if both hold, run uv5r identify and export the UV5R_MAGIC line it prints';
 /** Wait for the radio's 06 after the host's closing 06. */
 const CONFIRM_WAIT_MS = 1000;
 /** The radio takes writes as 16-byte aligned blocks below this address. */
@@ -40,7 +42,7 @@ const SETTINGS_HALVES = [SETTINGS_BASE, SETTINGS_BASE + BLOCK] as const;
  * Wait `ms` on a ref'd timer, so a port that closes mid-wait still leaves the loop alive for the
  * next read to report it. When `stop` resolves first, clear the timer and resolve at once.
  */
-const sleep = (ms: number, stop?: Promise<unknown>) =>
+export const sleep = (ms: number, stop?: Promise<unknown>) =>
   new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, ms);
     void stop?.then(() => {
@@ -79,7 +81,7 @@ export type AttemptOutcome =
  * for 06, send 02 and read up to 14 ident bytes in one bounded read. With `confirm`, send the
  * closing 06 and wait for the radio's 06; without it, stop after the ident.
  */
-export async function attempt(transport: Transport, magic: Magic, { confirm }: { confirm: boolean }): Promise<AttemptOutcome> {
+export async function attempt(transport: Transport, magic: Pick<Magic, 'bytes'>, { confirm }: { confirm: boolean }): Promise<AttemptOutcome> {
   transport.discard();
   for (const b of magic.bytes) {
     transport.write(Uint8Array.of(b));
@@ -98,6 +100,11 @@ export async function attempt(transport: Transport, magic: Magic, { confirm }: {
   const ack2 = await transport.read(1, CONFIRM_WAIT_MS);
   if (ack2[0] !== ACK) return { kind: 'refused', got: hex(ack2) };
   return { kind: 'ident', bytes: parsed.bytes };
+}
+
+/** Return the radio-unsupported error for a radio that answered `magic` with reply `got` as `radio`. */
+export function radioUnsupported(radio: string, magic: string, got: string): DeviceStateError {
+  return new DeviceStateError('radio-unsupported', `the radio answered as a ${radio}; this CLI speaks the classic UV-5R protocol`, { radio, magic, got });
 }
 
 /**
@@ -138,11 +145,7 @@ export class Session {
         case 'ident':
           return this.finish(magic, last.bytes);
         case 'foreign':
-          throw new DeviceStateError('radio-unsupported', `the radio answered as a ${last.name}; this CLI speaks the classic UV-5R protocol`, {
-            radio: last.name,
-            magic: magic.name,
-            got: last.got,
-          });
+          throw radioUnsupported(last.name, magic.name, last.got);
         case 'invalid':
           throw new DeviceStateError('protocol-reply-invalid', 'unexpected ident from radio', { magic: magic.name, got: last.got });
         case 'refused':
@@ -151,7 +154,7 @@ export class Session {
     }
     const got = last.kind === 'wrong-ack' ? last.got : '';
     const heard = got ? `answered the clone handshake with ${got} in place of 06` : 'did not answer the clone handshake';
-    throw new DeviceStateError('session-unavailable', `radio ${heard}; check the radio is on and the cable is seated`, { magic: magic.name, got }, { retry: 'after-remedy' });
+    throw new DeviceStateError('session-unavailable', `radio ${heard}; check the radio is on and the cable is seated`, { magic: magic.name, got }, { remedy: NO_HANDSHAKE_REMEDY, retry: 'after-remedy' });
   }
 
   /**

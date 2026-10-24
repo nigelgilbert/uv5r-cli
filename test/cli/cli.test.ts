@@ -357,6 +357,25 @@ describe('status output', () => {
     expect(errJson()).toMatchObject({ reason: 'protocol-reply-invalid', got: 'aa aa aa aa aa aa aa aa aa' });
   });
 
+  it('exits 5 with session-unavailable and the remedy naming uv5r identify and UV5R_MAGIC when the handshake gets no ack', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      radio.handshakesIgnored = 2;
+      const done = cli(['status', '--json'], opener(radio));
+      await vi.runAllTimersAsync();
+      await done;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({
+      reason: 'session-unavailable',
+      remedy: 'ask the human to check the radio is on and the cable is seated; if both hold, run uv5r identify and export the UV5R_MAGIC line it prints',
+      retry: 'after-remedy',
+    });
+  });
+
   it('lists the same keys in the help result', async () => {
     await cli(['help', 'status', '--json']);
     const { result } = JSON.parse(stdout.join('')) as { result: Record<string, unknown> };
