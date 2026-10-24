@@ -106,12 +106,11 @@ do not settle it.
 Run `uv5r identify` when `status` exits 5 with `session-unavailable` and the human confirms
 the radio is on and the cable is seated. It tries each classic magic, then five foreign
 magics at 9600, then six UV17Pro magics at 115200. In text mode it prints one line per
-attempt with the baud on stderr. A silent radio takes up to 59 s: about 30 s for the classic
-magics, 16 s for the foreign magics and 12 s at 115200. Export the `pin` line it prints, as
-in `export UV5R_MAGIC=ORIG`. `pin` is `null` when the verbs already open with the magic that
-answered. An F11, UV6 or UV6_ORIG answer, or an answer to a foreign or 115200 magic, exits 5
-with `radio-unsupported` naming the radio. A 115200 answer adds `powerCycle: true`; the radio
-stays in program mode until the human power-cycles it.
+attempt with the baud on stderr. Export the `pin` line it prints, as in
+`export UV5R_MAGIC=ORIG`. `pin` is `null` when the verbs already open with the magic that
+answered. An F11, UV6 or UV6_ORIG answer, or an answer to a foreign or 115200 magic,
+exits 5 with `radio-unsupported` naming the radio. A 115200 answer adds `powerCycle: true`;
+the radio stays in program mode until the human power-cycles it.
 
 ## How the radio takes a frequency
 
@@ -191,16 +190,16 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 
 ### Ident
 
-- On firmware BFB291 and later the 8-byte ident appears to hold the band limits in BCD, an
-  inference in `docs/clone-protocol.md` section 4.4. Byte 1 is the VHF lower limit minus
-  100 MHz, byte 2 the VHF upper limit minus 100 MHz, bytes 3-4 the second-band lower limit
-  and bytes 5-6 its upper limit. The bench ident reads 130-176 MHz and 400-520 MHz.
+- On firmware BFB291 and later the 8-byte ident appears to hold the band limits in BCD, after
+  `docs/clone-protocol.md` section 4.4. Byte 1 is the VHF lower limit minus 100 MHz, byte 2
+  the VHF upper limit minus 100 MHz, bytes 3-4 the second-band lower limit and bytes 5-6 its
+  upper limit. The bench ident reads 130-176 MHz and 400-520 MHz.
 - Byte 3 equal to `02` marks a 220-260 MHz second band. `flags.band220` reports it on radios
   that are not orig.
 - Orig radios, before BFB291, spell the version in ASCII: `aa 42 46 42 32 33 31 dd` reads
   `BFB231`.
-- The ident names neither the model nor the firmware. Different models return identical
-  idents. `family` comes from the magic that answered and the firmware string at `0x1EF0`.
+- Different models return identical idents. `family` comes from the magic that answered and
+  the firmware string at `0x1EF0`.
 - Bench question 3 in `docs/clone-protocol-plan.md` tests the band-limit reading.
 
 ### Classic magics
@@ -252,10 +251,12 @@ Radios sold as UV-5RH, UV-5RM Plus, UV-5R Mini or UV-5G Plus speak the UV17Pro p
 | Foreign magics at 9600 | 5 | 1.27 s | 2 s |
 | UV17Pro magics at 115200 | 6 | 1.2 s | 1 s, none after the last |
 
-A silent attempt at 9600 costs 70 ms of paced magic and the 1200 ms ack wait. The 3 s pauses
-are `SETTLE_MS` in `src/core/protocol.ts`. The 2 s pauses are `SCAN_SILENT_PAUSE_MS` and the
-1 s pauses `PROGRAM_PAUSE_MS`, both in `src/core/radio.ts`. An invalid ident or a refused
-closing `06` pauses `SETTLE_MS` before the next magic.
+A silent radio takes up to 59 s: about 30 s for the classic magics, 16 s for the foreign
+magics and 12 s at 115200. A silent attempt at 9600 costs 70 ms of paced magic and the
+1200 ms ack wait. The 3 s pauses are `SETTLE_MS` in `src/core/protocol.ts`. The 2 s pauses
+are `SCAN_SILENT_PAUSE_MS` and the 1 s pauses `PROGRAM_PAUSE_MS`, both in
+`src/core/radio.ts`. An invalid ident or a refused closing `06` pauses `SETTLE_MS` before
+the next magic.
 
 ### Bench questions
 

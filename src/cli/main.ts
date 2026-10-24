@@ -193,7 +193,7 @@ const verbs: Record<string, Verb> = {
     effects: [
       'Read the ident, the menu settings and the work mode in one clone session.',
       'Open the session with the magic UV5R_MAGIC names, 291 when unset, as every radio verb does.',
-      'Report the magic that answered, the ident and the 14 version bytes as hex. family comes from the magic and the version string, and reads unknown when neither settles it.',
+      'Report the magic that answered, the ident and the 14 version bytes as hex. family comes from the magic and the version string, and reads unknown when they do not settle it.',
     ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only' },
