@@ -51,6 +51,8 @@ export class FakeRadio implements Transport {
   private staged = new Uint8Array(0x20);
   private lastByteAt = 0;
   ptt = false;
+  /** Baud rate the host set last. */
+  rate = 9600;
   /** Addresses of every write command the radio received, in order. */
   readonly writes: number[] = [];
   /** Number of magic sequences to leave unanswered, as a radio still in a dying clone session. */
@@ -208,6 +210,10 @@ export class FakeRadio implements Transport {
 
   async setPtt(on: boolean): Promise<void> {
     this.ptt = on;
+  }
+
+  async setBaud(rate: number): Promise<void> {
+    this.rate = rate;
   }
 
   async close(): Promise<void> {}

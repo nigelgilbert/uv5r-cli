@@ -19,6 +19,8 @@ export interface Transport {
   discard(): void;
   /** Drive the AIOC PTT line: DTR high with RTS low keys the radio. */
   setPtt(on: boolean): Promise<void>;
+  /** Change the baud rate of the open port. */
+  setBaud(rate: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -117,6 +119,14 @@ export class SerialTransport implements Transport {
     if (on && this.failure) return Promise.reject(this.failure);
     return new Promise((resolve, reject) => {
       this.port.set({ dtr: on, rts: false }, (err) => (err ? reject(new TransportError('ptt-control-failed', err.message, { target: this.target })) : resolve()));
+    });
+  }
+
+  setBaud(rate: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.port.update({ baudRate: rate }, (err) =>
+        err ? reject(new TransportError('serial-io-failed', `cannot set ${rate} baud: ${err.message}`, { target: this.target, baud: rate })) : resolve(),
+      );
     });
   }
 

@@ -13,6 +13,8 @@ const { FakePort, ports } = await vi.hoisted(async () => {
     isOpen = false;
     writeError: Error | undefined;
     setError: Error | undefined;
+    updateError: Error | undefined;
+    updates: unknown[] = [];
     written: Buffer[] = [];
     sets: unknown[] = [];
     readonly options: Record<string, unknown>;
@@ -34,6 +36,11 @@ const { FakePort, ports } = await vi.hoisted(async () => {
     set(opts: unknown, cb: Cb): void {
       this.sets.push(opts);
       const err = this.setError;
+      process.nextTick(() => cb(err ?? null));
+    }
+    update(opts: unknown, cb: Cb): void {
+      this.updates.push(opts);
+      const err = this.updateError;
       process.nextTick(() => cb(err ?? null));
     }
     close(cb: Cb): void {
@@ -144,6 +151,28 @@ describe('SerialTransport', () => {
     expect(err).toBeInstanceOf(TransportError);
     expect((err as TransportError).message).toContain('disconnected');
     await expect(t.close()).resolves.toBeUndefined();
+  });
+
+  it('changes the baud rate on the open port', async () => {
+    const { t, port } = await openFake();
+    await expect(t.setBaud(115200)).resolves.toBeUndefined();
+    await expect(t.setBaud(9600)).resolves.toBeUndefined();
+    expect(port.updates).toEqual([{ baudRate: 115200 }, { baudRate: 9600 }]);
+  });
+
+  it('rejects with serial-io-failed when the port refuses the baud rate', async () => {
+    const { t, port } = await openFake();
+    port.updateError = new Error('EINVAL');
+    const err = await t.setBaud(115200).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    expect((err as TransportError).toJSON()).toEqual({
+      reason: 'serial-io-failed',
+      message: 'cannot set 115200 baud: EINVAL',
+      remedy: 'ask the human to reseat the AIOC cable',
+      retry: 'after-remedy',
+      target: '/dev/null',
+      baud: 115200,
+    });
   });
 
   it('treats a deliberate close as normal', async () => {
