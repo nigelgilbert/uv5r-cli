@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done
 
 ## Parent
 
