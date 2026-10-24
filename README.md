@@ -260,18 +260,23 @@ the next magic.
 
 ### Bench questions
 
-- **Does the unit ack `ORIG`?** Not measured yet. Run `UV5R_MAGIC=ORIG uv5r status --json`.
-  The answer picks the pin for the pause test below.
-- **Does a silent magic need a pause before the next?** Not measured yet. Set
-  `SCAN_SILENT_PAUSE_MS` to 0 in a local edit and run `UV5R_MAGIC=ORIG uv5r identify`, or
-  `UV5R_MAGIC=UV82 uv5r identify` when the unit acks `ORIG`. Check that `291` still acks.
-  The answer decides `SCAN_SILENT_PAUSE_MS`; at 0 a silent radio costs about 26 s less.
+- **Does the unit ack `ORIG`?** No. On 2026-10-24 `UV5R_MAGIC=ORIG uv5r status --json`
+  exited 5 after 5.7 s with `session-unavailable`, `magic` `ORIG` and `got` `""`. Both
+  attempts got no reply.
+- **Does a silent magic need a pause before the next?** No. On 2026-10-24, with
+  `SCAN_SILENT_PAUSE_MS` set to 0 in a local edit, `UV5R_MAGIC=ORIG uv5r identify` printed
+  `ORIG at 9600: silent` twice and then `291 at 9600: ident` in 9 of 10 runs, 6.6 s each.
+  With the committed 2 s pause the same command acked `291` in 4 of 5 runs, 8.6 s each. In
+  the one failed run of each set `291` got no reply and the scan ran on to exit 5 with
+  `session-unavailable`, after 33.4 s at 0 and 59.4 s at 2 s. The pause can drop to 0.
+  `SCAN_SILENT_PAUSE_MS` in `src/core/radio.ts` holds it; issue 005 proposes the change.
 
 ## Bench files
 
 - `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the radio on the bench on 2026-10-12,
-  before any write. Channel 127 holds a corrupted 155.700 record. Dumps since 2026-10-13
-  differ in the aux area; see `docs/rx-audio-investigation.md`.
+  before any write. Channel 127 holds a corrupted 155.700 record. Dumps from 2026-10-13
+  differ in the aux area; see `docs/rx-audio-investigation.md`. A dump on 2026-10-24
+  matches the fixture in the aux area.
 - `scenarios/big-sky-2026-10.json`: historical test data from 2026-10, the non-encrypted
   channels and sweep windows from the Big Sky SITREP. Nothing current reads it.
 - `channels.example.json`: the channel plan written to the bench radio on 2026-10-13, kept
