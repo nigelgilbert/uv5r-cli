@@ -160,7 +160,7 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
  * CHECK_SECONDS at DEFAULT_FLOOR_DBFS, stores the capture warnings in `progress.checkWarnings` and
  * applies the `check` rule. Each entry write puts the entry with its own TX setting into slot 0 in a
  * fresh clone session and waits for the reload. Each write sets `progress.slot0` to null first, then
- * sets it to the record read back once the write verifies.
+ * sets it to the record read back once the write verifies. An error in the check carries `requestedMhz`.
  */
 export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string }): SweepSteps {
   const write = async (progress: SweepProgress, channel: number | null, spec: ChannelSpec, first?: (s: Session) => Promise<void>) => {
@@ -174,12 +174,16 @@ export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device
   return {
     async check(progress, stop) {
       const spec = receiveOnly(checkSpec);
-      await write(progress, null, spec, (s) => refuseOpenSquelch(s, SWEEP_SLOT));
-      await settle(stop.stopped);
-      if (stop.signal) return;
-      const heard = await listen(options.device, CHECK_SECONDS, DEFAULT_FLOOR_DBFS, { stop: stop.stopped });
-      progress.checkWarnings = heard.warnings;
-      judgeCheck(SWEEP_SLOT, spec, heard);
+      try {
+        await write(progress, null, spec, (s) => refuseOpenSquelch(s, SWEEP_SLOT));
+        await settle(stop.stopped);
+        if (stop.signal) return;
+        const heard = await listen(options.device, CHECK_SECONDS, DEFAULT_FLOOR_DBFS, { stop: stop.stopped });
+        progress.checkWarnings = heard.warnings;
+        judgeCheck(SWEEP_SLOT, spec, heard);
+      } catch (err) {
+        throw withDetail(err, { requestedMhz: formatMhz(checkSpec.rxHz) });
+      }
     },
     async prepare(entry, progress, stop) {
       await write(progress, entry.channel, entry.spec);
@@ -210,8 +214,9 @@ export function summarize(progress: SweepProgress, options: { seconds: number; d
  * capture and each dwell race the signal, and a capture the signal reaches kills ffmpeg and waits for
  * it to exit. The summary then covers the dwells finished before the signal and names it in
  * `interrupted`. A dwell whose capture the signal cut short is left out. On a throw, `progress` holds
- * the check warnings, the finished dwells and slot 0, and the error carries `phase`, `slot` and the
- * plan `channel`, null during the check.
+ * the check warnings, the finished dwells and slot 0, and the error carries `phase`, `slot`,
+ * `requestedMhz` and the plan `channel`, null during the check. `requestedMhz` is the entry
+ * frequency; the check step sets it to the check frequency.
  */
 export async function runSweep(
   entries: readonly PlanEntry[],
@@ -233,12 +238,14 @@ export async function runSweep(
   });
   let phase: SweepPhase = 'check';
   let channel: number | null = null;
+  let requestedMhz: string | null = null;
   try {
     await steps.check(progress, stop);
     for (const entry of entries) {
       if (stop.signal) break;
       phase = 'entry';
       channel = entry.channel;
+      requestedMhz = formatMhz(entry.spec.rxHz);
       await steps.prepare(entry, progress, stop);
       if (stop.signal) break;
       phase = 'dwell';
@@ -246,7 +253,8 @@ export async function runSweep(
       progress.dwells.push(record);
     }
   } catch (err) {
-    if (!stop.signal) throw withDetail(err, { phase, slot: SWEEP_SLOT, channel });
+    // Leave out a null requestedMhz so the check step's own value stays.
+    if (!stop.signal) throw withDetail(err, { phase, slot: SWEEP_SLOT, channel, ...(requestedMhz === null ? {} : { requestedMhz }) });
   } finally {
     for (const [signal, handler] of handlers) signals.off(signal, handler);
   }

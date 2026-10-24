@@ -105,11 +105,12 @@ const EXIT_CODES: Record<string, string> = {
 };
 
 const ERROR_GUIDANCE =
-  'A failed command prints one error object on stderr with reason, message, remedy, retry and detail fields when output is JSON, piped or with --json. ' +
+  'A failed command prints one error object on stderr when output is JSON, piped or with --json. ' +
+  'The object has reason, message, remedy and retry, and each detail field below sits at its top level beside them. ' +
   'On a terminal it prints the message and a remedy line as text. ' +
   'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
   'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +
-  'An error inside the sweep loop adds phase (check, entry or dwell), slot (0) and channel (the plan channel, null during the check). ' +
+  'An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check). ' +
   'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +
   'On SIGINT, SIGTERM or SIGHUP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
   'A failed PTT release after the signal exits 3 with interrupted in the error. Other verbs end on a signal with no output.';
@@ -875,9 +876,10 @@ async function sweepVerb(args: Invocation): Promise<number> {
       });
     }
     const checkSpec: ChannelSpec = { rxHz: plan.checkHz };
+    let created: string | undefined;
     if (outDir !== undefined) {
       try {
-        mkdirSync(outDir, { recursive: true });
+        created = mkdirSync(outDir, { recursive: true });
       } catch (err) {
         throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
       }
@@ -887,7 +889,13 @@ async function sweepVerb(args: Invocation): Promise<number> {
         throw new UsageError(`cannot write to ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir }, { remedy: 'pass --out-dir with a writable directory' });
       }
     }
-    await checkFfmpeg();
+    try {
+      await checkFfmpeg();
+    } catch (err) {
+      // Remove the directories this run created so a failed ffmpeg leaves nothing written.
+      if (created !== undefined) rmSync(created, { recursive: true, force: true });
+      throw err;
+    }
     const options = { device, seconds, outDir };
     transportAsked = true;
     summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device }), options, progress));

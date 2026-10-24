@@ -45,15 +45,16 @@ Run commands from the repo root. `uv5r` means `node src/main.ts`.
 
 ## On a failed command
 
-- A failed command prints nothing on stdout and one error object on stderr with `reason`,
-  `message`, `remedy`, `retry` and detail fields when output is JSON, piped or with
-  `--json`, and the message plus a remedy line as text on a terminal. Act on `reason`,
+- A failed command prints nothing on stdout and one error object on stderr when output is
+  JSON, piped or with `--json`, and the message plus a remedy line as text on a terminal.
+  The object has `reason`, `message`, `remedy` and `retry`, with detail fields at its top level. Act on `reason`,
   `remedy` and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
 - `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun the
   same command once. `after-remedy`: rerun after doing the remedy.
 - A `load` error from a plan entry write carries `slot`. A `sweep` error after the port is
   requested carries `summary`. One in the loop adds `phase` (`check`, `entry` or `dwell`),
-  `slot` (0) and `channel` (null during the check); a failed check adds the check fields.
+  `slot` (0), `channel` (null during the check) and `requestedMhz` (the `checkMhz`
+  frequency during the check); a failed check adds the check fields.
 - On SIGINT, SIGTERM or SIGHUP after `key` or `sweep` opens the port, the result prints on
   stdout with `interrupted` and exit 128 plus the signal number. Other verbs print nothing.
 - After a failed `key`, report and wait for the human. A failed PTT release after a signal
