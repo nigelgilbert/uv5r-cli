@@ -21,8 +21,8 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
-import type { Family, Magic, MagicName } from './ident.ts';
-import { Session, hex, settle } from './protocol.ts';
+import { DEFAULT_MAGIC, MAGICS, SCAN_ORDER, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
+import { SETTLE_MS, Session, attempt, hex, radioUnsupported, settle, sleep, type AttemptOutcome } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
 /** Channel fields every channel payload carries. */
@@ -142,6 +142,125 @@ export async function startFreshSession(t: Transport, options: SessionOptions = 
  */
 export async function verifySettingsInFreshSession(t: Transport, expected: Uint8Array, options: SessionOptions = {}): Promise<Settings> {
   return verifySettingsBlock(await startFreshSession(t, options), expected);
+}
+
+/** Pause after an attempt that got no 06 before the next magic in identify. */
+export const SCAN_SILENT_PAUSE_MS = 2000;
+/** Baud rate of the classic clone protocol. */
+const CLASSIC_BAUD = 9600;
+/** Radio names for the magics this CLI recognizes and refuses, by family. */
+const UNSUPPORTED_RADIOS: Partial<Record<Family, string>> = { 'f-11': 'Baofeng F-11', 'uv-6': 'Baofeng UV-6' };
+
+/** One attempt as identify reports it after the attempt ends. */
+export interface IdentifyAttempt {
+  name: string;
+  baud: number;
+  outcome: AttemptOutcome['kind'];
+}
+
+/** A wrong ack or a refused closing 06, by magic name, with the reply bytes as hex. */
+export interface IdentifyAnswer {
+  magic: string;
+  outcome: 'wrong-ack' | 'refused';
+  got: string;
+}
+
+/** The magic that opened a clone session in identify, with what the handshake read. */
+export interface IdentifyResult {
+  magic: MagicName;
+  /** The 8-byte ident as hex. */
+  ident: string;
+  firmware: string;
+  firmwareHex: string;
+  family: Family;
+  flags: IdentFlags;
+  droppedByte: boolean;
+  /** The UV5R_MAGIC line to export when the answering magic differs from the selected one, else null. */
+  pin: string | null;
+}
+
+/**
+ * Scan state shared across phases: the pause owed before the next attempt, the wrong acks
+ * and refusals seen, and the first invalid ident.
+ */
+interface Scan {
+  transport: Transport;
+  onAttempt: (a: IdentifyAttempt) => void;
+  pauseMs: number;
+  answers: IdentifyAnswer[];
+  invalid: { magic: string; got: string } | undefined;
+}
+
+/** Wait the pause the last attempt owes, run one attempt with `bytes`, report it and record its answer. */
+async function probe(scan: Scan, name: string, bytes: Pick<Magic, 'bytes'>, confirm: boolean): Promise<AttemptOutcome> {
+  if (scan.pauseMs > 0) await sleep(scan.pauseMs);
+  const outcome = await attempt(scan.transport, bytes, { confirm });
+  scan.onAttempt({ name, baud: CLASSIC_BAUD, outcome: outcome.kind });
+  if (outcome.kind === 'wrong-ack' || outcome.kind === 'refused') scan.answers.push({ magic: name, outcome: outcome.kind, got: outcome.got });
+  if (outcome.kind === 'invalid') scan.invalid ??= { magic: name, got: outcome.got };
+  scan.pauseMs = outcome.kind === 'silent' || outcome.kind === 'wrong-ack' ? SCAN_SILENT_PAUSE_MS : SETTLE_MS;
+  return outcome;
+}
+
+/** Return the scan order with `first` moved to the front. */
+function scanOrder(first: Magic): Magic[] {
+  const rest = SCAN_ORDER.filter((name) => name !== first.name).map((name) => MAGICS.find((m) => m.name === name)!);
+  return [first, ...rest];
+}
+
+/**
+ * Try each classic magic in SCAN_ORDER, with `options.magic` moved to the front, and return
+ * the first that opens a clone session. The first magic gets a second attempt SETTLE_MS later
+ * on silence or a wrong ack. Each later magic waits SCAN_SILENT_PAUSE_MS after silence or a
+ * wrong ack, and SETTLE_MS after an invalid ident or a refused closing 06. Unsupported magics
+ * run without the closing 06; an ident on one, or a 14-byte ident on any, throws
+ * radio-unsupported. Calls `onAttempt` after each attempt.
+ */
+export async function identify(transport: Transport, onAttempt: (a: IdentifyAttempt) => void = () => {}, options: SessionOptions = {}): Promise<IdentifyResult> {
+  const selected = options.magic ?? MAGICS.find((m) => m.name === DEFAULT_MAGIC)!;
+  const scan: Scan = { transport, onAttempt, pauseMs: 0, answers: [], invalid: undefined };
+  for (const [i, magic] of scanOrder(selected).entries()) {
+    let outcome = await probe(scan, magic.name, magic, magic.supported);
+    if (i === 0 && (outcome.kind === 'silent' || outcome.kind === 'wrong-ack')) {
+      scan.pauseMs = SETTLE_MS;
+      outcome = await probe(scan, magic.name, magic, magic.supported);
+    }
+    if (outcome.kind === 'foreign') throw radioUnsupported(outcome.name, magic.name, outcome.got);
+    if (outcome.kind !== 'ident') continue;
+    if (!magic.supported) throw radioUnsupported(UNSUPPORTED_RADIOS[magic.families[0]!] ?? magic.name, magic.name, hex(outcome.bytes));
+    const id = await new Session(transport).finish(magic, outcome.bytes);
+    return {
+      magic: id.magic,
+      ident: hex(id.bytes),
+      firmware: id.firmware,
+      firmwareHex: id.firmwareHex,
+      family: id.family,
+      flags: id.flags,
+      droppedByte: id.droppedByte,
+      pin: id.magic === selected.name ? null : `UV5R_MAGIC=${id.magic}`,
+    };
+  }
+  throw scanFailed(scan);
+}
+
+/** Return the error for a scan that opened no session: the first invalid ident, else the wrong acks and refusals. */
+function scanFailed(scan: Scan): DeviceStateError {
+  if (scan.invalid) {
+    const { magic, got } = scan.invalid;
+    return new DeviceStateError('protocol-reply-invalid', `radio answered magic ${magic} with ident ${got} of no known shape, as an unknown UV-5R variant`, {
+      magic,
+      got,
+      answers: scan.answers,
+    });
+  }
+  const answers = scan.answers.map((a) => `${a.magic} ${a.outcome}${a.got ? ` ${a.got}` : ''}`).join(', ');
+  const heard = scan.answers.length === 0 ? 'did not answer any classic magic' : `opened no clone session with any classic magic: ${answers}`;
+  return new DeviceStateError(
+    'session-unavailable',
+    `radio ${heard}`,
+    { answers: scan.answers },
+    { remedy: 'ask the human to check the radio is on and the cable is seated', retry: 'after-remedy' },
+  );
 }
 
 /** Read the firmware, the work mode and the audio settings, with the magic, ident and family from the handshake. */
