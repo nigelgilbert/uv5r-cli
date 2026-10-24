@@ -12,7 +12,7 @@ Skip `docs/chirp-notes/`. The clean-room boundary keeps Chirp-derived text out o
 
 ## Context
 
-- Branch `feature/core-cli-split` holds the docs at `78bda2d`. The split lands as PR 1; the handshake plan lands as PR 2 on top of it.
+- Branch `feature/core-cli-split` holds the docs at `78bda2d`. The split lands as PR #2; the handshake plan lands in a later PR on top of it.
 - One radio on the bench: UV-5R, firmware `HN5RV011`, answers the 291 magic, AIOC on `/dev/cu.usbmodemf40b162d5`.
 - Today's code sends one magic and knows one firmware family.
 

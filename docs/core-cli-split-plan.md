@@ -1,6 +1,7 @@
 # Plan: split core from CLI
 
-Status: plan, 2026-10-23. No code yet.
+Status: implemented on `feature/core-cli-split` (PR #2), 2026-10-23. Item 7, the bench check, is
+open.
 
 ## Goal
 
@@ -85,9 +86,9 @@ file under `src/cli/` import `../core/index.ts`.
 
 ## Where the handshake engine lands
 
-The handshake plan stays as written with these path changes:
+The handshake plan uses the `src/core/`, `src/cli/`, `test/core/` and `test/cli/` paths. It
+stays as written with these changes:
 
-- `src/ident.ts` becomes `src/core/ident.ts`; `test/ident.test.ts` becomes `test/core/ident.test.ts`.
 - `Session.start(magic)` stays in `core/protocol.ts`. The constructor keeps taking a
   `Transport`; `start` takes the magic. A constructor runs no I/O, so the handshake stays in
   the async `start` and the magic table is data passed in.

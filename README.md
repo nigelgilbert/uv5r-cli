@@ -218,8 +218,9 @@ npm test
 
 `src/core/` talks to the radio: transport, protocol, codec, radio, plan and errors.
 `src/cli/` parses arguments, prints and exits. `cli` imports `core` through
-`src/core/index.ts`; `core` imports nothing from `cli`, and `test/core/imports.test.ts`
-fails on any import path under `src/core/` that contains `cli/`.
+`src/core/index.ts`; `core` imports nothing from `cli`. `test/core/imports.test.ts` fails on
+any import path under `src/core/` that contains `cli/`, and on any `core/` import from
+`src/cli/` or `test/cli/` other than `src/core/index.ts` and `test/core/fake.ts`.
 
 `test/core/fake.ts` is an in-memory radio with the bench behaviour: aligned reads, acked writes,
 VFO writes ignored, settings reload on session drop, the 16-byte read alias in

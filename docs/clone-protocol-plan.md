@@ -77,7 +77,7 @@ the firmware string, derives a family and feature flags, and keeps working with
 
 | Topic | Code today | Spec | Change |
 |---|---|---|---|
-| Magic list | One, `50 BB FF 20 12 07 25` | Eight classic magics | Table in a new `src/ident.ts`; `Session.start` takes one magic |
+| Magic list | One, `50 BB FF 20 12 07 25` | Eight classic magics | Table in a new `src/core/ident.ts`; `Session.start` takes one magic |
 | Magic send | Byte at a time, 10 ms | Same | Keep |
 | Ack wait | 1200 ms | 1 s | Keep 1200 ms |
 | Wrong ack | Merged with silence | Report separately with the byte | Add the byte to the error detail |
@@ -94,7 +94,7 @@ the firmware string, derives a family and feature flags, and keeps working with
 
 ## Design
 
-### `src/ident.ts`
+### `src/core/ident.ts`
 
 Pure data and pure functions. No I/O.
 
@@ -233,9 +233,9 @@ with a result example and its exit cases. `firmware` keeps its printable trimmed
 
 Each item ends with `npm run typecheck` and `npm test` green.
 
-1. `src/ident.ts` with the tables, `parseIdent`, `classify`, `magicByName`, and
-   `test/ident.test.ts` covering: every magic maps to its families; each basetype string lands
-   on its family; `HN5RV011` with magic 291 gives `uv5r`, with magic UV82 gives `uv-82x3`;
+1. `src/core/ident.ts` with the tables, `parseIdent`, `classify`, `magicByName`, and
+   `test/core/ident.test.ts` covering: every magic maps to its families; each basetype string
+   lands on its family; `HN5RV011` with magic 291 gives `uv5r`, with magic UV82 gives `uv-82x3`;
    `N5RV` with 291 gives `uv5r`; `BFB231` and `BFB250` give `orig` and `voiceBool`; `BFB260`
    gives `orig` and a voice list; `BFB29x` gives `orig: false` and `unknown` without
    throwing; empty, all-`FF` and all-space firmware give `unknown`; byte 3 `02` sets `band220`
@@ -256,7 +256,7 @@ Each item ends with `npm run typecheck` and `npm test` green.
    `identify`; a UV6 ack names the UV-6 as unsupported with no block read on the wire; a
    14-byte ident on the second magic ends the scan.
 4. `status`, `dump` and `identify` output, help entries, README verb table and operating rule,
-   SKILL.md bullet. Snapshot tests in `test/cli.test.ts`.
+   SKILL.md bullet. Snapshot tests in `test/cli/cli.test.ts`.
 5. Bench verification, read-only, with the AIOC on `/dev/cu.usbmodemf40b162d5`:
    `uv5r status --json` reports `magic: 291`, `family: uv5r`, firmware `HN5RV011`;
    `uv5r identify` on the bench unit stops at the first magic; `UV5R_MAGIC=ORIG uv5r status`
