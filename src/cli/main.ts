@@ -9,16 +9,22 @@ import {
   checkBand,
   checkChannelNumber,
   checkTenHz,
+  DEFAULT_MAGIC,
   dumpImage,
   encodeName,
   eraseChannel,
+  FOREIGN_MAGICS,
   holdPtt,
+  identify,
   IMAGE_HEADER,
   imageSettingsBlock,
   isSettingName,
+  magicByName,
   parseFrequency,
   parseSettingValue,
   parseTone,
+  PROGRAM_MAGICS,
+  PROGRAM_PAUSE_MS,
   readChannel,
   readPlan,
   readSettings,
@@ -28,6 +34,8 @@ import {
   RESTORE_RANGES,
   restoreImage,
   RETRY,
+  SCAN_ORDER,
+  SCAN_WRONG_ACK_PAUSE_MS,
   SerialTransport,
   SETTING_NAMES,
   settingValues,
@@ -45,7 +53,10 @@ import {
   writeSettings,
   type ChannelResult,
   type ChannelSpec,
-  type RadioStatus,
+  type Family,
+  type IdentifyResult,
+  type Magic,
+  type MagicName,
   type SettingName,
   type Settings,
   type Transport,
@@ -106,7 +117,7 @@ const EXIT_CODES: Record<string, string> = {
   '2': 'usage: bad input; argument errors exit before the port opens',
   '3': 'transport: no device, a serial error, an ffmpeg or afplay failure, or a failed file write',
   '4': 'timeout: no ack before a block read, or a short block payload',
-  '5': 'device-state: no handshake, a bad reply, a refused write, a failed verification, an image ident mismatch, an open squelch or a check under 80% active seconds',
+  '5': 'device-state: no handshake, a bad reply, an unsupported radio, a refused write, a failed verification, an image ident mismatch, an open squelch or a check under 80% active seconds',
   '6': 'busy: another process holds the serial port',
   '128+signal': 'interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary',
 };
@@ -175,17 +186,69 @@ const LISTEN_EXAMPLE = {
 
 const verbs: Record<string, Verb> = {
   status: {
-    summary: 'Print firmware, work mode, squelch, voice, beep and abr',
+    summary: 'Print firmware, family, magic, ident, work mode, squelch, voice, beep and abr',
     example: 'uv5r status',
     args: [],
     flags: COMMON_FLAGS,
-    effects: ['Read the ident, the menu settings and the work mode in one clone session.'],
+    effects: [
+      'Read the ident, the menu settings and the work mode in one clone session.',
+      'Open the session with the magic UV5R_MAGIC names, 291 when unset, as every radio verb does.',
+      'Report the magic that answered, the ident and the 14 version bytes as hex. family comes from the magic and the version string, and reads unknown when they do not settle it.',
+    ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only' },
-    result: { firmware: 'HN5RV011', workmode: 'channel', squelch: 3, voice: 'eng', beep: 'on', abr: 5 },
+    result: {
+      firmware: 'HN5RV011',
+      firmwareHex: '48 4e 35 52 56 30 31 31 ff ff ff ff ff ff',
+      family: 'uv5r',
+      magic: '291',
+      ident: 'aa 30 76 04 00 05 20 dd',
+      workmode: 'channel',
+      squelch: 3,
+      voice: 'eng',
+      beep: 'on',
+      abr: 5,
+    },
     exits: [],
     positionals: 0,
     run: statusVerb,
+  },
+  identify: {
+    summary: 'Try each classic magic and report the one the radio answers, with the UV5R_MAGIC line to export; name a radio of another family',
+    example: 'uv5r identify',
+    args: [],
+    flags: COMMON_FLAGS,
+    effects: [
+      `Try the classic magics in the order ${SCAN_ORDER.join(', ')}. A magic UV5R_MAGIC names goes first.`,
+      `Give each supported magic a second attempt on silence or a byte other than 06. The first magic waits ${SETTLE_MS / 1000} s before it, as every radio verb does.`,
+      `Pause ${SCAN_WRONG_ACK_PAUSE_MS / 1000} s after a wrong ack and ${SETTLE_MS / 1000} s after a bad ident or a refused closing 06. Silence gets no pause.`,
+      'Stop at the first magic that opens a clone session and read the firmware block. F11, UV6 and UV6_ORIG run without the closing 06 and with no block read.',
+      `When no classic magic opens a session, send the foreign magics of ${FOREIGN_MAGICS.map((m) => m.radio).join(', ')} at 9600 without the closing 06, with the same pauses. An ident stops the scan and names that radio.`,
+      `Then switch the port to 115200 and send each UV17Pro magic, ${PROGRAM_MAGICS.map((m) => m.name).join(', ')}, in one write, ${PROGRAM_PAUSE_MS / 1000} s apart. An 06 stops the scan and names the model group. The port returns to 9600 after the last magic or the 06.`,
+      'pin is the UV5R_MAGIC=NAME line to export when the answering magic differs from the one the other verbs select now, UV5R_MAGIC or else 291. It is null when they match.',
+      'In text mode, print one line per attempt on stderr with the baud, as in ORIG at 9600: silent or PROGRAMBFNORMALU at 115200: ack.',
+      'A silent radio takes about 29 s: 20 s for the classic magics, 6 s for the foreign magics and 3 s at 115200.',
+    ],
+    preconditions: [RADIO_READY],
+    writesToRadio: { writes: false, note: 'reads only' },
+    result: {
+      magic: '291',
+      ident: 'aa 30 76 04 00 05 20 dd',
+      firmware: 'HN5RV011',
+      firmwareHex: '48 4e 35 52 56 30 31 31 ff ff ff ff ff ff',
+      family: 'uv5r',
+      flags: { basetype: 'HN5RV01', orig: false, voiceBool: false, band220: false, triPower: false, dtmfTable: '0123456789ABCD*#' },
+      droppedByte: true,
+      pin: null,
+    },
+    exits: [
+      { code: 5, when: 'radio-unsupported on an F11, UV6 or UV6_ORIG ident, a 14-byte ident or a foreign magic ident, naming the radio' },
+      { code: 5, when: 'radio-unsupported with powerCycle true on a 06 at 115200, naming the UV17Pro model group; the radio stays in program mode until the human power-cycles it' },
+      { code: 5, when: 'protocol-reply-invalid with the first bad classic ident in got when no magic opened a session' },
+      { code: 5, when: 'otherwise session-unavailable with answers, each wrong ack, refusal and foreign bad ident by magic name; empty on a silent cable' },
+    ],
+    positionals: 0,
+    run: identifyVerb,
   },
   tune: {
     summary: 'Write a frequency into memory slot N and read it back',
@@ -324,7 +387,7 @@ const verbs: Record<string, Verb> = {
     ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only; writes FILE on disk' },
-    result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011' },
+    result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011', family: 'uv5r', magic: '291' },
     exits: [
       { code: 2, when: 'FILE not writable, found before the port opens' },
       { code: 3, when: 'a write that fails after the read, such as a full disk; an existing FILE may be left partial' },
@@ -521,6 +584,12 @@ function wantsJson(flags: Map<string, string | true>): boolean {
   return flags.get('json') === true || !process.stdout.isTTY;
 }
 
+/** Return the magic UV5R_MAGIC names, or 291 when it is unset or empty; call it before the port opens. */
+function selectedMagic(): Magic {
+  const name = process.env.UV5R_MAGIC;
+  return magicByName(name === undefined || name === '' ? DEFAULT_MAGIC : name);
+}
+
 /** Open the serial port at the given path, or at the AIOC found by USB id. */
 async function openSerial(target: string | undefined): Promise<Transport> {
   return SerialTransport.open(await resolveTarget(target));
@@ -570,15 +639,18 @@ function channelText(c: ChannelResult): string {
   return `ch ${c.channel}: rx ${c.rxMhz} tx ${c.txMhz ?? 'off'} tone ${c.txTone} rx-tone ${c.rxTone} ${c.bandwidth} ${c.power} ${c.name}`;
 }
 
-function statusText(s: RadioStatus): string {
-  return [
-    `firmware   ${s.firmware}`,
-    `workmode   ${s.workmode}`,
-    `squelch    ${s.squelch}`,
-    `voice      ${s.voice}`,
-    `beep       ${s.beep}`,
-    `abr        ${s.abr}`,
-  ].join('\n');
+/** Return each key of `o` padded to 12 columns and its value, one per line. */
+function fieldLines(o: object): string {
+  return Object.entries(o)
+    .map(([key, value]) => `${key.padEnd(12)} ${value}`)
+    .join('\n');
+}
+
+function identifyText(r: IdentifyResult): string {
+  const flags = Object.entries(r.flags)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' ');
+  return fieldLines({ ...r, flags, pin: r.pin ?? 'none; the verbs already open with this magic' });
 }
 
 function settingsText(s: Settings): string {
@@ -599,8 +671,26 @@ function settingsPatch(positionals: string[]): Partial<Record<SettingName, numbe
 
 async function statusVerb(args: Invocation): Promise<number> {
   checkFlags('status', args.flags, flagNames('status'));
-  const status = await withTransport(args, (t) => withSession(t, readStatus));
-  print(args, status, () => statusText(status));
+  const magic = selectedMagic();
+  const status = await withTransport(args, (t) => withSession(t, readStatus, { magic }));
+  print(args, status, () => fieldLines(status));
+  return EXIT.ok;
+}
+
+async function identifyVerb(args: Invocation): Promise<number> {
+  checkFlags('identify', args.flags, flagNames('identify'));
+  const magic = selectedMagic();
+  const json = wantsJson(args.flags);
+  const result = await withTransport(args, (t) =>
+    identify(
+      t,
+      (a) => {
+        if (!json) process.stderr.write(`${a.name} at ${a.baud}: ${a.outcome}\n`);
+      },
+      { magic },
+    ),
+  );
+  print(args, result, () => identifyText(result));
   return EXIT.ok;
 }
 
@@ -612,7 +702,8 @@ async function tuneVerb(args: Invocation): Promise<number> {
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
   const spec = channelSpec(freq, args.flags);
-  const written = await withTransport(args, (t) => withSession(t, (s) => writeChannel(s, n, spec)));
+  const magic = selectedMagic();
+  const written = await withTransport(args, (t) => withSession(t, (s) => writeChannel(s, n, spec), { magic }));
   const result = { ...channelPayload(n, written), appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `${channelText(result)}\nwritten; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
@@ -633,8 +724,9 @@ async function checkVerb(args: Invocation): Promise<number> {
   // Pass no flags so the spec takes the defaults: no RX tone, wide, high power, named by frequency.
   const spec = channelSpec(freq, new Map());
   const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  const magic = selectedMagic();
   await checkFfmpeg();
-  const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device }));
+  const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device, magic }));
   print(args, result, () =>
     [
       `slot ${result.slot}: requested ${result.requestedMhz}`,
@@ -654,13 +746,18 @@ async function loadVerb(args: Invocation): Promise<number> {
     const file = args.positionals[0];
     if (!file) throw new UsageError('load needs a plan file, as in: load channels.json');
     const plan = readPlan(file);
+    const magic = selectedMagic();
     await withTransport(args, (t) =>
-      withSession(t, async (s) => {
-        for (const { channel, spec } of plan.entries) {
-          slot = channel;
-          records.push(channelPayload(channel, await writeChannel(s, channel, spec)));
-        }
-      }),
+      withSession(
+        t,
+        async (s) => {
+          for (const { channel, spec } of plan.entries) {
+            slot = channel;
+            records.push(channelPayload(channel, await writeChannel(s, channel, spec)));
+          }
+        },
+        { magic },
+      ),
     );
   } catch (err) {
     // Name the slot that failed.
@@ -677,7 +774,8 @@ async function readVerb(args: Invocation): Promise<number> {
   if (numText === undefined) throw new UsageError('read needs a channel number 0..127, as in: read 5');
   const n = parseDecimal(numText, 'channel');
   checkChannelNumber(n);
-  const ch = await withTransport(args, (t) => withSession(t, (s) => readChannel(s, n)));
+  const magic = selectedMagic();
+  const ch = await withTransport(args, (t) => withSession(t, (s) => readChannel(s, n), { magic }));
   const result = channelPayload(n, ch);
   print(args, result, () => channelText(result));
   return EXIT.ok;
@@ -689,7 +787,8 @@ async function eraseVerb(args: Invocation): Promise<number> {
   if (numText === undefined) throw new UsageError('erase needs a channel number 0..127, as in: erase 127');
   const n = parseDecimal(numText, 'channel');
   checkChannelNumber(n);
-  await withTransport(args, (t) => withSession(t, (s) => eraseChannel(s, n)));
+  const magic = selectedMagic();
+  await withTransport(args, (t) => withSession(t, (s) => eraseChannel(s, n), { magic }));
   const result = { channel: n, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS };
   print(args, result, () => `channel ${n} erased; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
@@ -720,6 +819,7 @@ async function dumpVerb(args: Invocation): Promise<number> {
   checkFlags('dump', args.flags, flagNames('dump'));
   const out = stringFlag(args.flags, 'out') ?? defaultDumpName();
   const json = wantsJson(args.flags);
+  const magic = selectedMagic();
   const notWritable = (err: unknown) =>
     new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
   let created = false;
@@ -735,21 +835,26 @@ async function dumpVerb(args: Invocation): Promise<number> {
   } catch (err) {
     throw notWritable(err);
   }
-  let result: { out: string; bytes: number; firmware: string };
+  let result: { out: string; bytes: number; firmware: string; family: Family; magic: MagicName };
   try {
     result = await withTransport(args, (t) =>
-      withSession(t, async (s) => {
-        const image = await dumpImage(s, (addr) => {
-          if (!json && addr % 0x400 === 0) process.stderr.write(`read 0x${addr.toString(16).padStart(4, '0')}\n`);
-        });
-        try {
-          writeFileSync(out, image);
-        } catch (err) {
-          const e = err as NodeJS.ErrnoException;
-          throw new TransportError('file-write-failed', `cannot write ${out}: ${e.message}`, { out, code: e.code }, { remedy: 'pass --out with a writable path that has free space' });
-        }
-        return { out, bytes: image.length, firmware: s.startedIdent.firmware };
-      }),
+      withSession(
+        t,
+        async (s) => {
+          const image = await dumpImage(s, (addr) => {
+            if (!json && addr % 0x400 === 0) process.stderr.write(`read 0x${addr.toString(16).padStart(4, '0')}\n`);
+          });
+          try {
+            writeFileSync(out, image);
+          } catch (err) {
+            const e = err as NodeJS.ErrnoException;
+            throw new TransportError('file-write-failed', `cannot write ${out}: ${e.message}`, { out, code: e.code }, { remedy: 'pass --out with a writable path that has free space' });
+          }
+          const { firmware, family, magic: answered } = s.startedIdent;
+          return { out, bytes: image.length, firmware, family, magic: answered };
+        },
+        { magic },
+      ),
     );
   } catch (err) {
     // Remove the file the probe created and keep the dump error when the removal fails.
@@ -760,7 +865,7 @@ async function dumpVerb(args: Invocation): Promise<number> {
     }
     throw err;
   }
-  print(args, result, () => `wrote ${result.bytes} bytes to ${result.out} (${result.firmware})`);
+  print(args, result, () => `wrote ${result.bytes} bytes to ${result.out} (${result.firmware}, family ${result.family}, magic ${result.magic})`);
   return EXIT.ok;
 }
 
@@ -779,13 +884,17 @@ async function restoreVerb(args: Invocation): Promise<number> {
     throw new UsageError(`image too short: ${file} has ${image.length} bytes, restore needs ${MIN_IMAGE_BYTES}`, { file, bytes: image.length });
   }
   const json = wantsJson(args.flags);
+  const magic = selectedMagic();
   const result = await withTransport(args, async (t) => {
-    const blocks = await withSession(t, (s) =>
-      restoreImage(s, image, (addr) => {
-        if (!json && addr % 0x400 === 0) process.stderr.write(`write 0x${addr.toString(16).padStart(4, '0')}\n`);
-      }),
+    const blocks = await withSession(
+      t,
+      (s) =>
+        restoreImage(s, image, (addr) => {
+          if (!json && addr % 0x400 === 0) process.stderr.write(`write 0x${addr.toString(16).padStart(4, '0')}\n`);
+        }),
+      { magic },
     );
-    const fresh = await startFreshSession(t);
+    const fresh = await startFreshSession(t, { magic });
     const settings = await verifySettingsBlock(fresh, imageSettingsBlock(image));
     const verifiedBlocks = await verifyRestoredRanges(fresh, image);
     return { file, blocks, verifiedBlocks, settings };
@@ -801,10 +910,11 @@ async function restoreVerb(args: Invocation): Promise<number> {
 async function settingsVerb(args: Invocation): Promise<number> {
   checkFlags('settings', args.flags, flagNames('settings'));
   const patch = settingsPatch(args.positionals);
+  const magic = selectedMagic();
   const result = await withTransport(args, async (t) => {
-    if (Object.keys(patch).length === 0) return withSession(t, readSettings);
-    const block = await withSession(t, (s) => writeSettings(s, patch));
-    return verifySettingsInFreshSession(t, block);
+    if (Object.keys(patch).length === 0) return withSession(t, readSettings, { magic });
+    const block = await withSession(t, (s) => writeSettings(s, patch), { magic });
+    return verifySettingsInFreshSession(t, block, { magic });
   });
   print(args, result, () => settingsText(result));
   return EXIT.ok;
@@ -883,6 +993,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
       });
     }
     const checkSpec: ChannelSpec = { rxHz: plan.checkHz };
+    const magic = selectedMagic();
     await checkFfmpeg();
     if (outDir !== undefined) {
       try {
@@ -898,7 +1009,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
     }
     const options = { device, seconds, outDir };
     transportAsked = true;
-    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device }), options, progress));
+    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device, magic }), options, progress));
   } catch (err) {
     // Add the finished dwells and slot 0 to the error once the port was asked for.
     throw withDetail(err, transportAsked ? { summary: summarize(progress, { seconds, device }) } : {});

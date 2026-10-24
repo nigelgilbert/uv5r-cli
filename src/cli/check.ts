@@ -8,6 +8,7 @@ import {
   withSession,
   writeChannel,
   type ChannelSpec,
+  type Magic,
   type Session,
   type Transport,
 } from '../core/index.ts';
@@ -20,6 +21,8 @@ export const CHECK_ACTIVE_SHARE = 0.8;
 export interface CheckOptions {
   /** avfoundation audio input to capture from. */
   device: string;
+  /** Magic the clone session opens with; 291 when absent. */
+  magic?: Magic;
 }
 
 export type CheckResult = { slot: number; requestedMhz: string } & ListenResult;
@@ -80,7 +83,7 @@ export async function checkChannel(t: Transport, n: number, spec: ChannelSpec, o
   await withSession(t, async (s) => {
     await refuseOpenSquelch(s, n);
     return writeChannel(s, n, receiveOnly(spec));
-  });
+  }, { magic: options.magic });
   await settle();
   let heard: ListenResult;
   try {

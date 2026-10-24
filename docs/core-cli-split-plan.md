@@ -8,7 +8,7 @@ open.
 Divide `src/` into a `core` area that talks to the radio and a `cli` area that parses
 arguments, prints and exits. `core` becomes an npm module later. Adjacent modules such as TTS
 build on `core` and are used by `cli`. The device handshake work in
-[clone-protocol-plan.md](clone-protocol-plan.md) lands inside `core` after this split.
+`uv5r identify` lands inside `core` after this split.
 
 Every verb keeps its output, its timing and its exit codes. The test suite proves the move.
 
@@ -108,8 +108,7 @@ Each item ends with `npm run typecheck` and `npm test` green.
 
 1. Create `src/core/` and `src/cli/`. `git mv` each file to the directory in the layout.
    Rewrite relative imports. Move the tests into `test/core/` and `test/cli/` and fix their
-   paths. Update `vitest.config.ts` to `test/**/*.test.ts` (unchanged) and the `bin` and
-   `uv5r` script in `package.json` to `src/cli/main.ts`.
+   paths. Point the `bin` and `uv5r` script in `package.json` at `src/cli/main.ts`.
 2. Split `errors.ts`: `EXIT`, `exitCodeFor` and `signalExitCode` go to `cli/exit.ts`.
    `cli/main.ts` and `cli/help.ts` import them from there. `test/cli/errors.test.ts` covers
    the exit mapping; the reason table tests stay in `test/core/errors.test.ts`.

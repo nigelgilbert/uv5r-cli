@@ -21,7 +21,8 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
-import { Session, hex, settle } from './protocol.ts';
+import { DEFAULT_MAGIC, FOREIGN_MAGICS, MAGICS, PROGRAM_MAGICS, SCAN_ORDER, magicByName, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
+import { ACK, SETTLE_MS, Session, attempt, hex, radioUnsupported, settle, sleep, type AttemptOutcome } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
 /** Channel fields every channel payload carries. */
@@ -37,6 +38,11 @@ export type ChannelResult = ChannelPayload | { channel: number; empty: true } | 
 
 export type RadioStatus = {
   firmware: string;
+  firmwareHex: string;
+  family: Family;
+  magic: MagicName;
+  /** The 8-byte ident as hex. */
+  ident: string;
   workmode: 'vfo' | 'channel';
   squelch: number | string;
   voice: number | string;
@@ -109,30 +115,219 @@ export async function verifySettingsBlock(s: Session, expected: Uint8Array): Pro
   return decodeSettings(back);
 }
 
-/** Start a session on `t`, run `fn` on it and return its result. */
-export async function withSession<T>(t: Transport, fn: (s: Session) => Promise<T>): Promise<T> {
+/** How a clone session opens; `magic` defaults to 291. */
+export interface SessionOptions {
+  magic?: Magic;
+}
+
+/** Start a session on `t` with `options.magic`, run `fn` on it and return its result. */
+export async function withSession<T>(t: Transport, fn: (s: Session) => Promise<T>, options: SessionOptions = {}): Promise<T> {
   const s = new Session(t);
-  await s.start();
+  await s.start(options.magic);
   return fn(s);
 }
 
-/** Wait for the radio to drop the current session and reload, then start a new session on `t`. */
-export async function startFreshSession(t: Transport): Promise<Session> {
+/** Wait for the radio to drop the current session and reload, then start a new session on `t` with `options.magic`. */
+export async function startFreshSession(t: Transport, options: SessionOptions = {}): Promise<Session> {
   await settle();
   const fresh = new Session(t);
-  await fresh.start();
+  await fresh.start(options.magic);
   return fresh;
 }
 
 /**
- * Wait for the radio to drop the current session and reload, start a new session on `t`,
- * and verify the settings block against `expected`. Call it after writeSettings.
+ * Wait for the radio to drop the current session and reload, start a new session on `t`
+ * with `options.magic`, and verify the settings block against `expected`. Call it after
+ * writeSettings.
  */
-export async function verifySettingsInFreshSession(t: Transport, expected: Uint8Array): Promise<Settings> {
-  return verifySettingsBlock(await startFreshSession(t), expected);
+export async function verifySettingsInFreshSession(t: Transport, expected: Uint8Array, options: SessionOptions = {}): Promise<Settings> {
+  return verifySettingsBlock(await startFreshSession(t, options), expected);
 }
 
-/** Read the firmware, the work mode and the audio settings. */
+/** Pause after a wrong ack before the next attempt in identify. */
+export const SCAN_WRONG_ACK_PAUSE_MS = 2000;
+/** Pause after a 115200 probe that got no 06 before the next program magic. */
+export const PROGRAM_PAUSE_MS = 1000;
+/** Baud rate of the classic clone protocol. */
+const CLASSIC_BAUD = 9600;
+/** Baud rate of the UV17Pro program magics. */
+const PROGRAM_BAUD = 115200;
+/** Wait for the one-byte reply to a program magic. */
+const PROGRAM_ACK_WAIT_MS = 1200;
+/** Remedy for a 115200 ack, which leaves the radio in program mode with no exit command. */
+const POWER_CYCLE_REMEDY = 'ask the human to power-cycle the radio and report the radio name; this CLI speaks the classic UV-5R protocol';
+/** Radio names for the magics this CLI recognizes and refuses, by family. */
+const UNSUPPORTED_RADIOS: Partial<Record<Family, string>> = { 'f-11': 'Baofeng F-11', 'uv-6': 'Baofeng UV-6' };
+
+/** One attempt as identify reports it after the attempt ends; a 115200 probe ends `silent`, `wrong-ack` or `ack`. */
+export interface IdentifyAttempt {
+  name: string;
+  baud: number;
+  outcome: AttemptOutcome['kind'] | 'ack';
+}
+
+/** A wrong ack, a refused closing 06 or a foreign bad ident, by magic name, with the reply bytes as hex. */
+export interface IdentifyAnswer {
+  magic: string;
+  outcome: 'wrong-ack' | 'refused' | 'invalid';
+  got: string;
+}
+
+/** The magic that opened a clone session in identify, with what the handshake read. */
+export interface IdentifyResult {
+  magic: MagicName;
+  /** The 8-byte ident as hex. */
+  ident: string;
+  firmware: string;
+  firmwareHex: string;
+  family: Family;
+  flags: IdentFlags;
+  droppedByte: boolean;
+  /** The UV5R_MAGIC line to export when the answering magic differs from the selected one, else null. */
+  pin: string | null;
+}
+
+/**
+ * Scan state shared across phases: the pause owed before the next attempt, the wrong acks,
+ * refusals and foreign bad idents seen, and the first invalid classic ident.
+ */
+interface Scan {
+  transport: Transport;
+  onAttempt: (a: IdentifyAttempt) => void;
+  pauseMs: number;
+  answers: IdentifyAnswer[];
+  invalid: { magic: string; got: string } | undefined;
+}
+
+/**
+ * Wait the pause the last attempt owes, run one attempt with `magic`, report it and record its
+ * answer. A bad ident on a classic magic counts as the scan's invalid ident; on a foreign magic
+ * it joins the answers.
+ */
+async function probe(scan: Scan, name: string, magic: Pick<Magic, 'bytes'>, confirm: boolean, foreign = false): Promise<AttemptOutcome> {
+  if (scan.pauseMs > 0) await sleep(scan.pauseMs);
+  const outcome = await attempt(scan.transport, magic, { confirm });
+  scan.onAttempt({ name, baud: CLASSIC_BAUD, outcome: outcome.kind });
+  if (outcome.kind === 'wrong-ack' || outcome.kind === 'refused') scan.answers.push({ magic: name, outcome: outcome.kind, got: outcome.got });
+  if (outcome.kind === 'invalid' && foreign) scan.answers.push({ magic: name, outcome: 'invalid', got: outcome.got });
+  else if (outcome.kind === 'invalid') scan.invalid ??= { magic: name, got: outcome.got };
+  scan.pauseMs = outcome.kind === 'silent' ? 0 : outcome.kind === 'wrong-ack' ? SCAN_WRONG_ACK_PAUSE_MS : SETTLE_MS;
+  return outcome;
+}
+
+/** Return the scan order with `first` moved to the front. */
+function scanOrder(first: Magic): Magic[] {
+  const rest = SCAN_ORDER.filter((name) => name !== first.name).map((name) => MAGICS.find((m) => m.name === name)!);
+  return [first, ...rest];
+}
+
+/**
+ * Try each classic magic in SCAN_ORDER, with `options.magic` moved to the front, and return
+ * the first that opens a clone session. Each supported magic gets a second attempt on silence
+ * or a wrong ack; the first magic waits SETTLE_MS before it. Other attempts follow silence at
+ * once, a wrong ack after SCAN_WRONG_ACK_PAUSE_MS, and an invalid ident or a refused closing
+ * 06 after SETTLE_MS. Unsupported magics get one attempt and run without the closing 06; an
+ * ident on one, or a 14-byte ident on any, throws radio-unsupported.
+ *
+ * When no classic magic opens a session, probe each FOREIGN_MAGICS entry at 9600 without the
+ * closing 06 and with the same pauses; an ident names that entry's radio. Then send each
+ * PROGRAM_MAGICS entry at 115200, PROGRAM_PAUSE_MS apart; an 06 names the model group with
+ * `powerCycle: true`. Calls `onAttempt` after each attempt.
+ */
+export async function identify(transport: Transport, onAttempt: (a: IdentifyAttempt) => void = () => {}, options: SessionOptions = {}): Promise<IdentifyResult> {
+  const selected = options.magic ?? magicByName(DEFAULT_MAGIC);
+  const scan: Scan = { transport, onAttempt, pauseMs: 0, answers: [], invalid: undefined };
+  for (const [i, magic] of scanOrder(selected).entries()) {
+    let outcome = await probe(scan, magic.name, magic, magic.supported);
+    if (magic.supported && (outcome.kind === 'silent' || outcome.kind === 'wrong-ack')) {
+      if (i === 0) scan.pauseMs = SETTLE_MS;
+      outcome = await probe(scan, magic.name, magic, magic.supported);
+    }
+    if (outcome.kind === 'foreign') throw radioUnsupported(outcome.name, magic.name, outcome.got);
+    if (outcome.kind !== 'ident') continue;
+    if (!magic.supported) throw radioUnsupported(UNSUPPORTED_RADIOS[magic.families[0]!] ?? magic.name, magic.name, hex(outcome.bytes));
+    const id = await new Session(transport).finish(magic, outcome.bytes);
+    return {
+      magic: id.magic,
+      ident: hex(id.bytes),
+      firmware: id.firmware,
+      firmwareHex: id.firmwareHex,
+      family: id.family,
+      flags: id.flags,
+      droppedByte: id.droppedByte,
+      pin: id.magic === selected.name ? null : `UV5R_MAGIC=${id.magic}`,
+    };
+  }
+  for (const entry of FOREIGN_MAGICS) {
+    const outcome = await probe(scan, entry.radio, entry, false, true);
+    if (outcome.kind === 'ident') throw radioUnsupported(entry.radio, entry.radio, hex(outcome.bytes));
+    if (outcome.kind === 'foreign') throw radioUnsupported(entry.radio, entry.radio, outcome.got);
+  }
+  await programScan(scan);
+  throw scanFailed(scan);
+}
+
+/**
+ * Switch the port to 115200 and send each program magic in one write, PROGRAM_PAUSE_MS apart.
+ * An 06 throws radio-unsupported with the power-cycle remedy. The port returns to 9600 in a
+ * finally; a failed reset throws only when the scan itself raised no error.
+ */
+async function programScan(scan: Scan): Promise<void> {
+  const { transport } = scan;
+  let finished = false;
+  try {
+    await transport.setBaud(PROGRAM_BAUD);
+    for (const entry of PROGRAM_MAGICS) {
+      const { name } = entry;
+      if (scan.pauseMs > 0) await sleep(scan.pauseMs);
+      transport.discard();
+      transport.write(entry.bytes);
+      const reply = await transport.read(1, PROGRAM_ACK_WAIT_MS);
+      const outcome = reply.length === 0 ? 'silent' : reply[0] === ACK ? 'ack' : 'wrong-ack';
+      scan.onAttempt({ name, baud: PROGRAM_BAUD, outcome });
+      if (outcome === 'ack') {
+        throw new DeviceStateError(
+          'radio-unsupported',
+          `the radio acked ${name} at ${PROGRAM_BAUD} baud, which names the ${entry.radio}; it stays in program mode until power-cycled`,
+          { radio: entry.radio, magic: name, got: hex(reply), powerCycle: true },
+          { remedy: POWER_CYCLE_REMEDY },
+        );
+      }
+      if (outcome === 'wrong-ack') scan.answers.push({ magic: name, outcome, got: hex(reply) });
+      scan.pauseMs = PROGRAM_PAUSE_MS;
+    }
+    finished = true;
+  } finally {
+    await transport.setBaud(CLASSIC_BAUD).catch((err: unknown) => {
+      if (finished) throw err;
+    });
+  }
+}
+
+/** Return the error for a scan that opened no session: the first invalid classic ident, else the answers. */
+function scanFailed(scan: Scan): DeviceStateError {
+  if (scan.invalid) {
+    const { magic, got } = scan.invalid;
+    return new DeviceStateError('protocol-reply-invalid', `radio answered magic ${magic} with ${got ? `ident ${got} of no known shape` : 'no ident bytes'}, as an unknown UV-5R variant`, {
+      magic,
+      got,
+      answers: scan.answers,
+    });
+  }
+  const answers = scan.answers.map((a) => `${a.magic} ${a.outcome}${a.got ? ` ${a.got}` : ''}`).join(', ');
+  const heard =
+    scan.answers.length === 0
+      ? 'did not answer any classic magic, foreign magic or 115200 program magic'
+      : `opened no clone session; answers: ${answers}`;
+  return new DeviceStateError(
+    'session-unavailable',
+    `radio ${heard}`,
+    { answers: scan.answers },
+    { remedy: 'ask the human to check the radio is on and the cable is seated', retry: 'after-remedy' },
+  );
+}
+
+/** Read the firmware, the work mode and the audio settings, with the magic, ident and family from the handshake. */
 export async function readStatus(s: Session): Promise<RadioStatus> {
   const ident = s.startedIdent;
   const settings = await readSettings(s);
@@ -140,6 +335,10 @@ export async function readStatus(s: Session): Promise<RadioStatus> {
   const workmode = page[ADDR.workmode - ADDR.statePage] === 1 ? 'channel' : 'vfo';
   return {
     firmware: ident.firmware,
+    firmwareHex: ident.firmwareHex,
+    family: ident.family,
+    magic: ident.magic,
+    ident: hex(ident.bytes),
     workmode,
     squelch: settings.squelch,
     voice: settings.voice,
