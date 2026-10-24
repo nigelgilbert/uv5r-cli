@@ -105,10 +105,10 @@ do not settle it.
 
 Run `uv5r identify` when `status` exits 5 with `session-unavailable` and the human confirms
 the radio is on and the cable is seated. It tries each classic magic, then five foreign
-magics at 9600, then six UV17Pro magics at 115200, and prints one line per attempt with the
-baud on stderr. A silent radio takes up to 59 s: about 30 s for the classic magics, 16 s for
-the foreign magics and 12 s at 115200. Export the `pin` line it prints, as in
-`export UV5R_MAGIC=ORIG`. `pin` is `null` when the verbs already open with the magic that
+magics at 9600, then six UV17Pro magics at 115200. In text mode it prints one line per
+attempt with the baud on stderr. A silent radio takes up to 59 s: about 30 s for the classic
+magics, 16 s for the foreign magics and 12 s at 115200. Export the `pin` line it prints, as
+in `export UV5R_MAGIC=ORIG`. `pin` is `null` when the verbs already open with the magic that
 answered. An F11, UV6 or UV6_ORIG answer, or an answer to a foreign or 115200 magic, exits 5
 with `radio-unsupported` naming the radio. A 115200 answer adds `powerCycle: true`; the radio
 stays in program mode until the human power-cycles it.
