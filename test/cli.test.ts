@@ -23,6 +23,7 @@ const REASON_ENUM = [
   'dependency-missing',
   'audio-process-failed',
   'capture-incomplete',
+  'file-write-failed',
   'session-unavailable',
   'protocol-reply-invalid',
   'write-unacknowledged',
@@ -599,7 +600,7 @@ describe('dump output file', () => {
     expect(existsSync(out)).toBe(false);
   });
 
-  it('removes a new FILE when the image write fails', async () => {
+  it('exits 3 with file-write-failed and removes a new FILE when the image write fails', async () => {
     const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
     const radio = new FakeRadio();
     // Make the probed file read-only once the port opens so the image write fails.
@@ -608,8 +609,8 @@ describe('dump output file', () => {
       return radio;
     };
     await run(['dump', '--out', out, '--json'], open);
-    expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ reason: 'invalid-argument', out });
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'file-write-failed', retry: 'after-remedy', remedy: 'pass --out with a writable path that has free space', out, code: 'EACCES' });
     expect(existsSync(out)).toBe(false);
   });
 
@@ -636,7 +637,10 @@ describe('dump output file', () => {
   it('names the check before the port opens in help dump', async () => {
     await cli(['help', 'dump', '--json']);
     const help = JSON.parse(stdout.join('')) as { exits: Array<{ code: number; when: string }> };
-    expect(help.exits).toContainEqual({ code: 2, when: 'FILE not writable, found before the port opens; a write that fails after the read, such as a full disk, exits 2 too' });
+    expect(help.exits).toEqual([
+      { code: 2, when: 'FILE not writable, found before the port opens' },
+      { code: 3, when: 'a write that fails after the read, such as a full disk' },
+    ]);
   });
 });
 

@@ -20,6 +20,7 @@ const REASON_ENUM = [
   'dependency-missing',
   'audio-process-failed',
   'capture-incomplete',
+  'file-write-failed',
   'session-unavailable',
   'protocol-reply-invalid',
   'write-unacknowledged',
@@ -34,7 +35,7 @@ const REASON_ENUM = [
 ];
 
 describe('error reasons', () => {
-  it('lists the seventeen reasons of the enum, each with a kind, a meaning, a remedy and a retry value', () => {
+  it('lists the eighteen reasons of the enum, each with a kind, a meaning, a remedy and a retry value', () => {
     expect(Object.keys(REASONS)).toEqual(REASON_ENUM);
     for (const doc of Object.values(REASONS)) {
       expect(doc.means.length).toBeGreaterThan(0);

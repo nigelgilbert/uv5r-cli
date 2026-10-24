@@ -18,7 +18,7 @@ import {
   type SettingName,
   type Settings,
 } from './codec.ts';
-import { BaofengError, EXIT, REASONS, RETRY, UnexpectedError, UsageError, exitCodeFor, signalExitCode, withDetail } from './errors.ts';
+import { BaofengError, EXIT, REASONS, RETRY, TransportError, UnexpectedError, UsageError, exitCodeFor, signalExitCode, withDetail } from './errors.ts';
 import { readPlan } from './plan.ts';
 import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SETTLE_MS } from './protocol.ts';
@@ -97,7 +97,7 @@ const EXIT_CODES: Record<string, string> = {
   '0': 'ok: the result is on stdout',
   '1': 'unexpected: an error the CLI has no kind for',
   '2': 'usage: bad input; argument errors exit before the port opens',
-  '3': 'transport: no device, a serial error, or an ffmpeg or afplay failure',
+  '3': 'transport: no device, a serial error, an ffmpeg or afplay failure, or a failed file write',
   '4': 'timeout: no ack before a block read, or a short block payload',
   '5': 'device-state: no handshake, a bad reply, a refused write, a failed verification, an image ident mismatch, an open squelch or a check under 80% active seconds',
   '6': 'busy: another process holds the serial port',
@@ -317,7 +317,10 @@ const verbs: Record<string, Verb> = {
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only; writes FILE on disk' },
     result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011' },
-    exits: [{ code: 2, when: 'FILE not writable, found before the port opens; a write that fails after the read, such as a full disk, exits 2 too' }],
+    exits: [
+      { code: 2, when: 'FILE not writable, found before the port opens' },
+      { code: 3, when: 'a write that fails after the read, such as a full disk' },
+    ],
     positionals: 0,
     run: dumpVerb,
   },
@@ -416,8 +419,8 @@ const verbs: Record<string, Verb> = {
     },
     exits: [
       { code: 2, when: 'a plan without checkMhz' },
-      { code: 2, when: 'a capture that cannot be renamed into DIR mid-run, after slot 0 is written; the error names part and carries summary' },
       { code: 3, when: 'a short capture' },
+      { code: 3, when: 'a capture that cannot be renamed into DIR mid-run, after slot 0 is written; the error names part and carries summary' },
     ],
     positionals: 1,
     run: sweepVerb,
@@ -734,7 +737,8 @@ async function dumpVerb(args: Invocation): Promise<number> {
         try {
           writeFileSync(out, image);
         } catch (err) {
-          throw notWritable(err);
+          const e = err as NodeJS.ErrnoException;
+          throw new TransportError('file-write-failed', `cannot write ${out}: ${e.message}`, { out, code: e.code }, { remedy: 'pass --out with a writable path that has free space' });
         }
         return { out, bytes: image.length, firmware: s.startedIdent.firmware };
       }),
