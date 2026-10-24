@@ -77,11 +77,10 @@ Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, resul
 the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` for the same
 as JSON.
 
-Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. A failed
-command prints nothing on stdout and one error object on stderr when output is JSON, piped
-or with `--json`. The object has `reason`, `message`, `remedy` and `retry`, and each detail
-field below sits at its top level beside them.
-On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
+Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. In JSON mode a failed
+command prints nothing on stdout and one error object on stderr. The object has `reason`,
+`message`, `remedy` and `retry`, and each detail field below sits at its top level beside
+them. On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
 and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
 A `load` error from a plan entry write adds `slot`. A `sweep` error after the port is
 requested adds `summary`, the sweep result so far. An error inside the sweep loop adds
@@ -134,7 +133,7 @@ Name the channel after the frequency; with menu 21 MDF-A on NAME the display the
 for the terminal until it is granted in System Settings, Privacy & Security, Microphone.
 Denied access gives digital zero.
 
-The AIOC's bare ADC floor at 1x gain reads about -66 dBFS; open-squelch static reads well
+The AIOC's bare ADC floor at 1x gain reads about -66 dBFS; open-squelch static reads
 above -30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug
 is short of its contact. Set the knob so static reads around -20 to -12. The `input clips:
 turn the volume knob down` warning means more than 1 percent of samples sit at full scale;

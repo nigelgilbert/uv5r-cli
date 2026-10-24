@@ -108,8 +108,7 @@ Each item ends with `npm run typecheck` and `npm test` green.
 
 1. Create `src/core/` and `src/cli/`. `git mv` each file to the directory in the layout.
    Rewrite relative imports. Move the tests into `test/core/` and `test/cli/` and fix their
-   paths. Update `vitest.config.ts` to `test/**/*.test.ts` (unchanged) and the `bin` and
-   `uv5r` script in `package.json` to `src/cli/main.ts`.
+   paths. Point the `bin` and `uv5r` script in `package.json` at `src/cli/main.ts`.
 2. Split `errors.ts`: `EXIT`, `exitCodeFor` and `signalExitCode` go to `cli/exit.ts`.
    `cli/main.ts` and `cli/help.ts` import them from there. `test/cli/errors.test.ts` covers
    the exit mapping; the reason table tests stay in `test/core/errors.test.ts`.

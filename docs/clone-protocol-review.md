@@ -13,7 +13,7 @@ on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass with 553 te
 
 - `ident.ts` matches spec sections 4.1, 4.2, 4.3 and 9. `classify` runs the `HN5RV01` rule first, filters basetypes by the answering magic's families, keeps a single-family magic's family on no hit, applies the `orig` exclusions and never throws.
 - `attempt` discards input, paces the magic at 10 ms, waits 1200 ms for the ack and reads the ident in one `read(14, 300)`. The serial transport returns at the deadline when fewer than 14 bytes arrive, so an 8-byte ident costs the same 300 ms as before.
-- `Session.start` retries on `silent` and `wrong-ack`. The issue text said "silence only"; the plan says both, and the plan wins.
+- `Session.start` retries on `silent` and `wrong-ack`. The issue text said silence only. The code follows the plan.
 - `selectedMagic()` runs in `main.ts` before the port opens and reaches every session call site, `check.ts` and `sweep.ts` included.
 - Accepted choices: `dtmfTable` is the character table string; `N5RV` is also listed under `bf-f8hp` per spec 4.3; `FOREIGN_MAGICS` and `PROGRAM_MAGICS` landed as data in this slice.
 
@@ -29,7 +29,7 @@ on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass with 553 te
 - The foreign phase runs through the same `probe` helper without `confirm`. An 8-byte or 14-byte reply names the entry's radio. A foreign invalid reply joins `answers`.
 - `programScan` switches the baud inside the `try`, sends each 16-byte magic in one write, reads one byte within 1200 ms, throws `radio-unsupported` with `powerCycle: true` on `06`, pauses `PROGRAM_PAUSE_MS` between entries and none after the last. The `finally` resets 9600 and keeps the first error.
 - Accepted choices: foreign magics carry no name, so the `magic` field of their `radio-unsupported` holds the radio name. When only the reset to 9600 fails after a clean scan, `serial-io-failed` replaces `session-unavailable`.
-- The silent-scan budget test lands at 58.98 s with the 1.2 s ack waits added. A staged foreign invalid reply puts real time near 59.1 s. The plan's table covers a silent cable.
+- The silent-scan budget test lands at 38.06 s with the 1.2 s ack waits added. The plan's table covers a silent cable.
 
 ### 004
 
@@ -42,25 +42,23 @@ GPT-6.1 Sol reviewed the 001 to 003 range at `c505c3b` through the codex skill. 
 
 | id | severity | where | claim | fix |
 |---|---|---|---|---|
-| S2 | minor | `src/cli/main.ts` `ERRORS_HELP` | `help --json` lists each reason as `exit N: means` with no retry value, so issue 001's criterion "retry `no`" is met by `REASONS` and the runtime error, and the help output shows only the exit code. The format predates the branch. | Left as is. Add `retry` to the reason strings if the help output needs it. |
+| S2 | minor | `src/cli/main.ts` `ERRORS_HELP` | `help --json` lists each reason as `exit N: means` with no retry value. `REASONS` and the runtime error carry the retry. The format predates the branch. | Left as is. See Open items. |
 | S3 | minor | `README.md` identify paragraph | Said the stderr attempt lines print always; they print in text mode. | Fixed on the 004 branch, commit `b66639d`. |
 | S1 | nit | `test/core/fake.ts` | The fake acks program magics at any rate other than 9600; the plan says only at 115200. The `setBaud` call assertions still catch a wrong production rate. | Compare the rate against 115200. |
-| R1 | nit | `.claude/skills/uv5r/SKILL.md` | "up to 59 s" holds for a silent radio. A radio that refuses or sends bad idents takes about 64 s. | Add "on a silent radio". |
+| R1 | nit | `.claude/skills/uv5r/SKILL.md` | The scan time holds for a silent radio. A radio that refuses or sends bad idents takes longer. | Fixed. SKILL.md says "about 38 s on a silent radio". |
 | R2 | nit | `src/core/radio.ts` `scanFailed` | An ack followed by no ident bytes gives the message "with ident  of no known shape". | Print "no ident bytes" when `got` is empty. |
 
-Rejected: the test-gap half of S1. The tests assert `setBaud` is called with `[[115200], [9600]]` and that each 115200 attempt reports `baud: 115200`. Sol conceded.
-
-The full round log sits in the overseer's session scratchpad as `sol-review.md`.
+Rejected: the test-gap half of S1. The tests assert `setBaud` is called with `[[115200], [9600]]` and that each 115200 attempt reports `baud: 115200`.
 
 ## Bench, 2026-10-24
 
 Firmware `HN5RV011` on the AIOC. The unit does not ack `ORIG`.
 
 - `identify`: `291` acks first, `pin` null, 0.9 s.
-- Radio off: exit 5, `session-unavailable`, empty `answers`, 59.3 s before the second attempts were added.
+- Radio off: exit 5, `session-unavailable`, empty `answers`.
 - `port.update` to 115200 and back ran with no error in three scans. No radio has answered at 115200.
 - Dump criterion: the aux area and settings block match the 2026-10-12 fixture. The 72 differing bytes sit in slots the bench verbs wrote.
-- Pinned `ORIG` before the second attempts: `291` silent on its single attempt in 2 of 15 runs. Every supported magic now gets a second attempt and the silent pause is 0. After that change, 20 of 20 pinned runs acked `291`.
+- Pinned `ORIG` with a single attempt per magic: `291` silent in 2 of 15 runs. With a second attempt per supported magic and no silent pause, 20 of 20 pinned runs acked `291`.
 
 ## Open items
 

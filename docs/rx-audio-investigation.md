@@ -1,10 +1,11 @@
 # RX audio investigation, 2026-10-12
 
-The bench UV-5R (firmware HN5RV011) delivers no receive audio through the AIOC. This note
-records what was measured, the cause, and the work needed to repair the radio and harden
-the CLI. Measurement cleared the capture tooling, macOS microphone permission, CoreAudio
-volume and mute, and the AIOC firmware registers. The AIOC receive path remains open; see
-the Open section.
+The bench UV-5R (firmware HN5RV011) delivered no receive audio through the AIOC. Two
+faults were found. A zeroed settings block had turned voice and beep off, which mutes
+receive audio on this firmware; "Result, 2026-10-12 afternoon" records the repair and the
+staged-commit rule behind it. After that the volume knob was down or the 2.5 mm plug short
+of its contact; "Resolved, 2026-10-17 evening" records the fix and the reference knob
+position. The sections run in the order the work happened.
 
 ## Symptom
 
@@ -31,9 +32,8 @@ Their findings that matter here:
 - Nothing in AIOC firmware gates the RX ADC for serial, CDC, DTR, RTS or PTT state.
 - On the BFB297 firmware family, which HN5RV011 derives from, VOICE set to OFF cuts receive
   audio until the setting is restored and the radio is power cycled. On N5R-20 and N5R-30
-  firmware, BEEP set to OFF mutes audio. Sources are in the memory note
-  `uv5r-settings-block-quirk` and the Miklor FAQ sections 2.10 and the buytwowayradios
-  "stops receiving after CHIRP upload" post.
+  firmware, BEEP set to OFF mutes audio. Sources: Miklor FAQ section 2.10 and the
+  buytwowayradios "stops receiving after CHIRP upload" post.
 - Some UV-5R units detect the plug by a DC load and keep the internal speaker live
   (AIOC issue 106). Check this if the fix below restores settings and audio stays absent.
 
@@ -89,7 +89,8 @@ flag clearing. Those match knob and key use and need no repair.
 ## Repair steps
 
 This is the morning plan. "Result, 2026-10-12 afternoon" records what was done, and its
-measured rule supersedes the 32-byte and 64-byte write attempts.
+measured rule supersedes the 32-byte and 64-byte write attempts. `Session.writeBlock` now
+takes one aligned 16-byte block.
 
 Run these on the bench with the human present. Steps 1 to 3 write radio EEPROM and need
 explicit permission.
@@ -115,8 +116,6 @@ explicit permission.
 5. If audio is still absent after the settings read back correctly, have the human set
    menu 14 VOICE to ENG and menu 8 BEEP to ON from the keypad and power cycle. If the
    internal speaker still plays with the AIOC inserted, see AIOC issue 106.
-
-The reference script for step 2 did 32-byte and 64-byte writes. `Session.writeBlock` now takes one aligned 16-byte block and refuses anything else, and the afternoon result below supersedes that approach.
 
 ## Monitor command
 
@@ -198,7 +197,7 @@ programming works. Receive audio does not.
 | TX loopback, 1 kHz out of the AIOC at 4x RX gain | tone present at 992 Hz, 51 dB below the drive. The ADC path works and the plugs are not cross-wired |
 | AIOC host registers | 0xD0 = 0 (no mute, stream idle), 0xD3 = 0xFFFFFFFF (record volume full), 0x72 = 0 (1x) |
 
-Opening the squelch adds 10 dB, so the radio does drive the 2.5 mm tip. What arrives is
+Opening the squelch adds 10 dB, so the radio drives the 2.5 mm tip. What arrives is
 amplifier hiss at about 1.3 mV with no static behind it. Open-squelch static at mid volume
 is hundreds of millivolts.
 
@@ -237,7 +236,7 @@ Example at 0x1F60 (VHF squelch thresholds): fixture `00 74 75 76 77 78 79 7a 7b 
 `00 17 18 19 1a 1b 1c 1d 1e 1f`. The firmware string at 0x1EF0 matches.
 
 A transcript search of every session that touched the radio found no write at or above
-0x1800. `restore` reported 382 blocks, which is exactly the three main-memory ranges. The
+0x1800. `restore` reported 382 blocks, the three main-memory ranges. The
 fixture was dumped with the same address list `dumpImage` uses, and a CLI dump at
 2026-10-12 05:26 local still matched it. The images from 2026-10-13 also differ from the
 fixture in places nothing wrote: FM band strings at 0x0F40, the cleared 0x0B10-0x0BDF
@@ -291,12 +290,9 @@ Loose ends outside the fault, by value:
 1. `listen` level guard: report clipped fraction, warn above 1 percent, warn when squelch-0
    RMS is below -50 ("knob down or plug not seated").
 2. Short captures: ffmpeg 9.0.2 avfoundation on macOS 26.7.1 returns 88 percent of the
-   requested length from every device, including the built-in microphone (5 s asked,
-   4.46 s returned). The AIOC reports RECRATE 48000 and RECSTATE running. HID traffic
-   during capture makes no difference. Unpadded astats runs on 2026-10-18 returned 6, 5, 9,
-   12 and 19 whole frames for 5, 4, 8, 12 and 20 s, so the unpadded threshold sat between
-   12 and 20 s. Fixed: `listen` now asks ffmpeg for `ceil(seconds / 0.88) + 2`, drops frame 0
-   and keeps frames 1 to `seconds`.
+   requested length from every device, including the built-in microphone. The AIOC reports
+   RECRATE 48000 and RECSTATE running. Fixed: `listen` asks ffmpeg for
+   `ceil(seconds / 0.88) + 2`, drops frame 0 and keeps frames 1 to `seconds`.
 3. Radio identity: store a hash of 0x1F00-0x1FBF with each backup and warn when a dump's
    calibration differs.
 4. Aux-read reliability: read a block outside aux first and dump twice. The bench values
@@ -304,9 +300,8 @@ Loose ends outside the fault, by value:
    mismatch.
 5. The 16 kHz spur sits above the audio low-pass; filter it in analysis.
 
-Contradiction resolved: the tip carries about 3.6 V DC while squelch is open (measured,
-AIOC issue 48), and the measurement agent's "about 0 V" was inference. C14 blocks it from
-the capture either way.
+The tip carries about 3.6 V DC while squelch is open, per AIOC issue 48. C14 blocks it
+from the capture.
 
 ### HID register tool
 
