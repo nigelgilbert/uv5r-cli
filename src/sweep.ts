@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DEFAULT_FLOOR_DBFS, listen, type ListenResult } from './audio.ts';
 import { CHECK_SECONDS, judgeCheck, receiveOnly, refuseOpenSquelch } from './check.ts';
 import { formatMhz, type ChannelSpec } from './codec.ts';
-import { UsageError, withDetail } from './errors.ts';
+import { TransportError, UsageError, withDetail } from './errors.ts';
 import type { PlanEntry } from './plan.ts';
 import { settle, type Session } from './protocol.ts';
 import { KEY_SIGNALS, withSession, writeChannel } from './radio.ts';
@@ -115,7 +115,7 @@ export function captureName(channel: number, start: Date): string {
  * Capture `options.seconds` on the channel the radio is on, judge activity against DEFAULT_FLOOR_DBFS,
  * and report it as `entry`. With `outDir` ffmpeg writes the captureName plus .part, and the dwell renames
  * it to the captureName once the capture finishes. A failed capture removes the part file, so every WAV in
- * `outDir` holds a full dwell. A failed rename throws UsageError naming the kept part file. When `stop` resolves, the capture kills ffmpeg and rejects once ffmpeg exits.
+ * `outDir` holds a full dwell. A failed rename throws TransportError with reason file-write-failed naming the kept part file. When `stop` resolves, the capture kills ffmpeg and rejects once ffmpeg exits.
  */
 export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Promise<unknown>): Promise<DwellRecord> {
   const out = options.outDir === undefined ? undefined : join(options.outDir, captureName(entry.channel, new Date()));
@@ -136,7 +136,8 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
     try {
       renameSync(part, out);
     } catch (err) {
-      throw new UsageError(`cannot rename ${part} to ${out}: ${(err as NodeJS.ErrnoException).message}`, { out, part }, { remedy: 'pass --out-dir with a writable directory' });
+      const e = err as NodeJS.ErrnoException;
+      throw new TransportError('file-write-failed', `cannot rename ${part} to ${out}: ${e.message}`, { out, part, code: e.code }, { remedy: 'pass --out-dir with a writable directory that has free space' });
     }
   }
   return {

@@ -36,7 +36,7 @@ export function signalExitCode(signal: NodeJS.Signals): number {
 }
 
 /** Reasons a TransportError carries; each exits 3. */
-export type TransportReason = 'device-unavailable' | 'serial-io-failed' | 'ptt-control-failed' | 'dependency-missing' | 'audio-process-failed' | 'capture-incomplete';
+export type TransportReason = 'device-unavailable' | 'serial-io-failed' | 'ptt-control-failed' | 'dependency-missing' | 'audio-process-failed' | 'capture-incomplete' | 'file-write-failed';
 
 /** Reasons a DeviceStateError carries; each exits 5. */
 export type DeviceStateReason =
@@ -111,6 +111,12 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
     means: 'ffmpeg returned fewer whole seconds than requested plus the first second the CLI drops; captured and requested count that second',
     remedy: 'rerun the command; check that --device names the AIOC input if it fails again',
     retry: 'once',
+  },
+  'file-write-failed': {
+    kind: 'transport',
+    means: 'a WAV rename or image write failed after the port opened, such as a full disk',
+    remedy: 'free disk space or pass a writable path, then rerun the command',
+    retry: 'after-remedy',
   },
   'session-unavailable': {
     kind: 'device-state',

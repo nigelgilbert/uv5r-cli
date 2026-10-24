@@ -253,6 +253,33 @@ describe('sweep', () => {
     expect(execFile.mock.calls.map((c) => [c[0], c[1]])).toEqual([['ffmpeg', ['-version']]]);
   });
 
+  it('exits 3 with file-write-failed and the summary when a capture cannot be renamed into --out-dir', async () => {
+    const dir = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'rx');
+    let part = '';
+    listenMock.mockImplementation(async (_device, seconds, _floor, opts) => {
+      if (opts?.out !== undefined) {
+        part = opts.out;
+        writeFileSync(part, 'RIFF');
+        // Put a directory at the WAV path so the rename fails.
+        mkdirSync(part.replace(/\.part$/, ''));
+      }
+      return heard(seconds, seconds);
+    });
+    await run([...SWEEP, '--out-dir', dir, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(3);
+    expect(stdout).toEqual([]);
+    expect(errJson()).toMatchObject({
+      reason: 'file-write-failed',
+      retry: 'after-remedy',
+      remedy: 'pass --out-dir with a writable directory that has free space',
+      part,
+      out: part.replace(/\.part$/, ''),
+      code: 'EISDIR',
+      summary: { swept: 0 },
+    });
+    expect(existsSync(part)).toBe(true);
+  });
+
   it.each([
     ['a missing plan file', ['sweep', 'missing.json']],
     ['no plan file', ['sweep']],
@@ -655,7 +682,7 @@ describe('dwell', () => {
       return { ...heard(seconds, 0), out: part };
     });
     const err = await dwell(entry, { ...options, outDir: dir }).catch((e: unknown) => e);
-    expect(err).toMatchObject({ reason: 'invalid-argument', detail: { part, out: part.replace(/\.part$/, '') } });
+    expect(err).toMatchObject({ kind: 'transport', reason: 'file-write-failed', retry: 'after-remedy', detail: { part, out: part.replace(/\.part$/, ''), code: 'EISDIR' } });
     expect(existsSync(part)).toBe(true);
   });
 
