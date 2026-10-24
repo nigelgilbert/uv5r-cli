@@ -62,7 +62,7 @@ describe('magic table', () => {
       ['Baojie BJ-UV55', '50 bb dd 55 63 98 4d'],
     ]);
     for (const p of PROGRAM_MAGICS) expect(Buffer.from(p.bytes).toString('latin1')).toMatch(/^PROGRAM.{8}U$/);
-    expect(PROGRAM_MAGICS).toHaveLength(6);
+    expect(PROGRAM_MAGICS).toHaveLength(5);
   });
 });
 

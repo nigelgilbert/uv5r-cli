@@ -18,7 +18,7 @@ Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
 
 - Run one verb at a time. Start a task with `uv5r status`. Do not open, `cat`, `screen` or `stty` the serial port.
 - When `status` exits 5 with `session-unavailable` and the human confirms the radio is on and
-  the cable is seated, run `uv5r identify` once, about 38 s on a silent radio. Export the `pin` line it prints.
+  the cable is seated, run `uv5r identify` once, about 36 s on a silent radio. Export the `pin` line it prints.
 - `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
 - Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0. `tune` and `load` write any slot.
 - Run `uv5r check 162.400 --channel 0` once per session before tuning slot 0, with a NOAA

@@ -51,11 +51,10 @@ export const FOREIGN_MAGICS: ReadonlyArray<{ radio: string; bytes: Uint8Array }>
 /** 16-byte ASCII magics of the UV17Pro family at 115200 baud, with the model group an ack names. */
 export const PROGRAM_MAGICS: ReadonlyArray<{ radio: string; bytes: Uint8Array }> = [
   ['PROGRAMBFNORMALU', 'UV17Pro family: UV-17Pro, UV-21ProV2, UV-25, 5RM, P15, MT-5RM, K5-Plus, UV-5RM Plus, UV-17R-Plus, UV-5RH'],
-  ['PROGRAMCOLORPROU', 'UV17Pro family: UV-17ProGPS, GM-21, GM-30 Plus/Pro, UV-32, UV-21ProGPS, UV-28Plus, UV-5R Mini, UV-5G Mini'],
+  ['PROGRAMCOLORPROU', 'UV17Pro family: UV-17ProGPS, GM-21, GM-30 Plus/Pro, UV-32, UV-21ProGPS, UV-28Plus, UV-5R Mini'],
   ['PROGRAMBFGMRS05U', 'UV17Pro family: GM-5RH, Radioddity UV-5G Plus'],
   ['PROGRAMBF5RTECHU', 'UV17Pro family: BF-F8HP-PRO'],
   ['PROGRAMBF-K6PROU', 'UV17Pro family: K6'],
-  ['PROGRAMGMRS5RMIU', 'UV17Pro family: UV-5G Mini'],
 ].map(([ascii, radio]) => ({ radio: radio!, bytes: Uint8Array.from(Buffer.from(ascii!, 'latin1')) }));
 
 /**

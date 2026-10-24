@@ -277,8 +277,8 @@ describe('identify', () => {
   const ACK_WAIT_MS = 1200;
   /** The budget for a silent cable across the three phases: 38.06 s rounded up. */
   const BUDGET_MS = 38_100;
-  /** Fake time of a silent scan: 18 attempts at 9600, SETTLE_MS before the second 291 and PROGRAM_PAUSE_MS between the six at 115200. */
-  const SILENT_ELAPSED_MS = 18 * SEND_MS + SETTLE_MS + 5 * PROGRAM_PAUSE_MS;
+  /** Fake time of a silent scan: 18 attempts at 9600, SETTLE_MS before the second 291 and PROGRAM_PAUSE_MS between the five at 115200. */
+  const SILENT_ELAPSED_MS = 18 * SEND_MS + SETTLE_MS + 4 * PROGRAM_PAUSE_MS;
   const CLASSIC = ['291', '291', 'ORIG', 'ORIG', 'UV82', 'UV82', 'A58', 'A58', 'UV5G', 'UV5G', 'F11', 'UV6', 'UV6_ORIG'];
   const FOREIGN = FOREIGN_MAGICS.map((m) => m.radio);
   const PROGRAM = PROGRAM_MAGICS.map((m) => Buffer.from(m.bytes).toString('latin1'));
@@ -389,9 +389,9 @@ describe('identify', () => {
     const radio = silentRadio();
     const { result, attempts, names, elapsed } = await scan(radio);
     expect(names).toEqual([...CLASSIC, ...FOREIGN, ...PROGRAM].map((n) => `${n} silent`));
-    expect(attempts.map((a) => a.baud)).toEqual([...new Array(18).fill(9600), ...new Array(6).fill(115200)]);
+    expect(attempts.map((a) => a.baud)).toEqual([...new Array(18).fill(9600), ...new Array(5).fill(115200)]);
     const gaps = attempts.slice(1).map((a, i) => a.at - attempts[i]!.at);
-    expect(gaps).toEqual([SETTLE_MS + SEND_MS, ...new Array(16).fill(SEND_MS), 0, ...new Array(5).fill(PROGRAM_PAUSE_MS)]);
+    expect(gaps).toEqual([SETTLE_MS + SEND_MS, ...new Array(16).fill(SEND_MS), 0, ...new Array(4).fill(PROGRAM_PAUSE_MS)]);
     expect(elapsed).toBe(SILENT_ELAPSED_MS);
     expect(elapsed + 24 * ACK_WAIT_MS).toBeLessThanOrEqual(BUDGET_MS);
     const json = (result as BaofengError).toJSON();
@@ -412,7 +412,7 @@ describe('identify', () => {
     const { result, attempts, names, elapsed } = await scan(radio);
     expect(names.slice(13, 18)).toEqual(['BTECH UV-5X3 silent', 'MTC UV-5R-3 silent', 'UV-6R invalid', 'UV-9G silent', 'Baojie BJ-UV55 silent']);
     expect(attempts[16]!.at - attempts[15]!.at).toBe(SETTLE_MS + SEND_MS);
-    expect(names).toHaveLength(24);
+    expect(names).toHaveLength(23);
     expect(elapsed).toBe(SILENT_ELAPSED_MS + SETTLE_MS);
     expect(elapsed).toBeLessThanOrEqual(BUDGET_MS);
     expect((result as BaofengError).toJSON()).toMatchObject({
@@ -504,7 +504,7 @@ describe('identify', () => {
       if (rate === 9600) throw resetFails(rate);
     });
     const { result, names } = await scan(radio);
-    expect(names).toHaveLength(24);
+    expect(names).toHaveLength(23);
     expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'serial-io-failed', baud: 9600 });
   });
 

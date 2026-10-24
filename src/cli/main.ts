@@ -227,7 +227,7 @@ const verbs: Record<string, Verb> = {
       `Then switch the port to 115200 and send each UV17Pro magic, ${PROGRAM_MAGICS.map((m) => Buffer.from(m.bytes).toString('latin1')).join(', ')}, in one write, ${PROGRAM_PAUSE_MS / 1000} s apart. An 06 stops the scan and names the model group. The port returns to 9600 after the last magic or the 06.`,
       'pin is the UV5R_MAGIC=NAME line to export when the answering magic differs from the one the other verbs select now, UV5R_MAGIC or else 291. It is null when they match.',
       'In text mode, print one line per attempt on stderr with the baud, as in ORIG at 9600: silent or PROGRAMBFNORMALU at 115200: ack.',
-      'A silent radio takes about 38 s: 20 s for the classic magics, 6 s for the foreign magics and 12 s at 115200.',
+      'A silent radio takes about 36 s: 20 s for the classic magics, 6 s for the foreign magics and 10 s at 115200.',
     ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: false, note: 'reads only' },

@@ -59,7 +59,7 @@ one they may transmit on, after asking the human what the display shows.
 | Verb | Writes to radio | Time | Result keys |
 |---|---|---|---|
 | `status` | no | one clone session | `firmware`, `firmwareHex`, `family`, `magic`, `ident`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
-| `identify` | no | one clone session when the first magic answers; about 38 s on a silent radio | `magic`, `ident`, `firmware`, `firmwareHex`, `family`, `flags`, `droppedByte`, `pin` |
+| `identify` | no | one clone session when the first magic answers; about 36 s on a silent radio | `magic`, `ident`, `firmware`, `firmwareHex`, `family`, `flags`, `droppedByte`, `pin` |
 | `tune` | record and name of slot N | one clone session | `channel`, record keys, `appliesAfterSeconds` |
 | `check` | receive-only record and name of slot N | one clone session, 3 s reload, 5 s listen | `slot`, `requestedMhz`, `listen` keys |
 | `load` | record and name of each plan slot | one clone session | array of `tune` results |
@@ -104,7 +104,7 @@ do not settle it.
 
 Run `uv5r identify` when `status` exits 5 with `session-unavailable` and the human confirms
 the radio is on and the cable is seated. It tries each classic magic, then five foreign
-magics at 9600, then six UV17Pro magics at 115200. In text mode it prints one line per
+magics at 9600, then five UV17Pro magics at 115200. In text mode it prints one line per
 attempt with the baud on stderr. Export the `pin` line it prints, as in
 `export UV5R_MAGIC=ORIG`. `pin` is `null` when the verbs already open with the magic that
 answered. An F11, UV6 or UV6_ORIG answer, or an answer to a foreign or 115200 magic,
@@ -231,11 +231,10 @@ Radios sold as UV-5RH, UV-5RM Plus, UV-5R Mini or UV-5G Plus speak the UV17Pro p
 | Magic | Model group |
 |---|---|
 | `PROGRAMBFNORMALU` | UV-17Pro, UV-21ProV2, UV-25, 5RM, P15, MT-5RM, K5-Plus, UV-5RM Plus, UV-17R-Plus, UV-5RH |
-| `PROGRAMCOLORPROU` | UV-17ProGPS, GM-21, GM-30 Plus/Pro, UV-32, UV-21ProGPS, UV-28Plus, UV-5R Mini, UV-5G Mini fw 0.01 |
+| `PROGRAMCOLORPROU` | UV-17ProGPS, GM-21, GM-30 Plus/Pro, UV-32, UV-21ProGPS, UV-28Plus, UV-5R Mini |
 | `PROGRAMBFGMRS05U` | GM-5RH, Radioddity UV-5G Plus |
 | `PROGRAMBF5RTECHU` | BF-F8HP-PRO |
 | `PROGRAMBF-K6PROU` | K6 |
-| `PROGRAMGMRS5RMIU` | UV-5G Mini fw 0.05 |
 
 ### `identify` timing
 
@@ -243,10 +242,10 @@ Radios sold as UV-5RH, UV-5RM Plus, UV-5R Mini or UV-5G Plus speak the UV17Pro p
 |---|---|---|---|
 | Classic magics at 9600 | 13, each supported magic twice | 1.27 s | 3 s after the first attempt, none after the rest |
 | Foreign magics at 9600 | 5 | 1.27 s | none |
-| UV17Pro magics at 115200 | 6 | 1.2 s | 1 s, none after the last |
+| UV17Pro magics at 115200 | 5 | 1.2 s | 1 s, none after the last |
 
-A silent radio takes about 38 s: 20 s for the classic magics, 6 s for the foreign magics
-and 12 s at 115200. A wrong ack pauses 2 s. An invalid ident or a refused closing `06`
+A silent radio takes about 36 s: 20 s for the classic magics, 6 s for the foreign magics
+and 10 s at 115200. A wrong ack pauses 2 s. An invalid ident or a refused closing `06`
 pauses 3 s before the next magic.
 
 ## Bench files
