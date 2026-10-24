@@ -9,7 +9,6 @@ import {
   TransportError,
   UnexpectedError,
   UsageError,
-  exitCodeFor,
   withDetail,
 } from '../../src/core/errors.ts';
 
@@ -45,18 +44,17 @@ describe('error reasons', () => {
   });
 
   it.each([
-    ['UsageError', new UsageError('bad flag'), 'invalid-argument', 'usage', 2],
-    ['TransportError', new TransportError('serial-io-failed', 'serial error: EIO'), 'serial-io-failed', 'transport', 3],
-    ['TimeoutError', new TimeoutError('no ack'), 'serial-timeout', 'timeout', 4],
-    ['DeviceStateError', new DeviceStateError('verification-failed', 'channel 5 did not take the write'), 'verification-failed', 'device-state', 5],
-    ['BusyError', new BusyError('cannot open /dev/x: busy'), 'device-busy', 'busy', 6],
-    ['UnexpectedError', new UnexpectedError('boom'), 'unexpected-error', 'unexpected', 1],
-  ] as const)('gives a %s a reason, a remedy and a retry value in toJSON', (_name, err, reason, kind, exit) => {
+    ['UsageError', new UsageError('bad flag'), 'invalid-argument'],
+    ['TransportError', new TransportError('serial-io-failed', 'serial error: EIO'), 'serial-io-failed'],
+    ['TimeoutError', new TimeoutError('no ack'), 'serial-timeout'],
+    ['DeviceStateError', new DeviceStateError('verification-failed', 'channel 5 did not take the write'), 'verification-failed'],
+    ['BusyError', new BusyError('cannot open /dev/x: busy'), 'device-busy'],
+    ['UnexpectedError', new UnexpectedError('boom'), 'unexpected-error'],
+  ] as const)('gives a %s a reason, a remedy and a retry value in toJSON', (_name, err, reason) => {
     const body = err.toJSON();
     expect(body).toMatchObject({ reason, message: err.message, remedy: REASONS[reason].remedy, retry: REASONS[reason].retry });
     expect(REASON_ENUM).toContain(body.reason);
     expect(body).not.toHaveProperty('kind');
-    expect(exitCodeFor(err.kind)).toBe(exit);
   });
 
   it('takes a remedy and retry value for one site and keeps the detail fields', () => {

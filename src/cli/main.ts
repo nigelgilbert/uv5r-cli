@@ -18,7 +18,8 @@ import {
   type SettingName,
   type Settings,
 } from '../core/codec.ts';
-import { BaofengError, EXIT, REASONS, RETRY, TransportError, UnexpectedError, UsageError, exitCodeFor, signalExitCode, withDetail } from '../core/errors.ts';
+import { BaofengError, REASONS, RETRY, TransportError, UnexpectedError, UsageError, withDetail } from '../core/errors.ts';
+import { EXIT, exitCodeFor, signalExitCode } from './exit.ts';
 import { readPlan } from '../core/plan.ts';
 import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SETTLE_MS } from '../core/protocol.ts';
