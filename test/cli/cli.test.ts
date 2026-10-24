@@ -2,7 +2,7 @@ import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, symlinkSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BusyError, encodeChannel, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
+import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
 
@@ -24,6 +24,7 @@ const REASON_ENUM = [
   'file-write-failed',
   'session-unavailable',
   'protocol-reply-invalid',
+  'radio-unsupported',
   'write-unacknowledged',
   'verification-failed',
   'image-incompatible',
@@ -51,6 +52,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   process.exitCode = undefined;
 });
 
@@ -151,6 +153,13 @@ describe('help', () => {
     const check = await helpJson('check');
     expect(check.exits.map((e: { code: number }) => e.code)).toEqual([3, 5]);
     expect(check.exits[1].when).toContain('fewer than 80% of the seconds active');
+  });
+
+  it('lists radio-unsupported with exit 5 and retry no, and names an unsupported radio under exit 5', async () => {
+    const help = await helpJson();
+    expect(help.errors.reasons['radio-unsupported']).toBe('exit 5: the radio on the cable answered a magic of another family');
+    expect(REASONS['radio-unsupported']).toMatchObject({ kind: 'device-state', retry: 'no' });
+    expect(help.exitCodes['5']).toContain('an unsupported radio');
   });
 
   it('prints help VERB with no exit section when the global table covers the verb', async () => {
@@ -302,12 +311,50 @@ describe('help', () => {
 });
 
 describe('status output', () => {
-  const STATUS = { firmware: 'HN5RV011', workmode: 'vfo', squelch: 3, voice: 'eng', beep: 'on', abr: 5 };
+  const STATUS = {
+    firmware: 'HN5RV011',
+    firmwareHex: '48 4e 35 52 56 30 31 31 ff ff ff ff ff ff',
+    family: 'uv5r',
+    magic: '291',
+    ident: 'aa 30 76 04 00 05 20 dd',
+    workmode: 'vfo',
+    squelch: 3,
+    voice: 'eng',
+    beep: 'on',
+    abr: 5,
+  };
 
-  it('prints firmware, work mode and the audio settings as JSON', async () => {
+  it('prints firmware, family, magic, ident, work mode and the audio settings as JSON', async () => {
     await cli(['status', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     expect(outJson()).toEqual(STATUS);
+  });
+
+  it('prints the magic, ident, family and version bytes as text on a terminal', async () => {
+    await onTerminal(() => cli(['status'], opener(new FakeRadio())));
+    expect(process.exitCode).toBe(0);
+    const text = stdout.join('');
+    expect(text).toContain('family       uv5r\n');
+    expect(text).toContain('magic        291\n');
+    expect(text).toContain('ident        aa 30 76 04 00 05 20 dd\n');
+    expect(text).toContain('firmwareHex  48 4e 35 52 56 30 31 31 ff ff ff ff ff ff\n');
+  });
+
+  it('exits 5 with radio-unsupported and retry no on a 14-byte ident', async () => {
+    const radio = new FakeRadio();
+    radio.identReply = Uint8Array.from([0xaa, ...new Array(12).fill(0x30), 0xdd]);
+    await cli(['status', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(stdout).toEqual([]);
+    expect(errJson()).toMatchObject({ reason: 'radio-unsupported', retry: 'no', radio: 'UV-5X3-type radio', message: expect.stringContaining('UV-5X3-type radio') });
+  });
+
+  it('exits 5 with protocol-reply-invalid and the bytes in got on a 9-byte ident', async () => {
+    const radio = new FakeRadio();
+    radio.identReply = new Uint8Array(9).fill(0xaa);
+    await cli(['status', '--json'], opener(radio));
+    expect(process.exitCode).toBe(5);
+    expect(errJson()).toMatchObject({ reason: 'protocol-reply-invalid', got: 'aa aa aa aa aa aa aa aa aa' });
   });
 
   it('lists the same keys in the help result', async () => {
@@ -315,6 +362,113 @@ describe('status output', () => {
     const { result } = JSON.parse(stdout.join('')) as { result: Record<string, unknown> };
     expect(Object.keys(result)).toEqual(Object.keys(STATUS));
     for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxMhz', 'name', 'note']) expect(result).not.toHaveProperty(key);
+  });
+});
+
+describe('UV5R_MAGIC', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const UV82 = '50 bb ff 20 13 01 05';
+
+  /** Run the CLI under fake timers until it finishes. */
+  async function run(argv: string[], open: OpenTransport): Promise<void> {
+    const done = cli(argv, open);
+    await vi.runAllTimersAsync();
+    await done;
+  }
+
+  /** Return a fake radio that acks only the UV82 magic. */
+  function uv82Radio(): FakeRadio {
+    const radio = new FakeRadio();
+    radio.magics = [magicByName('UV82').bytes];
+    return radio;
+  }
+
+  it('sends the UV82 bytes on the settings write session and on its verification session', async () => {
+    vi.stubEnv('UV5R_MAGIC', 'UV82');
+    const radio = uv82Radio();
+    await run(['settings', 'voice', 'off', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ voice: 'off' });
+    expect(radio.handshakes).toEqual([UV82, UV82]);
+  });
+
+  it('sends the UV82 bytes on the restore write session and on its verification session', async () => {
+    vi.stubEnv('UV5R_MAGIC', 'UV82');
+    const radio = uv82Radio();
+    await run(['restore', FIXTURE, '--force', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(radio.handshakes).toEqual([UV82, UV82]);
+  });
+
+  it('reports the magic that opened the session in status and dump', async () => {
+    vi.stubEnv('UV5R_MAGIC', 'UV82');
+    await run(['status', '--json'], opener(uv82Radio()));
+    expect(outJson()).toMatchObject({ magic: 'UV82', family: 'uv-82x3' });
+    stdout = [];
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    await run(['dump', '--out', out, '--json'], opener(uv82Radio()));
+    expect(outJson()).toMatchObject({ magic: 'UV82', family: 'uv-82x3' });
+  });
+
+  it.each([
+    ['tune', ['tune', '146.82', '--channel', '5']],
+    ['read', ['read', '5']],
+    ['erase', ['erase', '5']],
+    ['load', ['load', EXAMPLE_PLAN]],
+  ])('opens the %s session with the magic it names', async (_verb, argv) => {
+    vi.stubEnv('UV5R_MAGIC', 'UV82');
+    const radio = uv82Radio();
+    await run([...argv, '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(radio.handshakes).toEqual([UV82]);
+  });
+
+  it('opens with 291 when UV5R_MAGIC is empty', async () => {
+    vi.stubEnv('UV5R_MAGIC', '');
+    await run(['status', '--json'], opener(new FakeRadio()));
+    expect(outJson()).toMatchObject({ magic: '291' });
+  });
+
+  it.each([
+    ['BOGUS', ['status']],
+    ['UV6', ['status']],
+    ['BOGUS', ['settings', 'voice', 'off']],
+    ['UV6', ['read', '5']],
+    ['BOGUS', ['restore', FIXTURE, '--force']],
+    ['BOGUS', ['check', '162.400', '--channel', '0']],
+    ['UV6', ['sweep', EXAMPLE_PLAN]],
+  ])('exits 2 on UV5R_MAGIC=%s for %j, lists the supported names and never opens the port', async (name, argv) => {
+    vi.stubEnv('UV5R_MAGIC', name);
+    const open = opener(new FakeRadio());
+    await run([...argv, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining(`"${name}"`), supported: ['291', 'ORIG', 'UV82', 'A58', 'UV5G'] });
+    expect(errJson().message).toContain('supported: 291, ORIG, UV82, A58, UV5G');
+    expect(open.calls).toBe(0);
+    expect(stdout).toEqual([]);
+  });
+
+  it('exits 2 on UV5R_MAGIC=BOGUS for dump before creating FILE', async () => {
+    vi.stubEnv('UV5R_MAGIC', 'BOGUS');
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const open = opener(new FakeRadio());
+    await run(['dump', '--out', out, '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(open.calls).toBe(0);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('leaves key alone, since it opens no clone session', async () => {
+    vi.useRealTimers();
+    vi.stubEnv('UV5R_MAGIC', 'BOGUS');
+    await cli(['key', '--seconds', '0.1', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
   });
 });
 
@@ -630,6 +784,17 @@ describe('dump output file', () => {
     expect(open.calls).toBe(0);
     expect(lstatSync(out).isSymbolicLink()).toBe(true);
     expect(existsSync(join(dir, 'target.img'))).toBe(false);
+  });
+
+  it('prints out, bytes, firmware, family and magic, the keys of the help result', async () => {
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    await run(['dump', '--out', out, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    const result = outJson();
+    expect(result).toEqual({ out, bytes: 6472, firmware: 'HN5RV011', family: 'uv5r', magic: '291' });
+    stdout = [];
+    await cli(['help', 'dump', '--json']);
+    expect(Object.keys((JSON.parse(stdout.join('')) as { result: object }).result)).toEqual(Object.keys(result));
   });
 
   it('names the probe exit and the post-read write exit in help dump', async () => {

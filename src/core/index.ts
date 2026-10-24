@@ -2,8 +2,11 @@
 export { SerialTransport, findAioc, resolveTarget, AIOC_VENDOR_ID, AIOC_PRODUCT_ID } from './transport.ts';
 export type { Transport } from './transport.ts';
 
-export { Session, SETTLE_MS, IDLE_LIMIT_MS, settle, hex } from './protocol.ts';
-export type { Ident } from './protocol.ts';
+export { Session, SETTLE_MS, IDLE_LIMIT_MS, settle, hex, attempt } from './protocol.ts';
+export type { Ident, AttemptOutcome } from './protocol.ts';
+
+export { MAGICS, DEFAULT_MAGIC, SCAN_ORDER, FOREIGN_MAGICS, PROGRAM_MAGICS, BASETYPES, DTMF_TABLES, magicByName, parseIdent, classify } from './ident.ts';
+export type { Family, Magic, MagicName, IdentFlags, Classification, ParsedIdent } from './ident.ts';
 
 export {
   CHANNEL_BASE,
@@ -65,7 +68,7 @@ export {
   KEY_SIGNALS,
   holdPtt,
 } from './radio.ts';
-export type { ChannelPayload, MalformedRecord, ChannelResult, RadioStatus, HoldResult } from './radio.ts';
+export type { ChannelPayload, MalformedRecord, ChannelResult, RadioStatus, HoldResult, SessionOptions } from './radio.ts';
 
 export { parsePlan, readPlan } from './plan.ts';
 export type { Plan, PlanEntry } from './plan.ts';

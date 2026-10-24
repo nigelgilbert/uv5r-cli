@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listen, type ListenResult } from '../../src/cli/audio.ts';
-import { SETTLE_MS, TransportError } from '../../src/core/index.ts';
+import { SETTLE_MS, TransportError, magicByName } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
 
@@ -26,6 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   listenMock.mockReset();
   process.exitCode = undefined;
 });
@@ -68,6 +69,16 @@ async function run(argv: string[], open: OpenTransport): Promise<void> {
 }
 
 describe('check', () => {
+  it('opens the check session with the magic UV5R_MAGIC names', async () => {
+    vi.stubEnv('UV5R_MAGIC', 'UV82');
+    const radio = new FakeRadio();
+    radio.magics = [magicByName('UV82').bytes];
+    listenMock.mockResolvedValue(heard([true, true, true, true, true]));
+    await run(['check', '162.400', '--channel', '0', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(radio.handshakes).toEqual(['50 bb ff 20 13 01 05']);
+  });
+
   it('writes the slot, waits the settle, then listens', async () => {
     const radio = new FakeRadio();
     let lastSerialAt = 0;

@@ -21,6 +21,7 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
+import type { Family, Magic, MagicName } from './ident.ts';
 import { Session, hex, settle } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
@@ -37,6 +38,11 @@ export type ChannelResult = ChannelPayload | { channel: number; empty: true } | 
 
 export type RadioStatus = {
   firmware: string;
+  firmwareHex: string;
+  family: Family;
+  magic: MagicName;
+  /** The 8-byte ident as hex. */
+  ident: string;
   workmode: 'vfo' | 'channel';
   squelch: number | string;
   voice: number | string;
@@ -109,30 +115,36 @@ export async function verifySettingsBlock(s: Session, expected: Uint8Array): Pro
   return decodeSettings(back);
 }
 
-/** Start a session on `t`, run `fn` on it and return its result. */
-export async function withSession<T>(t: Transport, fn: (s: Session) => Promise<T>): Promise<T> {
+/** How a clone session opens; `magic` defaults to 291. */
+export interface SessionOptions {
+  magic?: Magic;
+}
+
+/** Start a session on `t` with `options.magic`, run `fn` on it and return its result. */
+export async function withSession<T>(t: Transport, fn: (s: Session) => Promise<T>, options: SessionOptions = {}): Promise<T> {
   const s = new Session(t);
-  await s.start();
+  await s.start(options.magic);
   return fn(s);
 }
 
-/** Wait for the radio to drop the current session and reload, then start a new session on `t`. */
-export async function startFreshSession(t: Transport): Promise<Session> {
+/** Wait for the radio to drop the current session and reload, then start a new session on `t` with `options.magic`. */
+export async function startFreshSession(t: Transport, options: SessionOptions = {}): Promise<Session> {
   await settle();
   const fresh = new Session(t);
-  await fresh.start();
+  await fresh.start(options.magic);
   return fresh;
 }
 
 /**
- * Wait for the radio to drop the current session and reload, start a new session on `t`,
- * and verify the settings block against `expected`. Call it after writeSettings.
+ * Wait for the radio to drop the current session and reload, start a new session on `t`
+ * with `options.magic`, and verify the settings block against `expected`. Call it after
+ * writeSettings.
  */
-export async function verifySettingsInFreshSession(t: Transport, expected: Uint8Array): Promise<Settings> {
-  return verifySettingsBlock(await startFreshSession(t), expected);
+export async function verifySettingsInFreshSession(t: Transport, expected: Uint8Array, options: SessionOptions = {}): Promise<Settings> {
+  return verifySettingsBlock(await startFreshSession(t, options), expected);
 }
 
-/** Read the firmware, the work mode and the audio settings. */
+/** Read the firmware, the work mode and the audio settings, with the magic, ident and family from the handshake. */
 export async function readStatus(s: Session): Promise<RadioStatus> {
   const ident = s.startedIdent;
   const settings = await readSettings(s);
@@ -140,6 +152,10 @@ export async function readStatus(s: Session): Promise<RadioStatus> {
   const workmode = page[ADDR.workmode - ADDR.statePage] === 1 ? 'channel' : 'vfo';
   return {
     firmware: ident.firmware,
+    firmwareHex: ident.firmwareHex,
+    family: ident.family,
+    magic: ident.magic,
+    ident: hex(ident.bytes),
     workmode,
     squelch: settings.squelch,
     voice: settings.voice,

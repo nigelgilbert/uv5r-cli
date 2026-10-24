@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../../src/core/codec.ts';
 import { BaofengError } from '../../src/core/errors.ts';
-import { Session, hex } from '../../src/core/protocol.ts';
+import { magicByName } from '../../src/core/ident.ts';
+import { SETTLE_MS, Session, attempt, hex } from '../../src/core/protocol.ts';
 import { channelPayload, eraseChannel, readChannel, readSettings, readStatus, withSession, writeChannel } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
@@ -71,6 +72,168 @@ describe('session', () => {
     const radio = new FakeRadio();
     radio.handshakesIgnored = 2;
     await expect(new Session(radio).start()).rejects.toMatchObject({ kind: 'device-state', reason: 'session-unavailable' });
+  });
+});
+
+describe('handshake', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Run fake timers alongside `p` and return its result, or its rejection as the value. */
+  async function settled<T>(p: Promise<T>): Promise<T | BaofengError> {
+    const caught = p.catch((err: unknown) => err as BaofengError);
+    await vi.runAllTimersAsync();
+    return caught;
+  }
+
+  /** Record the time of every magic the radio matched. */
+  function attemptTimes(radio: FakeRadio): number[] {
+    const times: number[] = [];
+    const seen = radio.handshakes.length;
+    const write = radio.write.bind(radio);
+    vi.spyOn(radio, 'write').mockImplementation((bytes) => {
+      write(bytes);
+      if (radio.handshakes.length > seen + times.length) times.push(Date.now());
+    });
+    return times;
+  }
+
+  /** Return every single-byte write after the 02 that asks for the ident. */
+  function writesAfterIdentRequest(write: MockInstance<FakeRadio['write']>): number[][] {
+    const calls = write.mock.calls.map(([bytes]) => [...bytes]);
+    const at = calls.findIndex((b) => b.length === 1 && b[0] === 0x02);
+    return at < 0 ? [] : calls.slice(at + 1);
+  }
+
+  it('accepts an 8-byte ident with magic 291 and reports the magic, firmware and family', async () => {
+    const radio = new FakeRadio();
+    const id = await settled(new Session(radio).start());
+    expect(id).toMatchObject({
+      bytes: radio.ident,
+      firmware: 'HN5RV011',
+      firmwareHex: '48 4e 35 52 56 30 31 31 ff ff ff ff ff ff',
+      droppedByte: true,
+      magic: '291',
+      family: 'uv5r',
+      flags: { basetype: 'HN5RV01', orig: false, dtmfTable: '0123456789ABCD*#' },
+    });
+    expect(radio.handshakes).toEqual(['50 bb ff 20 12 07 25']);
+  });
+
+  it('collapses a 12-byte ident to 8 bytes with magic 291', async () => {
+    const radio = new FakeRadio();
+    radio.identReply = Uint8Array.from([0xaa, 0x01, 0x01, 0x36, 0x01, 0x74, 0x01, 0x04, 0x00, 0x05, 0x20, 0xdd]);
+    const id = await settled(new Session(radio).start());
+    expect(id).toMatchObject({ bytes: Uint8Array.from([0xaa, 0x36, 0x74, 0x04, 0x00, 0x05, 0x20, 0xdd]), magic: '291' });
+  });
+
+  it('reads the ident in one bounded read of up to 14 bytes', async () => {
+    const radio = new FakeRadio();
+    const read = vi.spyOn(radio, 'read');
+    await settled(new Session(radio).start());
+    expect(read.mock.calls[1]).toEqual([14, 300]);
+  });
+
+  it('fails with radio-unsupported naming a UV-5X3-type radio on a 14-byte ident with magic 291, once and with no closing 06', async () => {
+    const radio = new FakeRadio();
+    radio.identReply = Uint8Array.from([0xaa, 0x30, 0x76, 0x04, 0x00, 0x05, 0x20, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xdd]);
+    const write = vi.spyOn(radio, 'write');
+    const err = await settled(new Session(radio).start());
+    expect(err).toBeInstanceOf(BaofengError);
+    expect((err as BaofengError).toJSON()).toMatchObject({
+      reason: 'radio-unsupported',
+      message: expect.stringContaining('UV-5X3-type radio'),
+      remedy: 'report the radio name to the human; this CLI speaks the classic UV-5R protocol',
+      retry: 'no',
+      radio: 'UV-5X3-type radio',
+      magic: '291',
+    });
+    expect((err as BaofengError).kind).toBe('device-state');
+    expect(radio.handshakes).toHaveLength(1);
+    expect(writesAfterIdentRequest(write)).toEqual([]);
+  });
+
+  it('fails with protocol-reply-invalid and the bytes in got on a 9-byte ident with magic 291, once', async () => {
+    const radio = new FakeRadio();
+    radio.identReply = Uint8Array.from([0xaa, 0x30, 0x76, 0x04, 0x00, 0x05, 0x20, 0x00, 0xdd]);
+    const err = await settled(new Session(radio).start());
+    expect((err as BaofengError).toJSON()).toMatchObject({ reason: 'protocol-reply-invalid', got: 'aa 30 76 04 00 05 20 00 dd', magic: '291' });
+    expect(radio.handshakes).toHaveLength(1);
+  });
+
+  it('names a wrong ack byte in got and the message after two attempts with magic 291', async () => {
+    const radio = new FakeRadio();
+    radio.ackByte = 0x15;
+    const err = await settled(new Session(radio).start());
+    expect((err as BaofengError).toJSON()).toMatchObject({
+      reason: 'session-unavailable',
+      message: 'radio answered the clone handshake with 15 in place of 06; check the radio is on and the cable is seated',
+      remedy: 'ask the human to check the radio is on and the cable is seated',
+      retry: 'after-remedy',
+      got: '15',
+    });
+    expect(radio.handshakes).toHaveLength(2);
+  });
+
+  it('runs the second attempt SETTLE_MS after a silent first one with magic 291', async () => {
+    const radio = new FakeRadio();
+    radio.handshakesIgnored = 1;
+    const times = attemptTimes(radio);
+    const id = await settled(new Session(radio).start());
+    expect(id).toMatchObject({ magic: '291', firmware: 'HN5RV011' });
+    expect(times).toHaveLength(2);
+    expect(times[1]! - times[0]!).toBeGreaterThanOrEqual(SETTLE_MS);
+  });
+
+  it('keeps an empty got and the remedy after two silent attempts with magic 291', async () => {
+    const radio = new FakeRadio();
+    radio.handshakesIgnored = 2;
+    const err = await settled(new Session(radio).start());
+    expect((err as BaofengError).toJSON()).toMatchObject({
+      reason: 'session-unavailable',
+      message: 'radio did not answer the clone handshake; check the radio is on and the cable is seated',
+      remedy: 'ask the human to check the radio is on and the cable is seated',
+      retry: 'after-remedy',
+      got: '',
+    });
+    expect(radio.handshakes).toHaveLength(2);
+  });
+
+  it('fails at once with the wait remedy when the radio refuses the closing 06 with magic 291', async () => {
+    const radio = new FakeRadio();
+    const read = radio.read.bind(radio);
+    let reads = 0;
+    vi.spyOn(radio, 'read').mockImplementation(async (n, ms) => (++reads === 3 ? new Uint8Array() : read(n, ms)));
+    const err = await settled(new Session(radio).start());
+    expect((err as BaofengError).toJSON()).toMatchObject({ reason: 'session-unavailable', message: 'radio refused the clone session', remedy: 'wait 3 s and rerun the command', got: '' });
+    expect(radio.handshakes).toHaveLength(1);
+  });
+
+  it('opens the session with magic UV82 when the radio acks only UV82', async () => {
+    const radio = new FakeRadio();
+    const uv82 = magicByName('UV82');
+    radio.magics = [uv82.bytes];
+    const id = await settled(new Session(radio).start(uv82));
+    expect(id).toMatchObject({ magic: 'UV82', family: 'uv-82x3' });
+    expect(radio.handshakes).toEqual(['50 bb ff 20 13 01 05']);
+  });
+
+  it('stops after the ident without the closing 06 when attempt runs without confirm, magic 291', async () => {
+    const radio = new FakeRadio();
+    const write = vi.spyOn(radio, 'write');
+    const outcome = await settled(attempt(radio, magicByName('291'), { confirm: false }));
+    expect(outcome).toEqual({ kind: 'ident', bytes: radio.ident });
+    expect(writesAfterIdentRequest(write)).toEqual([]);
+  });
+
+  it('reports a silent attempt as silent with magic ORIG on a radio that acks only 291', async () => {
+    const radio = new FakeRadio();
+    expect(await settled(attempt(radio, magicByName('ORIG'), { confirm: true }))).toEqual({ kind: 'silent' });
   });
 });
 
@@ -234,12 +397,23 @@ describe('tune over an existing slot', () => {
 });
 
 describe('status', () => {
-  it('returns firmware, work mode and the audio settings', async () => {
+  it('returns firmware, family, magic, ident, work mode and the audio settings', async () => {
     const radio = new FakeRadio();
     const s = new Session(radio);
     await s.start();
     const st = await readStatus(s);
-    expect(st).toEqual({ firmware: 'HN5RV011', workmode: 'vfo', squelch: 3, voice: 'eng', beep: 'on', abr: 5 });
+    expect(st).toEqual({
+      firmware: 'HN5RV011',
+      firmwareHex: '48 4e 35 52 56 30 31 31 ff ff ff ff ff ff',
+      family: 'uv5r',
+      magic: '291',
+      ident: 'aa 30 76 04 00 05 20 dd',
+      workmode: 'vfo',
+      squelch: 3,
+      voice: 'eng',
+      beep: 'on',
+      abr: 5,
+    });
     for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxMhz', 'name', 'note']) expect(st).not.toHaveProperty(key);
   });
   it('reads the settings block from the page values despite the 16-byte read alias', async () => {

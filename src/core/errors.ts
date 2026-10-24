@@ -8,6 +8,7 @@ export type TransportReason = 'device-unavailable' | 'serial-io-failed' | 'ptt-c
 export type DeviceStateReason =
   | 'session-unavailable'
   | 'protocol-reply-invalid'
+  | 'radio-unsupported'
   | 'write-unacknowledged'
   | 'verification-failed'
   | 'image-incompatible'
@@ -95,6 +96,12 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
     means: 'the radio sent a malformed ident or read header',
     remedy: 'rerun the command; ask the human to power-cycle the radio if it fails again',
     retry: 'once',
+  },
+  'radio-unsupported': {
+    kind: 'device-state',
+    means: 'the radio on the cable answered a magic of another family',
+    remedy: 'report the radio name to the human; this CLI speaks the classic UV-5R protocol',
+    retry: 'no',
   },
   'write-unacknowledged': {
     kind: 'device-state',
