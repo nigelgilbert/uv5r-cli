@@ -1,5 +1,7 @@
 # uv5r-cli
 
+[![ci](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml)
+
 Control a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable from the
 command line: put a frequency in a memory channel, read the radio's state, back up and
 restore its memory, listen to receive audio and key PTT.
@@ -289,6 +291,8 @@ tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
 npm run typecheck
 npm test
 ```
+
+GitHub Actions runs both commands on every push to `main` and every pull request.
 
 `src/core/` talks to the radio: transport, protocol, codec, radio, plan and errors.
 `src/cli/` parses arguments, prints and exits. `cli` imports `core` through
