@@ -21,14 +21,14 @@ Per radio:
 3. When `pin` is null, run `uv5r dump --out fixtures/golden/unit-<n>.img --json`. Otherwise put the `pin` line before that command.
 4. Dump again to the scratchpad and `cmp` the two. Redo both on a mismatch.
 5. Record the sha256 of the last 320 bytes of the image, offsets 0x1808-0x1947.
-6. After both dumps, the human reads three programmed channels off the display in MR mode, or every programmed channel when the radio holds fewer. The display shows a name, a channel number or a frequency, per MDF-A and MDF-B. Per channel record `slot` (CLI numbering, 0 to 127), `displayNumber`, `mdf` (`freq`, `ch` or `name`) and the one field the display shows, in `rxMhz` or `name`.
+6. After both dumps, the human reads three programmed channels off the display in MR mode, or every programmed channel when the radio holds fewer. The display shows a name, a channel number or a frequency, per MDF-A and MDF-B. Per channel record `slot` (CLI numbering, 0 to 127), `displayNumber`, `mdf` (`freq`, `ch` or `name`) and the field the display shows: `rxMhz` for `freq` and `name` for `name`. A `ch` entry carries no further field.
 
 Write `fixtures/golden/manifest.json` with one entry per unit in the shape the plan gives, plus a `displayed` array holding the three channels from step 6:
 
 ```json
 { "label": "1", "image": "unit-1.img", "dumped": "2026-10-25", "ident": "aa 30 76 04 00 05 20 dd",
   "firmware": "HN5RV011", "magic": "291", "auxSha256": "…", "notes": "2026-10-12 fixture radio",
-  "displayed": [{ "slot": 0, "displayNumber": 0, "mdf": "freq", "rxMhz": "162.400" }] }
+  "displayed": [{ "slot": 1, "displayNumber": 1, "mdf": "freq", "rxMhz": "452.125" }] }
 ```
 
 When two `auxSha256` values are equal, re-seat each radio once and compare the tape labels. When the labels differ, add `"sameRadioAs": "<label>"` to the later unit.
@@ -42,7 +42,7 @@ Before the commit, the human reviews the channel names and the power-on message 
 ## Acceptance criteria
 
 - [x] `fixtures/golden/` holds `unit-1.img` to `unit-3.img`, each exactly 6472 bytes.
-- [x] `manifest.json` has three entries with every field filled, `magic` included, and `displayed` entries, three per unit or one per programmed channel when a unit holds fewer, each carrying `slot`, `displayNumber`, `mdf` and the displayed field.
+- [x] `manifest.json` has three entries with every field filled, `magic` included, and `displayed` entries, three per unit or one per programmed channel when a unit holds fewer, each carrying `slot`, `displayNumber`, `mdf` and, for `freq` and `name`, the displayed field.
 - [x] The `auxSha256` values differ except units that carry `sameRadioAs`.
 - [x] `cmp` of each committed image against its second dump exits 0.
 - [x] `unit-1.img` differs from `fixtures/uv5r-hn5rv011-2026-10-12.img` only at image offsets 0x0E52, 0x0E55, 0x0F26, 0x0F47 and 0x1008, and its last 320 bytes hash to `7a5252d198f8da8e14821172b62debbee83895c14f7b7d32f58165b6d87f96c1`. If other offsets differ, stop and ask the human.
