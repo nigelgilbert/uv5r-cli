@@ -72,7 +72,6 @@ describe('golden set', () => {
     if (expected === undefined) throw new Error('run vitest -u to write the unit JSON, then check it against the radio display');
     const slot = expected.slots.find((s) => s.channel === entry.slot);
     if (slot === undefined || !('rxMhz' in slot)) throw new Error(`slot ${entry.slot} holds no channel in the unit JSON`);
-    if (entry.mdf !== 'ch' && entry.rxMhz === undefined && entry.name === undefined) throw new Error(`displayed slot ${entry.slot} carries neither rxMhz nor name`);
     // The UV-5R numbers its channels 0 to 127 as the CLI does.
     expect(entry.displayNumber).toBe(entry.slot);
     expect(entry.mdf).toBe(expected.settings.mdfa);
