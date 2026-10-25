@@ -10,17 +10,30 @@
 
 ## What to build
 
-`FakeRadio.fromImage(image)` returns a fake holding a real unit's memory: the ident from the image header, main memory 0x0000-0x17FF and aux 0x1EC0-0x1FFF, with the 0x0E00 page reloaded. The default constructor stays as it is.
+Reset the worktree to the tip of `feature/new-golden-set` after #001 is committed, before editing.
 
-The protocol and settings tests stop reading `fixtures/uv5r-hn5rv011-2026-10-12.img`. They read `PRIMARY` from the golden loader. The restore round trip and the restored-range verification run once per unit with `it.each(GOLDEN)` on `FakeRadio.fromImage(unit.image)`. `FIXTURE_SETTINGS` goes away. The expected settings come from the decoded settings of the unit under test. Until #003 lands, decode them in the test from the image's settings block.
+`FakeRadio.fromImage(image, { magic })` returns a fake holding a real unit's memory. It sets the ident in place with `ident.set()` from image bytes 0-7, loads main memory 0x0000-0x17FF from `IMAGE_HEADER` and aux 0x1EC0-0x1FFF from `IMAGE_AUX`, and reloads the 0x0E00 page. The fake acks `magic`; tests pass `unit.manifest.magic`. The default constructor stays as it is.
+
+The protocol and settings tests stop reading `fixtures/uv5r-hn5rv011-2026-10-12.img`. They read `PRIMARY` from the golden loader.
+
+The restore round trip and the restored-range verification run once per unit with `it.each(GOLDEN)`. Build each fake with `fromImage`, fill 0x0000-0x17FF with 0xFF, keep the ident and aux, reload the page, then restore. Keep the dropped-write case on `PRIMARY`.
+
+In `test/core/settings.test.ts`:
+
+- Define `DEFAULT_SETTINGS`, the decoded settings of the default fake, and use it in place of `FIXTURE_SETTINGS` at `:93` and `:112`. Keep literal expectations for the eight values written at `:110` and expected at `:112`.
+- Drop the test at `:31-33`; #003 covers decoding.
+- `:55` reads `PRIMARY`.
+- `:128-130` run on `FakeRadio.fromImage(unit.image)` and compare against `decodeSettings(imageSettingsBlock(unit.image))`.
+
+Put the `fromImage` tests in `protocol.test.ts`. One runs on `PRIMARY`. One runs on a copy of `PRIMARY` with a changed ident and firmware. Each checks the handshake ident and the firmware.
 
 ## Acceptance criteria
 
 - [ ] `grep -rn "2026-10-12" test/core` prints nothing.
 - [ ] The restore round trip runs 4 cases, one per unit, all passing.
-- [ ] A test asserts `FakeRadio.fromImage(PRIMARY.image)` reads back the image ident and firmware.
+- [ ] A test asserts `FakeRadio.fromImage` reads back the image ident and firmware, on `PRIMARY` and on the changed copy.
 - [ ] `npm test` and `npm run typecheck` pass.
 
 ## Blocked by
 
-- #002
+- issues/002-golden-loader.md

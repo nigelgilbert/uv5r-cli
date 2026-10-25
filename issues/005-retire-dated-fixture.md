@@ -10,20 +10,22 @@
 
 ## What to build
 
-The CLI `restore` tests write `PRIMARY.image` to a temp file and restore that. `fixtureRadio()` becomes `FakeRadio.fromImage(PRIMARY.image)`. Delete `fixtures/uv5r-hn5rv011-2026-10-12.img`.
+Reset the worktree to the tip of `feature/new-golden-set` after #001 is committed, before editing.
 
-In the README "Bench files" section, replace the fixture line with `fixtures/golden/`, one line on the manifest and one on `npm run golden`. Keep the README free of dates and run counts. Update any README-grep test in the CLI tests that matches the old line.
+The CLI `restore` tests write `PRIMARY.image` to a temp file and restore that. `fixtureRadio()` becomes `FakeRadio.fromImage(PRIMARY.image)`. Add `test/core/golden.ts` to the allowlist in `test/core/imports.test.ts:31` next to `FAKE`. Delete `fixtures/uv5r-hn5rv011-2026-10-12.img`.
 
-In `docs/clone-protocol-review.md`, mark the "Golden files" open item done with a link to the plan. Leave the dated history in `docs/rx-audio-investigation.md` as it is.
+In the README "Bench files" section, replace lines 253-254 together with `fixtures/golden/`, one line on the manifest and one on the unit JSON snapshots. Keep a slot 127 line only if `unit-1.img` at offset 8+0x7F0 still holds a record behind an FF first byte. Keep the README free of dates and run counts. Update any README-grep test in the CLI tests that matches the old lines.
+
+In `docs/clone-protocol-review.md`, mark the "Golden files" open item done with a link to the plan. Leave the dated history in `docs/rx-audio-investigation.md` and the `defaultDumpName` comment in `src/cli/main.ts` as they are.
 
 ## Acceptance criteria
 
 - [ ] `git ls-files fixtures` lists only files under `fixtures/golden/`.
-- [ ] `grep -rn "2026-10-12" src test README.md` prints nothing.
+- [ ] `grep -rn "hn5rv011-2026-10-12" src test README.md` prints nothing.
 - [ ] `grep -n "fixtures/golden" README.md` prints the new Bench files entry.
 - [ ] `npm test` and `npm run typecheck` pass.
 
 ## Blocked by
 
-- #003
-- #004
+- issues/003-decoded-expectations.md
+- issues/004-restore-round-trip.md

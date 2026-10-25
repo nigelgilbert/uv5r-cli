@@ -10,24 +10,30 @@
 
 ## What to build
 
-`npm run golden` runs a script that decodes every image in the manifest and writes `fixtures/golden/unit-<n>.json`. Each file holds the decoded settings and all 128 slots, in the shape `read --json` and `settings --json` print. Empty slots are `null`. Malformed slots keep the `{ malformed, raw }` shape.
+Reset the worktree to the tip of `feature/new-golden-set` after #001 is committed, before editing.
 
-The loader adds `expected` to each `GOLDEN` entry. The golden test gains three checks per unit:
+Extract a pure `decodeSlot(mem, name)` in core. It returns `Channel | MalformedRecord | undefined`, as `readChannel` returns it. Export it through `src/core/index.ts`. Call it from `readChannel` and the golden test.
 
-- Decoding the image gives `expected`.
-- Each `displayed` channel in the manifest matches the slot of the same number in `expected` on frequency and name. This ties the snapshot to what the radio showed.
-- Encoding each well-formed decoded record gives back its 16 bytes from the image.
+`golden.test.ts` writes `fixtures/golden/unit-<n>.json` through `toMatchFileSnapshot`. Each file holds the decoded settings in the shape `settings --json` prints and all 128 slots, each as `channelPayload(n, decodeSlot(mem, name))`. Empty slots are `{ channel, empty: true }`. Malformed slots are `{ channel, malformed: true, raw }`. The payload drops `scan`.
+
+The loader reads each `unit-<n>.json` into `expected` on its `GOLDEN` entry. The golden test gains three checks per unit:
+
+- Decoding the image matches the `unit-<n>.json` snapshot. This catches decoder regressions only, since the same decoder writes the snapshot.
+- Each `displayed` entry in the manifest matches the slot of the same `slot` in `expected` on the fields it carries. Compare frequencies as numbers. This is the independent check and covers five slots per unit.
+- Encoding each well-formed channel record gives back its bytes under masks. Pass the original record as `prior` and map `txHz: null` to `rxOnly`. Compare bytes 0-11 in full, byte 12 under 0x0F, byte 13 in full, byte 14 under 0x01 and byte 15 under 0x4F. Name records stay out of the round trip.
+
+List each slot with bits set outside those masks in the unit's manifest `notes`. Leave `src/core/codec.ts` alone.
 
 Commit the generated JSON.
 
 ## Acceptance criteria
 
-- [ ] `npm run golden` writes four JSON files, and running it again leaves `git diff` empty.
+- [ ] Running `vitest -u` writes four JSON files, and a second `npm test` leaves `git diff` empty.
 - [ ] Each JSON has a settings object and 128 slot entries.
-- [ ] `npm test` passes, including 20 `displayed` checks (5 per unit) and the encode round trip on every well-formed slot.
+- [ ] `npm test` passes, including 20 `displayed` checks (5 per unit) and the masked encode round trip on every well-formed slot.
 - [ ] Changing one channel frequency in a JSON file makes the test fail.
 - [ ] `npm run typecheck` passes.
 
 ## Blocked by
 
-- #002
+- issues/002-golden-loader.md
