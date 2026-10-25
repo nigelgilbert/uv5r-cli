@@ -40,7 +40,7 @@ Commit the generated JSON.
 
 ## Result
 
-Implemented in `17545dd`. No slot is malformed and no slot sets bits outside the masks, so the manifest notes are unchanged. The round trip covers 21, 15 and 2 well-formed slots on units 1 to 3.
+Implemented in `17545dd`. No slot is malformed and no slot sets bits outside the masks, so the manifest notes are unchanged. The round trip covers 21, 15 and 2 well-formed slots on units 1 to 3. Byte 13, BCL, scan and PTT-ID come back from `prior` and hold the encoder defaults in every golden slot, so the round trip misses a change to them; `codec.test.ts` covers all four and `radio.test.ts` covers BCL and PTT-ID.
 
 Later commits:
 
