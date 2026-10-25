@@ -261,8 +261,6 @@ the next magic.
 - `channels.example.json`: the reference shape for generated plans.
 - `channels.json`: the plan the `channel-plan` skill writes for the current location.
   Ignored by git.
-- `docs/rx-audio-investigation.md`: the bench measurements behind the protocol notes and the
-  receive audio findings.
 - `.claude/skills/uv5r/SKILL.md`: the operating rules an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.

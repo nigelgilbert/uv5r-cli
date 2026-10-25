@@ -28,7 +28,7 @@ function handshakes(write: MockInstance<FakeRadio['write']>): number {
 }
 
 describe('settings codec', () => {
-  it('decodes a zeroed block as the muted state', () => {
+  it('decodes a zeroed block as squelch 0 with voice and beep off', () => {
     expect(decodeSettings(new Uint8Array(0x20))).toMatchObject({ squelch: 0, voice: 'off', beep: 'off', abr: 0 });
   });
   it('keeps an out-of-range byte as a number', () => {
