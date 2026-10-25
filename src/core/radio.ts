@@ -251,7 +251,7 @@ export async function identify(transport: Transport, onAttempt: (a: IdentifyAtte
     if (outcome.kind === 'foreign') throw radioUnsupported(outcome.name, magic.name, outcome.got);
     if (outcome.kind !== 'ident') continue;
     if (!magic.supported) throw radioUnsupported(UNSUPPORTED_RADIOS[magic.families[0]!] ?? magic.name, magic.name, outcome.got);
-    const id = await new Session(transport).finish(magic, outcome.bytes);
+    const id = await new Session(transport).finish(magic, outcome.bytes, outcome.got);
     return {
       magic: id.magic,
       ident: hex(id.bytes),

@@ -283,6 +283,16 @@ describe('handshake', () => {
     expect(session.ident).toBeUndefined();
   });
 
+  it('reports all 12 bytes of a 12-byte ident in got on a BFT515 version with magic A58', async () => {
+    const radio = new FakeRadio();
+    const a58 = magicByName('A58');
+    radio.magics = [a58.bytes];
+    radio.firmware = 'BFT515 ';
+    radio.identReply = Uint8Array.from([0xaa, 0x01, 0x01, 0x36, 0x01, 0x74, 0x01, 0x04, 0x00, 0x05, 0x20, 0xdd]);
+    const err = await settled(new Session(radio).start(a58));
+    expect((err as BaofengError).toJSON()).toMatchObject({ reason: 'radio-unsupported', radio: 'Baofeng BF-A58', magic: 'A58', got: 'aa 01 01 36 01 74 01 04 00 05 20 dd' });
+  });
+
   it('fails with a usage error and writes nothing when start gets the unsupported magic F11', async () => {
     const radio = new FakeRadio();
     const f11 = MAGICS.find((m) => m.name === 'F11')!;
@@ -457,7 +467,17 @@ describe('identify', () => {
       message: expect.stringContaining('BF-A58'),
       radio: 'Baofeng BF-A58',
       magic: 'A58',
+      got: 'aa 30 76 04 00 05 20 dd',
     });
+  });
+
+  it('reports all 12 bytes of a 12-byte ident in got on an A58 ack with a BFT515 version', async () => {
+    const radio = radioAcking('A58');
+    radio.firmware = 'BFT515 ';
+    radio.identReply = Uint8Array.from([0xaa, 0x01, 0x01, 0x36, 0x01, 0x74, 0x01, 0x04, 0x00, 0x05, 0x20, 0xdd]);
+    const { result, names } = await scan(radio);
+    expect(names.at(-1)).toBe('A58 ident');
+    expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'radio-unsupported', radio: 'Baofeng BF-A58', magic: 'A58', got: 'aa 01 01 36 01 74 01 04 00 05 20 dd' });
   });
 
   it('ends the scan with radio-unsupported on a 14-byte ident on the second magic', async () => {

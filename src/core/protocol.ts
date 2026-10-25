@@ -144,7 +144,7 @@ export class Session {
       const last = await attempt(this.transport, magic, { confirm: true });
       switch (last.kind) {
         case 'ident':
-          return this.finish(magic, last.bytes);
+          return this.finish(magic, last.bytes, last.got);
         case 'foreign':
           throw radioUnsupported(last.name, magic.name, last.got);
         case 'invalid':
@@ -161,10 +161,11 @@ export class Session {
 
   /**
    * Run the reads that follow a confirmed handshake with `magic` and ident `bytes`, and
-   * build the ident with the firmware, the dropped-byte flag and the classification. A
-   * `bf-a58` classification throws radio-unsupported and leaves `ident` unset.
+   * build the ident with the firmware, the dropped-byte flag and the classification. `got`
+   * is the raw ident reply in hex. A `bf-a58` classification throws radio-unsupported with
+   * `got` and leaves `ident` unset.
    */
-  async finish(magic: Magic, bytes: Uint8Array): Promise<Ident> {
+  async finish(magic: Magic, bytes: Uint8Array, got: string): Promise<Ident> {
     this.lastCommandAt = Date.now();
     this.commands = 0;
     this.staged.clear();
@@ -178,7 +179,7 @@ export class Session {
       .replace(/[^\x20-\x7e]/g, '')
       .trim();
     const { family, flags } = classify(magic.name, version, bytes);
-    if (family === 'bf-a58') throw radioUnsupported('Baofeng BF-A58', magic.name, hex(bytes));
+    if (family === 'bf-a58') throw radioUnsupported('Baofeng BF-A58', magic.name, got);
     this.ident = { bytes, firmware, firmwareHex: hex(version), droppedByte: tail[15] === 0xff, magic: magic.name, family, flags };
     return this.ident;
   }

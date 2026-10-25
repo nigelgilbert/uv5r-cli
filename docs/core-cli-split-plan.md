@@ -66,7 +66,7 @@ containing `cli/`. `tsconfig.json` keeps one project.
 | `errors.ts` `REASONS` | `core/errors.ts` | The `means` and `remedy` text stays as is. Three remedies name `uv5r` verbs; leave them and list them under follow-ups. |
 | `args.ts` `parseDecimal` | `cli/args.ts` | `codec.ts` and `plan.ts` import it today. Move `parseDecimal` to `core/codec.ts` and have `cli/args.ts` re-export it, so core stops depending on the argument parser. |
 | `radio.ts` `holdPtt` | `core/radio.ts` | Keeps its `EventEmitter` parameter; `cli/main.ts` passes `process`. |
-| `protocol.ts` `MAGIC` | `core/protocol.ts` | `test/core/fake.ts` imports it from there. The handshake work moves it into `ident.ts`. |
+| `protocol.ts` `MAGIC` | `core/protocol.ts` | `test/core/fake.ts` imports it from there. The handshake work deletes it; tests use `magicByName('291').bytes`. |
 
 Everything else moves to the directory named in the layout with its imports rewritten.
 
