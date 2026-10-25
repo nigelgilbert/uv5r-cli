@@ -121,9 +121,10 @@ describe('fake from an image', () => {
     vi.useRealTimers();
   });
 
-  it('answers the handshake with the ident and firmware of PRIMARY', async () => {
+  it('answers the handshake as PRIMARY and loads its main memory and aux block', async () => {
     const radio = FakeRadio.fromImage(PRIMARY.image, { magic: PRIMARY.manifest.magic });
     const s = await startSession(radio, magicByName(PRIMARY.manifest.magic));
+    // PRIMARY's ident and firmware match the default constructor, so the changed-copy test covers the ident load.
     expect(hex(s.startedIdent.bytes)).toBe(hex(PRIMARY.image.subarray(0, IMAGE_HEADER)));
     expect(s.startedIdent.firmware).toBe(PRIMARY.manifest.firmware);
     expect([...radio.eeprom.subarray(0x0000, 0x1800)]).toEqual([...PRIMARY.image.subarray(IMAGE_HEADER, IMAGE_HEADER + 0x1800)]);
@@ -137,6 +138,12 @@ describe('fake from an image', () => {
     const s = await startSession(FakeRadio.fromImage(image));
     expect(hex(s.startedIdent.bytes)).toBe('aa 30 76 04 00 05 21 dd');
     expect(s.startedIdent.firmware).toBe('BFB297');
+  });
+  it('acks the magic it is given and ignores the default 291', async () => {
+    const orig = FakeRadio.fromImage(PRIMARY.image, { magic: 'ORIG' });
+    await expect(startSession(orig, magicByName('ORIG'))).resolves.toBeInstanceOf(Session);
+    const radio = FakeRadio.fromImage(PRIMARY.image, { magic: 'ORIG' });
+    expect(await driveRejection(new Session(radio).start(magicByName('291')))).toMatchObject({ kind: 'device-state', reason: 'session-unavailable' });
   });
 });
 

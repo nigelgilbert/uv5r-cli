@@ -107,7 +107,7 @@ export class FakeRadio implements Transport {
     const radio = new FakeRadio();
     radio.ident.set(image.subarray(0, IMAGE_HEADER));
     radio.eeprom.set(image.subarray(IMAGE_HEADER, IMAGE_HEADER + MAIN_END), 0);
-    radio.eeprom.set(image.subarray(IMAGE_AUX, IMAGE_AUX + 0x2000 - AUX), AUX);
+    radio.eeprom.set(image.subarray(IMAGE_AUX), AUX);
     radio.magics = [magicByName(magic).bytes];
     radio.reload();
     return radio;
