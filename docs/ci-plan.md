@@ -82,10 +82,10 @@ jobs:
 - The SHAs pin each action to one commit. A tag such as `v7` can be moved.
 - `node-version: 24` matches `engines` and the baseline.
 - `cache: npm` is set explicitly. setup-node v7 caches on its own only when `package.json`
-  sets `packageManager`.
+  sets `packageManager` or `devEngines.packageManager`.
 - `timeout-minutes: 10` stops a hung run. The default is 6 hours.
-- `concurrency` cancels an older PR run when a new commit lands. Runs on `main` always finish, so
-  the badge reflects each merge.
+- `concurrency` cancels an older PR run when a new commit lands. A running `main` run finishes. A
+  queued `main` run gives way to a newer push, so the badge shows the latest merge.
 - `pull_request` runs fork code with a read-only token and no secrets. Leave
   `pull_request_target` out. It runs with the repo's secrets, so checking out PR code there
   exposes them.
@@ -160,8 +160,7 @@ Go to Settings → Rules → Rulesets → New branch ruleset. Target the default
 bypass list empty. Turn on "Require a pull request before merging" with required approvals at 0,
 so you can merge your own PRs. Turn on "Require status checks to pass", add `test`, and leave
 "Require branches to be up to date" off. Set Enforcement to Active. The check appears in the
-picker only after it has run once. Without the pull request rule, a direct push to `main` skips
-CI.
+picker only after it has run once. The pull request rule sends every change through a PR.
 
 ### 7. Turn on Dependabot security updates
 
