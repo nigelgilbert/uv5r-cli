@@ -66,7 +66,7 @@ CHIRP master, kk7ds/chirp 21e42e4518c1, `chirp/drivers/uv5r.py:298` reads `MODE_
 
 - `issues/001-radio-survey.md:29-31`: the example manifest entry names unit 1 and shows 162.400 on slot 0. Unit 1's slot 0 is empty; 162.400 is on unit 2.
 - `issues/001-radio-survey.md:24` says the displayed field goes in `rxMhz` or `name`. A `ch` entry displays only `displayNumber`.
-- `docs/review-1.md:9` and `docs/swarm-report-0.md:81` claim names on all 15 of unit 2's slots. Both are records and stay as written.
+- `docs/review-1.md:9` and `docs/swarm-report-0.md:81` claim names on all 15 of unit 2's programmed slots. Both are records and stay as written.
 - Two worktrees from earlier runs remain under `.claude/worktrees/`: `agent-a7c8fe491c985bec9` and `agent-aa0712616e0ffadcc`.
 
 ## Next step
