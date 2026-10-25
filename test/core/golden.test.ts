@@ -53,6 +53,12 @@ function masked(record: Uint8Array): string {
 const DISPLAYED = GOLDEN.flatMap(({ label, manifest, expected }) => manifest.displayed.map((entry) => ({ label, slot: entry.slot, entry, expected })));
 
 describe('golden set', () => {
+  it('holds units 1, 2 and 3 with distinct images and a displayed slot each', () => {
+    expect(GOLDEN.map((unit) => unit.label)).toEqual(['1', '2', '3']);
+    expect(new Set(GOLDEN.map((unit) => unit.manifest.image)).size).toBe(GOLDEN.length);
+    for (const unit of GOLDEN) expect(unit.manifest.displayed.length, `unit ${unit.label}`).toBeGreaterThan(0);
+  });
+
   it.each(GOLDEN)('unit $label matches its manifest entry', ({ image, manifest }: GoldenUnit) => {
     expect(hex(image.subarray(0, IMAGE_HEADER))).toBe(manifest.ident);
     expect(firmware(image)).toBe(manifest.firmware);
