@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../../src/core/codec.ts';
-import { BaofengError, TransportError } from '../../src/core/errors.ts';
+import { BaofengError, TransportError, UsageError } from '../../src/core/errors.ts';
 import { FOREIGN_MAGICS, MAGICS, PROGRAM_MAGICS, magicByName } from '../../src/core/ident.ts';
 import { SETTLE_MS, Session, attempt, hex } from '../../src/core/protocol.ts';
 import {
@@ -19,7 +19,7 @@ import {
 } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
-const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, run later commands with no prefix';
+const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, keep the UV5R_MAGIC setting identify ran with';
 const NO_HANDSHAKE_REMEDY = `ask the human to check the radio is on and the cable is seated; if both hold, ${WRONG_ACK_REMEDY}`;
 
 /** Write channel `n` in a new session, as the tune verb does. */
@@ -162,7 +162,7 @@ describe('handshake', () => {
     const radio = new FakeRadio();
     const read = vi.spyOn(radio, 'read');
     await settled(new Session(radio).start());
-    expect(read.mock.calls[1]).toEqual([14, 300]);
+    expect(read.mock.calls[1]).toEqual([14, 350]);
   });
 
   it('fails with radio-unsupported naming a UV-5X3-type radio on a 14-byte ident with magic 291, once and with no closing 06', async () => {
@@ -283,11 +283,24 @@ describe('handshake', () => {
     expect(session.ident).toBeUndefined();
   });
 
+  it('fails with a usage error and writes nothing when start gets the unsupported magic F11', async () => {
+    const radio = new FakeRadio();
+    const f11 = MAGICS.find((m) => m.name === 'F11')!;
+    radio.magics = [f11.bytes];
+    const write = vi.spyOn(radio, 'write');
+    const session = new Session(radio);
+    const err = await settled(session.start(f11));
+    expect((err as BaofengError).toJSON()).toMatchObject({ magic: 'F11' });
+    expect(err).toBeInstanceOf(UsageError);
+    expect(write).not.toHaveBeenCalled();
+    expect(session.ident).toBeUndefined();
+  });
+
   it('stops after the ident without the closing 06 when attempt runs without confirm, magic 291', async () => {
     const radio = new FakeRadio();
     const write = vi.spyOn(radio, 'write');
     const outcome = await settled(attempt(radio, magicByName('291'), { confirm: false }));
-    expect(outcome).toEqual({ kind: 'ident', bytes: radio.ident });
+    expect(outcome).toEqual({ kind: 'ident', bytes: radio.ident, got: hex(radio.ident) });
     expect(writesAfterIdentRequest(write)).toEqual([]);
   });
 
@@ -426,6 +439,14 @@ describe('identify', () => {
     expect(write.mock.calls.some(([bytes]) => bytes[0] === 0x53)).toBe(false);
   });
 
+  it('reports all 12 bytes of a 12-byte ident in got on a UV6 ack', async () => {
+    const radio = radioAcking('UV6');
+    radio.identReply = Uint8Array.from([0xaa, 0x01, 0x01, 0x36, 0x01, 0x74, 0x01, 0x04, 0x00, 0x05, 0x20, 0xdd]);
+    const { result, names } = await scan(radio);
+    expect(names.at(-1)).toBe('UV6 ident');
+    expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'radio-unsupported', radio: 'Baofeng UV-6', magic: 'UV6', got: 'aa 01 01 36 01 74 01 04 00 05 20 dd' });
+  });
+
   it('reports radio-unsupported naming the BF-A58 on an A58 ack with a BFT517 version', async () => {
     const radio = radioAcking('A58');
     radio.firmware = 'BFT517 ';
@@ -499,6 +520,7 @@ describe('identify', () => {
       retry: 'no',
       remedy: 'report the radio name to the human; this CLI speaks the classic UV-5R protocol',
       radio: 'BTECH UV-5X3',
+      magic: '50 0d 0c 20 16 03 28',
       got: `aa ${new Array(12).fill('30').join(' ')} dd`,
     });
     expect(writesAfterIdentRequest(write)).toEqual([]);
@@ -512,7 +534,7 @@ describe('identify', () => {
     const write = vi.spyOn(radio, 'write');
     const { result, names } = await scan(radio);
     expect(names.slice(13)).toEqual(['BTECH UV-5X3 silent', 'MTC UV-5R-3 silent', 'UV-6R ident']);
-    expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'radio-unsupported', radio: 'UV-6R', got: 'aa 30 76 04 00 05 20 dd' });
+    expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'radio-unsupported', radio: 'UV-6R', magic: '50 bb ff 20 14 11 22', got: 'aa 30 76 04 00 05 20 dd' });
     expect(writesAfterIdentRequest(write)).toEqual([]);
   });
 
@@ -582,6 +604,35 @@ describe('identify', () => {
     expect(names).toHaveLength(18);
     expect(setBaud.mock.calls).toEqual([[115200], [9600]]);
     expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'serial-io-failed', baud: 115200 });
+  });
+
+  it('sets 9600 again when a read at 115200 fails, and ends with the read error', async () => {
+    const radio = silentRadio();
+    const failure = new TransportError('serial-io-failed', 'cannot read: EIO', { target: 'fake' });
+    const read = radio.read.bind(radio);
+    vi.spyOn(radio, 'read').mockImplementation(async (n, ms) => {
+      if (radio.rate === 115200) throw failure;
+      return read(n, ms);
+    });
+    const setBaud = vi.spyOn(radio, 'setBaud');
+    const { result, names } = await scan(radio);
+    expect(names).toHaveLength(18);
+    expect(setBaud.mock.calls).toEqual([[115200], [9600]]);
+    expect(radio.rate).toBe(9600);
+    expect(result).toBe(failure);
+  });
+
+  it('discards a stray byte from the switch to 115200 before the first program magic', async () => {
+    const radio = silentRadio();
+    radio.programMagic = programMagic('PROGRAMBFNORMALU');
+    const setBaud = radio.setBaud.bind(radio);
+    vi.spyOn(radio, 'setBaud').mockImplementation(async (rate) => {
+      await setBaud(rate);
+      if (rate === 115200) radio.queueStale([0x00]);
+    });
+    const { result, names } = await scan(radio);
+    expect(names.slice(18)).toEqual(['PROGRAMBFNORMALU ack']);
+    expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'radio-unsupported', magic: 'PROGRAMBFNORMALU', got: '06' });
   });
 
   it('lists each wrong ack at 115200 in answers', async () => {

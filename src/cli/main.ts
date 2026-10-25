@@ -220,7 +220,7 @@ const verbs: Record<string, Verb> = {
     flags: COMMON_FLAGS,
     effects: [
       `Try the classic magics in the order ${SCAN_ORDER.join(', ')}. A magic UV5R_MAGIC names goes first.`,
-      `Give each supported magic a second attempt on silence or a byte other than 06. The first magic waits ${SETTLE_MS / 1000} s before it, as every radio verb does.`,
+      `Give each supported magic a second attempt on silence or a byte other than 06. The first magic's second attempt waits ${SETTLE_MS / 1000} s, as every radio verb does.`,
       `Pause ${SCAN_WRONG_ACK_PAUSE_MS / 1000} s after a wrong ack and ${SETTLE_MS / 1000} s after a bad ident or a refused closing 06. Silence gets no pause.`,
       'Stop at the first magic that opens a clone session and read the firmware block. F11, UV6 and UV6_ORIG run without the closing 06 and with no block read.',
       `When no classic magic opens a session, send the foreign magics of ${FOREIGN_MAGICS.map((m) => m.radio).join(', ')} at 9600 without the closing 06, with the same pauses. An ident stops the scan and names that radio.`,

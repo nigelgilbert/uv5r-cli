@@ -39,6 +39,9 @@ export const DEFAULT_MAGIC: MagicName = '291';
 /** The order `identify` tries the classic magics in. */
 export const SCAN_ORDER: readonly MagicName[] = ['291', 'ORIG', 'UV82', 'A58', 'UV5G', 'F11', 'UV6', 'UV6_ORIG'];
 
+/** The magic sessions open with when the caller names none. */
+export const DEFAULT_MAGIC_ENTRY: Magic = magicByName(DEFAULT_MAGIC);
+
 /** 7-byte magics of other drivers on the same 9600 link, with the radio a reply names. */
 export const FOREIGN_MAGICS: ReadonlyArray<{ radio: string; bytes: Uint8Array }> = [
   { radio: 'BTECH UV-5X3', bytes: Uint8Array.from([0x50, 0x0d, 0x0c, 0x20, 0x16, 0x03, 0x28]) },
@@ -101,6 +104,7 @@ export interface IdentFlags {
   voiceBool: boolean;
   /** The second band is 220-260 MHz. */
   band220: boolean;
+  /** The family has three power levels and a basetype string matched. */
   triPower: boolean;
   /** DTMF characters in code order. */
   dtmfTable: (typeof DTMF_TABLES)[keyof typeof DTMF_TABLES];
@@ -112,7 +116,7 @@ export interface Classification {
 }
 
 /** Return the magic named `name`, or undefined. */
-function findMagic(name: string): Magic | undefined {
+export function findMagic(name: string): Magic | undefined {
   return MAGICS.find((m) => m.name === name);
 }
 
@@ -183,7 +187,7 @@ export function classify(magicName: string, versionBytes: Uint8Array, identBytes
       orig,
       voiceBool: orig && bfb! < VOICE_LIST_FROM,
       band220: !orig && identBytes[3] === 0x02,
-      triPower: TRI_POWER.includes(family),
+      triPower: basetype !== null && TRI_POWER.includes(family),
       dtmfTable: version.slice(0, 7) === HN5RV01 ? DTMF_TABLES.hn5rv01 : DTMF_TABLES.classic,
     },
   };

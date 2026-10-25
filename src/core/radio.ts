@@ -21,7 +21,7 @@ import {
   type Settings,
 } from './codec.ts';
 import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
-import { DEFAULT_MAGIC, FOREIGN_MAGICS, MAGICS, PROGRAM_MAGICS, SCAN_ORDER, magicByName, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
+import { DEFAULT_MAGIC_ENTRY, FOREIGN_MAGICS, PROGRAM_MAGICS, SCAN_ORDER, findMagic, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
 import { ACK, SETTLE_MS, Session, attempt, hex, radioUnsupported, settle, sleep, type AttemptOutcome } from './protocol.ts';
 import type { Transport } from './transport.ts';
 
@@ -217,14 +217,14 @@ async function probe(scan: Scan, name: string, magic: Pick<Magic, 'bytes'> & Par
 
 /** Return the scan order with `first` moved to the front. */
 function scanOrder(first: Magic): Magic[] {
-  const rest = SCAN_ORDER.filter((name) => name !== first.name).map((name) => MAGICS.find((m) => m.name === name)!);
+  const rest = SCAN_ORDER.filter((name) => name !== first.name).map((name) => findMagic(name)!);
   return [first, ...rest];
 }
 
 /**
  * Try each classic magic in SCAN_ORDER, with `options.magic` moved to the front, and return
  * the first that opens a clone session. Each supported magic gets a second attempt on silence
- * or a wrong ack; the first magic waits SETTLE_MS before it. Other attempts follow silence at
+ * or a wrong ack; the first magic's second attempt waits SETTLE_MS. Other attempts follow silence at
  * once, a wrong ack after SCAN_WRONG_ACK_PAUSE_MS, and an invalid ident or a refused closing
  * 06 after SETTLE_MS. Unsupported magics get one attempt and run without the closing 06; an
  * ident on one, a 14-byte ident on any, or a BF-A58 version under A58 throws radio-unsupported.
@@ -240,7 +240,7 @@ function scanOrder(first: Magic): Magic[] {
  * closing 06 among them sets retry `once` as Session.start does.
  */
 export async function identify(transport: Transport, onAttempt: (a: IdentifyAttempt) => void = () => {}, options: SessionOptions = {}): Promise<IdentifyResult> {
-  const selected = options.magic ?? magicByName(DEFAULT_MAGIC);
+  const selected = options.magic ?? DEFAULT_MAGIC_ENTRY;
   const scan: Scan = { transport, onAttempt, pauseMs: 0, answers: [], invalid: undefined };
   for (const [i, magic] of scanOrder(selected).entries()) {
     let outcome = await probe(scan, magic.name, magic, magic.supported);
@@ -250,7 +250,7 @@ export async function identify(transport: Transport, onAttempt: (a: IdentifyAtte
     }
     if (outcome.kind === 'foreign') throw radioUnsupported(outcome.name, magic.name, outcome.got);
     if (outcome.kind !== 'ident') continue;
-    if (!magic.supported) throw radioUnsupported(UNSUPPORTED_RADIOS[magic.families[0]!] ?? magic.name, magic.name, hex(outcome.bytes));
+    if (!magic.supported) throw radioUnsupported(UNSUPPORTED_RADIOS[magic.families[0]!] ?? magic.name, magic.name, outcome.got);
     const id = await new Session(transport).finish(magic, outcome.bytes);
     return {
       magic: id.magic,
@@ -265,8 +265,7 @@ export async function identify(transport: Transport, onAttempt: (a: IdentifyAtte
   }
   for (const entry of FOREIGN_MAGICS) {
     const outcome = await probe(scan, entry.radio, entry, false);
-    if (outcome.kind === 'ident') throw radioUnsupported(entry.radio, entry.radio, hex(outcome.bytes));
-    if (outcome.kind === 'foreign') throw radioUnsupported(entry.radio, entry.radio, outcome.got);
+    if (outcome.kind === 'ident' || outcome.kind === 'foreign') throw radioUnsupported(entry.radio, hex(entry.bytes), outcome.got);
   }
   await programScan(scan);
   throw scanFailed(scan);

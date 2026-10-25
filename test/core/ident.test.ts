@@ -150,6 +150,10 @@ describe('basetypes', () => {
     expect(classify('A58', new Uint8Array(14).fill(0xff), IDENT)).toMatchObject({ family: 'bf-f8hp', flags: { basetype: null } });
   });
 
+  it('gives bf-f8hp without triPower for an all-space version with magic A58', () => {
+    expect(classify('A58', version('', 0x20), IDENT)).toMatchObject({ family: 'bf-f8hp', flags: { basetype: null, triPower: false } });
+  });
+
   it('resolves N5R2 by the magic: uv5r with 291, uv-82hp with UV82', () => {
     expect(family('291', 'N5R2401BFB297')).toBe('uv5r');
     expect(family('UV82', 'N5R2401BFB297')).toBe('uv-82hp');

@@ -245,7 +245,7 @@ History. In 2012 Chirp parsed ident bytes 1-6 as `BFB` and a version number. Whe
 
 ### 4.6 Classification procedure
 
-1. Drain input. Try the classic magics in this order: `291`, `ORIG`, `UV82`, `F11`, `UV6`, `UV6_ORIG`, `A58`, `UV5G`. Pace per section 3.4. The first magic that completes the handshake wins. This order is a proposal; Chirp never scans.
+1. Drain input. Try the classic magics in this order: `291`, `ORIG`, `UV82`, `A58`, `UV5G`, `F11`, `UV6`, `UV6_ORIG`. The supported magics run first. Pace per section 3.4. The first magic that completes the handshake wins. Chirp never scans.
 2. If every classic magic fails, probe each foreign magic without the closing `06`. A reply names the foreign radio. Report it and stop.
 3. Narrow the family by the magic that answered:
 

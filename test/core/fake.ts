@@ -1,4 +1,5 @@
-import { MAGIC, hex } from '../../src/core/protocol.ts';
+import { magicByName } from '../../src/core/ident.ts';
+import { hex } from '../../src/core/protocol.ts';
 import type { Transport } from '../../src/core/transport.ts';
 
 /** Start of the page the radio serves from its reload snapshot and aliases for 16-byte reads. */
@@ -44,7 +45,7 @@ export class FakeRadio implements Transport {
   readonly eeprom = new Uint8Array(0x2000).fill(0xff);
   readonly ident = Uint8Array.from([0xaa, 0x30, 0x76, 0x04, 0x00, 0x05, 0x20, 0xdd]);
   /** Magics the radio acks; the bench unit acks 291. */
-  magics: Uint8Array[] = [MAGIC];
+  magics: Uint8Array[] = [magicByName('291').bytes];
   /** Byte the radio sends in reply to a magic it acks. */
   ackByte = 0x06;
   /** Reply to `02`, of any length. */
@@ -232,6 +233,11 @@ export class FakeRadio implements Transport {
 
   discard(): void {
     this.outbox = [];
+  }
+
+  /** Queue `bytes` as stale input that the host reads before any reply. */
+  queueStale(bytes: Iterable<number>): void {
+    this.outbox.push(...bytes);
   }
 
   /** Leave clone mode at once, as the radio does after IDLE_DROP_MS of silence. */

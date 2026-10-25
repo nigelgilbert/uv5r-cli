@@ -1,12 +1,8 @@
 import { ADDR, SETTINGS_BASE, SETTINGS_COMMIT } from './codec.ts';
 import { DeviceStateError, TimeoutError, UsageError } from './errors.ts';
-import { DEFAULT_MAGIC, classify, magicByName, parseIdent, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
+import { DEFAULT_MAGIC_ENTRY, classify, parseIdent, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
 import type { Transport } from './transport.ts';
 
-/** The magic sessions open with when the caller names none. */
-const DEFAULT = magicByName(DEFAULT_MAGIC);
-/** Bytes of the default 291 magic, for tests that watch the wire. */
-export const MAGIC = DEFAULT.bytes;
 export const ACK = 0x06;
 const CMD_READ = 0x53; // 'S'
 const CMD_WRITE = 0x58; // 'X'
@@ -27,9 +23,9 @@ const ACK_WAIT_MS = 1200;
 /** Longest ident reply: the 14-byte form of a UV-5X3-type radio. */
 const IDENT_MAX = 14;
 /** Budget for the one bounded ident read; the whole ident lands within about 10 ms. */
-const IDENT_WAIT_MS = 300;
+const IDENT_WAIT_MS = 350;
 /** Remedy for a verb handshake that got a byte other than 06. */
-const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, run later commands with no prefix';
+const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, keep the UV5R_MAGIC setting identify ran with';
 /** Remedy for a verb handshake that got no reply. */
 const NO_HANDSHAKE_REMEDY = `ask the human to check the radio is on and the cable is seated; if both hold, ${WRONG_ACK_REMEDY}`;
 /** Wait for the radio's 06 after the host's closing 06. */
@@ -69,14 +65,14 @@ export interface Ident {
   flags: IdentFlags;
 }
 
-/** What one handshake attempt saw on the wire; `got` holds the reply bytes as hex. */
+/** What one handshake attempt saw on the wire; `got` holds the reply bytes as hex and `bytes` the 8-byte ident. */
 export type AttemptOutcome =
   | { kind: 'silent' }
   | { kind: 'wrong-ack'; got: string }
   | { kind: 'invalid'; got: string }
   | { kind: 'foreign'; name: string; got: string }
   | { kind: 'refused'; got: string }
-  | { kind: 'ident'; bytes: Uint8Array };
+  | { kind: 'ident'; bytes: Uint8Array; got: string };
 
 /**
  * Run one handshake attempt with `magic`: discard input, send the magic byte by byte, wait
@@ -97,11 +93,11 @@ export async function attempt(transport: Transport, magic: Pick<Magic, 'bytes'>,
   const parsed = parseIdent(reply);
   if (parsed.kind === 'invalid') return { kind: 'invalid', got: hex(reply) };
   if (parsed.kind === 'foreign') return { kind: 'foreign', name: parsed.name, got: hex(reply) };
-  if (!confirm) return { kind: 'ident', bytes: parsed.bytes };
+  if (!confirm) return { kind: 'ident', bytes: parsed.bytes, got: hex(reply) };
   transport.write(Uint8Array.of(ACK));
   const ack2 = await transport.read(1, CONFIRM_WAIT_MS);
   if (ack2[0] !== ACK) return { kind: 'refused', got: hex(ack2) };
-  return { kind: 'ident', bytes: parsed.bytes };
+  return { kind: 'ident', bytes: parsed.bytes, got: hex(reply) };
 }
 
 /** Return the radio-unsupported error for a radio that answered `magic` with reply `got` as `radio`. */
@@ -135,11 +131,13 @@ export class Session {
   /**
    * Open the session with `magic`: up to two attempts SETTLE_MS apart, the second only when
    * the first got silence or a byte other than 06. Then read the firmware block the way CHIRP
-   * does. A 14-byte ident or a BF-A58 version throws radio-unsupported, any other bad ident
-   * throws protocol-reply-invalid, and a refused closing 06 throws session-unavailable at once.
+   * does. An unsupported magic throws UsageError before any byte goes out. A 14-byte
+   * ident or a BF-A58 version throws radio-unsupported, any other bad ident throws
+   * protocol-reply-invalid, and a refused closing 06 throws session-unavailable at once.
    * When both attempts fail, the error names the last wrong ack byte from either attempt.
    */
-  async start(magic: Magic = DEFAULT): Promise<Ident> {
+  async start(magic: Magic = DEFAULT_MAGIC_ENTRY): Promise<Ident> {
+    if (!magic.supported) throw new UsageError(`magic ${magic.name} names a radio this CLI does not support; no bytes were sent`, { magic: magic.name });
     let got = '';
     for (let n = 0; n < HANDSHAKE_ATTEMPTS; n++) {
       if (n > 0) await sleep(HANDSHAKE_RETRY_MS);

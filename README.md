@@ -107,7 +107,7 @@ and the human confirms the radio is on and the cable is seated. It tries each cl
 magics at 9600, then two UV17Pro magics at 115200. In text mode it prints one line per
 attempt with the baud on stderr. Put the `pin` line it prints before every later `uv5r`
 command, as in `UV5R_MAGIC=ORIG uv5r status`. `pin` is `null` when the verbs already open with the magic that
-answered; run later commands with no prefix. An F11, UV6 or UV6_ORIG answer, a BF-A58 version under A58, or an answer to a foreign or 115200 magic,
+answered; keep the `UV5R_MAGIC` setting identify ran with. An F11, UV6 or UV6_ORIG answer, a BF-A58 version under A58, or an answer to a foreign or 115200 magic,
 exits 5 with `radio-unsupported` naming the radio. A 115200 answer adds `powerCycle: true`;
 the radio stays in program mode until the human power-cycles it.
 
