@@ -1,10 +1,9 @@
 import { ADDR, SETTINGS_BASE, SETTINGS_COMMIT } from './codec.ts';
 import { DeviceStateError, TimeoutError, UsageError } from './errors.ts';
+import { DEFAULT_MAGIC_ENTRY, classify, parseIdent, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
 import type { Transport } from './transport.ts';
 
-/** Clone-mode magic for the UV-5R family (CHIRP UV5R_MODEL_291). */
-export const MAGIC = Uint8Array.from([0x50, 0xbb, 0xff, 0x20, 0x12, 0x07, 0x25]);
-const ACK = 0x06;
+export const ACK = 0x06;
 const CMD_READ = 0x53; // 'S'
 const CMD_WRITE = 0x58; // 'X'
 const REPLY = 0x58; // 'X'
@@ -17,6 +16,20 @@ export const SETTLE_MS = 3000;
 const HANDSHAKE_ATTEMPTS = 2;
 /** A previous verb may have left the radio in clone mode; this much silence drops it. */
 const HANDSHAKE_RETRY_MS = SETTLE_MS;
+/** Pause after each magic byte. */
+const MAGIC_BYTE_GAP_MS = 10;
+/** Wait for the ack after the last magic byte. */
+const ACK_WAIT_MS = 1200;
+/** Longest ident reply: the 14-byte form of a UV-5X3-type radio. */
+const IDENT_MAX = 14;
+/** Budget for the one bounded ident read; the whole ident lands within about 10 ms. */
+const IDENT_WAIT_MS = 350;
+/** Remedy for a verb handshake that got a byte other than 06. */
+const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, run later commands with no prefix';
+/** Remedy for a verb handshake that got no reply. */
+const NO_HANDSHAKE_REMEDY = `ask the human to check the radio is on and the cable is seated; if both hold, ${WRONG_ACK_REMEDY}`;
+/** Wait for the radio's 06 after the host's closing 06. */
+const CONFIRM_WAIT_MS = 1000;
 /** The radio takes writes as 16-byte aligned blocks below this address. */
 const MEMORY_END = 0x2000;
 const BLOCK = 0x10;
@@ -27,7 +40,7 @@ const SETTINGS_HALVES = [SETTINGS_BASE, SETTINGS_BASE + BLOCK] as const;
  * Wait `ms` on a ref'd timer, so a port that closes mid-wait still leaves the loop alive for the
  * next read to report it. When `stop` resolves first, clear the timer and resolve at once.
  */
-const sleep = (ms: number, stop?: Promise<unknown>) =>
+export const sleep = (ms: number, stop?: Promise<unknown>) =>
   new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, ms);
     void stop?.then(() => {
@@ -41,8 +54,55 @@ export const hex = (a: Uint8Array | number[]): string => [...a].map((b) => b.toS
 
 export interface Ident {
   bytes: Uint8Array;
+  /** The printable version string, trimmed. */
   firmware: string;
+  /** All 14 version bytes at 0x1EF0 as hex. */
+  firmwareHex: string;
   droppedByte: boolean;
+  /** Name of the magic that opened the session. */
+  magic: MagicName;
+  family: Family;
+  flags: IdentFlags;
+}
+
+/** What one handshake attempt saw on the wire; `got` holds the reply bytes as hex and `bytes` the 8-byte ident. */
+export type AttemptOutcome =
+  | { kind: 'silent' }
+  | { kind: 'wrong-ack'; got: string }
+  | { kind: 'invalid'; got: string }
+  | { kind: 'foreign'; name: string; got: string }
+  | { kind: 'refused'; got: string }
+  | { kind: 'ident'; bytes: Uint8Array; got: string };
+
+/**
+ * Run one handshake attempt with `magic`: discard input, send the magic byte by byte, wait
+ * for 06, send 02 and read up to 14 ident bytes in one bounded read. With `confirm`, send the
+ * closing 06 and wait for the radio's 06; without it, stop after the ident.
+ */
+export async function attempt(transport: Transport, magic: Pick<Magic, 'bytes'>, { confirm }: { confirm: boolean }): Promise<AttemptOutcome> {
+  transport.discard();
+  for (const b of magic.bytes) {
+    transport.write(Uint8Array.of(b));
+    await sleep(MAGIC_BYTE_GAP_MS);
+  }
+  const ack = await transport.read(1, ACK_WAIT_MS);
+  if (ack.length === 0) return { kind: 'silent' };
+  if (ack[0] !== ACK) return { kind: 'wrong-ack', got: hex(ack) };
+  transport.write(Uint8Array.of(0x02));
+  const reply = await transport.read(IDENT_MAX, IDENT_WAIT_MS);
+  const parsed = parseIdent(reply);
+  if (parsed.kind === 'invalid') return { kind: 'invalid', got: hex(reply) };
+  if (parsed.kind === 'foreign') return { kind: 'foreign', name: parsed.name, got: hex(reply) };
+  if (!confirm) return { kind: 'ident', bytes: parsed.bytes, got: hex(reply) };
+  transport.write(Uint8Array.of(ACK));
+  const ack2 = await transport.read(1, CONFIRM_WAIT_MS);
+  if (ack2[0] !== ACK) return { kind: 'refused', got: hex(ack2) };
+  return { kind: 'ident', bytes: parsed.bytes, got: hex(reply) };
+}
+
+/** Return the radio-unsupported error for a radio that answered `magic` with reply `got` as `radio`. */
+export function radioUnsupported(radio: string, magic: string, got: string): DeviceStateError {
+  return new DeviceStateError('radio-unsupported', `the radio answered as a ${radio}; this CLI speaks the classic UV-5R protocol`, { radio, magic, got });
 }
 
 /**
@@ -68,40 +128,44 @@ export class Session {
     this.transport = transport;
   }
 
-  /** Send the magic, read the ident, then read the firmware block the way CHIRP does. */
-  async start(): Promise<Ident> {
-    let bytes: Uint8Array | undefined;
-    let lastGot = '';
-    for (let attempt = 0; attempt < HANDSHAKE_ATTEMPTS && !bytes; attempt++) {
-      if (attempt > 0) await sleep(HANDSHAKE_RETRY_MS);
-      this.transport.discard();
-      for (const b of MAGIC) {
-        this.transport.write(Uint8Array.of(b));
-        await sleep(10);
+  /**
+   * Open the session with `magic`: up to two attempts SETTLE_MS apart, the second only when
+   * the first got silence or a byte other than 06. Then read the firmware block the way CHIRP
+   * does. An unsupported magic throws UsageError before any byte goes out. A 14-byte
+   * ident or a BF-A58 version throws radio-unsupported, any other bad ident throws
+   * protocol-reply-invalid, and a refused closing 06 throws session-unavailable at once.
+   * When both attempts fail, the error names the last wrong ack byte from either attempt.
+   */
+  async start(magic: Magic = DEFAULT_MAGIC_ENTRY): Promise<Ident> {
+    if (!magic.supported) throw new UsageError(`magic ${magic.name} names a radio this CLI does not support; no bytes were sent`, { magic: magic.name });
+    let got = '';
+    for (let n = 0; n < HANDSHAKE_ATTEMPTS; n++) {
+      if (n > 0) await sleep(HANDSHAKE_RETRY_MS);
+      const last = await attempt(this.transport, magic, { confirm: true });
+      switch (last.kind) {
+        case 'ident':
+          return this.finish(magic, last.bytes, last.got);
+        case 'foreign':
+          throw radioUnsupported(last.name, magic.name, last.got);
+        case 'invalid':
+          throw new DeviceStateError('protocol-reply-invalid', 'unexpected ident from radio', { magic: magic.name, got: last.got });
+        case 'refused':
+          throw new DeviceStateError('session-unavailable', 'radio refused the clone session', { magic: magic.name, got: last.got }, { remedy: 'wait 3 s and rerun the command' });
+        case 'wrong-ack':
+          got = last.got;
       }
-      const ack = await this.transport.read(1, 1200);
-      if (ack[0] !== ACK) {
-        lastGot = hex(ack);
-        continue;
-      }
-      this.transport.write(Uint8Array.of(0x02));
-      await sleep(300);
-      let id = await this.transport.read(12, 50);
-      if (id.length === 12) id = Uint8Array.from([id[0]!, id[3]!, id[5]!, ...id.subarray(7)]);
-      if (id.length !== 8) throw new DeviceStateError('protocol-reply-invalid', 'unexpected ident from radio', { got: hex(id) });
-      this.transport.write(Uint8Array.of(ACK));
-      const ack2 = await this.transport.read(1, 1000);
-      if (ack2[0] !== ACK) throw new DeviceStateError('session-unavailable', 'radio refused the clone session', { got: hex(ack2) }, { remedy: 'wait 3 s and rerun the command' });
-      bytes = id;
     }
-    if (!bytes) {
-      throw new DeviceStateError(
-        'session-unavailable',
-        'radio did not answer the clone handshake; check the radio is on and the cable is seated',
-        { got: lastGot },
-        { retry: 'after-remedy' },
-      );
-    }
+    const message = got ? `radio answered the clone handshake with ${got}` : 'radio did not answer the clone handshake; check the radio is on and the cable is seated';
+    throw new DeviceStateError('session-unavailable', message, { magic: magic.name, got }, { remedy: got ? WRONG_ACK_REMEDY : NO_HANDSHAKE_REMEDY, retry: 'after-remedy' });
+  }
+
+  /**
+   * Run the reads that follow a confirmed handshake with `magic` and ident `bytes`, and
+   * build the ident with the firmware, the dropped-byte flag and the classification. `got`
+   * is the raw ident reply in hex. A `bf-a58` classification throws radio-unsupported with
+   * `got` and leaves `ident` unset.
+   */
+  async finish(magic: Magic, bytes: Uint8Array, got: string): Promise<Ident> {
     this.lastCommandAt = Date.now();
     this.commands = 0;
     this.staged.clear();
@@ -109,11 +173,14 @@ export class Session {
     await this.readBlock(0x1e80, 0x40);
     const fw = await this.readBlock(ADDR.firmwareBlock, 0x40);
     const tail = await this.readBlock(0x1fc0, 0x40);
-    const firmware = Buffer.from(fw.subarray(48, 62))
+    const version = fw.subarray(48, 62);
+    const firmware = Buffer.from(version)
       .toString('latin1')
       .replace(/[^\x20-\x7e]/g, '')
       .trim();
-    this.ident = { bytes, firmware, droppedByte: tail[15] === 0xff };
+    const { family, flags } = classify(magic.name, version, bytes);
+    if (family === 'bf-a58') throw radioUnsupported('Baofeng BF-A58', magic.name, got);
+    this.ident = { bytes, firmware, firmwareHex: hex(version), droppedByte: tail[15] === 0xff, magic: magic.name, family, flags };
     return this.ident;
   }
 

@@ -1,5 +1,7 @@
 # uv5r-cli
 
+[![ci](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml)
+
 Control a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable from the
 command line: put a frequency in a memory channel, read the radio's state, back up and
 restore its memory, listen to receive audio and key PTT.
@@ -58,15 +60,16 @@ one they may transmit on, after asking the human what the display shows.
 
 | Verb | Writes to radio | Time | Result keys |
 |---|---|---|---|
-| `status` | no | one clone session | `firmware`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
+| `status` | no | one clone session | `firmware`, `firmwareHex`, `family`, `magic`, `ident`, `workmode`, `squelch`, `voice`, `beep`, `abr` |
+| `identify` | no | one clone session when the first magic answers; about 29 s on a silent radio | `magic`, `ident`, `firmware`, `firmwareHex`, `family`, `flags`, `droppedByte`, `pin` |
 | `tune` | record and name of slot N | one clone session | `channel`, record keys, `appliesAfterSeconds` |
 | `check` | receive-only record and name of slot N | one clone session, 3 s reload, 5 s listen | `slot`, `requestedMhz`, `listen` keys |
 | `load` | record and name of each plan slot | one clone session | array of `tune` results |
 | `read` | no | one clone session | `channel`, record keys; `empty` for an empty slot; `malformed` and `raw`, the record bytes as hex, for a record whose frequency bytes are not valid BCD |
 | `erase` | 0xFF over the record and name of slot N | one clone session | `channel`, `empty`, `appliesAfterSeconds` |
 | `key` | no; raises PTT | `--seconds` | `pttAsserted`, `seconds`, `released`; `interrupted` on a signal |
-| `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware` |
-| `restore` | channels, names and settings from the image | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
+| `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware`, `family`, `magic` |
+| `restore` | channels, names and settings from the image. On post-291 firmware the ident encodes the band limits, so a restore after a band-limit change exits 5 with `image-incompatible`; dump again first | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
 | `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
 | `listen` | no; opens no serial port | `--seconds` | `device`, `seconds`, `rmsDbfs`, `zeroSeconds`, `meanRmsDbfs`, `peakDbfs`, `active`, `activeSeconds`, `warnings`, `out` |
 | `sweep` | slot 0, once for the check and once per entry | the check, then the dwell plus about 3 s per entry | `swept`, `seconds`, `device`, `active`, `warnings`, `slot0`; `interrupted` on a signal |
@@ -76,12 +79,11 @@ Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, resul
 the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` for the same
 as JSON.
 
-Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. A failed
-command prints nothing on stdout and one error object on stderr when output is JSON, piped
-or with `--json`. The object has `reason`, `message`, `remedy` and `retry`, and each detail
-field below sits at its top level beside them.
-On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
-and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
+Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. In JSON mode a failed
+command prints nothing on stdout and one error object on stderr. The object has `reason`,
+`message`, `remedy` and `retry`, and each detail field below sits at its top level beside
+them. On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
+and `retry`; `uv5r help --json` lists the reasons with their exit codes and the retry meanings under `errors`.
 A `load` error from a plan entry write adds `slot`. A `sweep` error after the port is
 requested adds `summary`, the sweep result so far. An error inside the sweep loop adds
 `phase` (`check`, `entry` or `dwell`), `slot` (0), `channel` (the plan channel, `null`
@@ -96,6 +98,21 @@ on a signal with no output.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
+`UV5R_MAGIC=NAME` opens every clone session with another classic magic: `291`, the default,
+`ORIG`, `UV82`, `A58` or `UV5G`. An unknown or unsupported name exits 2 before the port
+opens. `key`, `listen` and `help` ignore it. `status` and `dump` report the `magic` that
+answered and the radio `family`, which reads `unknown` when the magic and firmware string
+do not settle it.
+
+Run `uv5r identify` with no `UV5R_MAGIC` prefix when `status` exits 5 with `session-unavailable`
+and the human confirms the radio is on and the cable is seated. It tries each classic magic, then five foreign
+magics at 9600, then two UV17Pro magics at 115200. In text mode it prints one line per
+attempt with the baud on stderr. Put the `pin` line it prints before every later `uv5r`
+command, as in `UV5R_MAGIC=ORIG uv5r status`. `pin` is `null` when the verbs already open with the magic that
+answered; keep the `UV5R_MAGIC` setting identify ran with. An F11, UV6 or UV6_ORIG answer, a BF-A58 version under A58, or an answer to a foreign or 115200 magic,
+exits 5 with `radio-unsupported` naming the radio. A 115200 answer adds `powerCycle: true`;
+the radio stays in program mode until the human power-cycles it.
+
 ## How the radio takes a frequency
 
 The radio speaks the CHIRP clone protocol over the AIOC's serial port at 9600 baud.
@@ -104,14 +121,13 @@ ignores them. The CLI does not offer those writes, so the human selects the chan
 session ends after 2.5 s of silence. The radio then reloads from EEPROM and the new
 frequency is live about 3 s after the command ends. When the handshake gets no ack, the CLI
 waits 3 s and retries it once, which covers a session still closing from the previous verb.
+A 14-byte ident names a UV-5X3-type radio, which speaks another protocol, and a `BFT515` or
+`BFT517` version under A58 names a BF-A58. Either exits 5 with `radio-unsupported`.
 
 Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows it.
 
-An early version of this CLI wrote one half of the menu settings block and the radio zeroed
-the block. The silent receive audio seen at the same time traced to the volume knob and the
-seating of the 2.5 mm plug. `settings` restores only its eight fields; bring back a zeroed
-block in full with `restore` from an image. Reports say voice or beep off mutes receive audio
-on this firmware family; the bench unit has not confirmed it.
+`settings` writes only its eight fields. Bring back a zeroed settings block in full with
+`restore` from an image.
 
 ## Receive audio
 
@@ -119,7 +135,7 @@ on this firmware family; the bench unit has not confirmed it.
 for the terminal until it is granted in System Settings, Privacy & Security, Microphone.
 Denied access gives digital zero.
 
-The AIOC's bare ADC floor at 1x gain reads about -66 dBFS; open-squelch static reads well
+The AIOC's bare ADC floor at 1x gain reads about -66 dBFS; open-squelch static reads
 above -30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug
 is short of its contact. Set the knob so static reads around -20 to -12. The `input clips:
 turn the volume knob down` warning means more than 1 percent of samples sit at full scale;
@@ -170,19 +186,79 @@ Measured on a UV-5R with firmware HN5RV011, ident `aa 30 76 04 00 05 20 dd`, AIO
 - PTT on the AIOC is DTR high with RTS low. Opening the port raises DTR, so the transport
   drops both lines before anything else.
 
+### Ident
+
+- On firmware BFB291 and later the 8-byte ident holds the band limits in BCD. Byte 1 is the
+  VHF lower limit minus 100 MHz, byte 2 the VHF upper limit minus 100 MHz, bytes 3-4 the
+  second-band lower limit and bytes 5-6 its upper limit. The bench ident reads 130-176 MHz
+  and 400-520 MHz.
+- Byte 3 equal to `02` marks a 220-260 MHz second band. `flags.band220` reports it on radios
+  that are not orig.
+- Orig radios, before BFB291, spell the version in ASCII: `aa 42 46 42 32 33 31 dd` reads
+  `BFB231`.
+- Different models return identical idents. `family` comes from the magic that answered and
+  the firmware string at `0x1EF0`.
+
+### Classic magics
+
+`identify` tries them in table order, with the magic `UV5R_MAGIC` names first.
+
+| Name | Bytes | Answered by |
+|---|---|---|
+| `291` | `50 bb ff 20 12 07 25` | UV-5R, UV-5G Pro, UV-5RX3, GT-5R, KT-980HP, BF-F8HP; UV-S9X3 and 5RX of the WP970I family |
+| `ORIG` | `50 bb ff 01 25 98 4d` | UV-5R, UV-5G Pro, UV-5RX3, GT-5R |
+| `UV82` | `50 bb ff 20 13 01 05` | UV-82, UV-82X3, UV-82HP |
+| `A58` | `50 bb ff 20 14 04 13` | BF-F8HP; WP970I and BF-A58 |
+| `UV5G` | `50 bb ff 20 12 06 25` | Radioddity UV-5G |
+| `F11` | `50 bb ff 13 a1 11 dd` | F-11 |
+| `UV6` | `50 bb ff 20 12 08 23` | UV-6 |
+| `UV6_ORIG` | `50 bb ff 12 03 98 4d` | UV-6 |
+
+### Foreign radios
+
+A reply to one of these magics at 9600 names a radio with its own protocol and memory
+layout.
+
+| Bytes | Radio |
+|---|---|
+| `50 0d 0c 20 16 03 28` | BTECH UV-5X3 |
+| `50 0d 0c 20 17 09 19` | MTC UV-5R-3 |
+| `50 bb ff 20 14 11 22` | UV-6R |
+| `50 bb ff 20 12 05 25` | UV-9G |
+| `50 bb dd 55 63 98 4d` | Baojie BJ-UV55 |
+
+Radios sold as UV-5RH, UV-5RM Plus or UV-5R Mini speak the UV17Pro protocol at
+115200. Each model group answers its 16-byte ASCII magic, sent in one write, with one `06`.
+
+| Magic | Model group |
+|---|---|
+| `PROGRAMBFNORMALU` | UV-17Pro, UV-21ProV2, UV-25, 5RM, P15, MT-5RM, K5-Plus, UV-5RM Plus, UV-17R-Plus, UV-5RH |
+| `PROGRAMCOLORPROU` | UV-17ProGPS, GM-21, GM-30 Plus/Pro, UV-32, UV-21ProGPS, UV-28Plus, UV-5R Mini |
+
+### `identify` timing
+
+| Phase | Attempts | Each silent attempt | Pause after each |
+|---|---|---|---|
+| Classic magics at 9600 | 13, each supported magic twice | 1.27 s | 3 s after the first attempt, none after the rest |
+| Foreign magics at 9600 | 5 | 1.27 s | none |
+| UV17Pro magics at 115200 | 2 | 1.2 s | 1 s, none after the last |
+
+A silent radio takes about 29 s: 20 s for the classic magics, 6 s for the foreign magics
+and 3 s at 115200. A wrong ack to the first magic pauses 3 s before its second attempt.
+Other wrong acks pause 2 s. An invalid ident or a refused closing `06` pauses 3 s before
+the next magic.
+
 ## Bench files
 
-- `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the radio on the bench on 2026-10-12,
-  before any write. Channel 127 holds a corrupted 155.700 record. Dumps since 2026-10-13
-  differ in the aux area; see `docs/rx-audio-investigation.md`.
-- `scenarios/big-sky-2026-10.json`: historical test data from 2026-10, the non-encrypted
-  channels and sweep windows from the Big Sky SITREP. Nothing current reads it.
-- `channels.example.json`: the channel plan written to the bench radio on 2026-10-13, kept
-  as historical test data and as the reference shape for generated plans.
+- `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the bench radio before any write.
+  Channel 127 holds a corrupted 155.700 record.
+- `scenarios/big-sky-2026-10.json`: test data, channels and sweep windows from the Big Sky
+  SITREP. Nothing reads it.
+- `channels.example.json`: the reference shape for generated plans.
 - `channels.json`: the plan the `channel-plan` skill writes for the current location.
   Ignored by git.
-- `docs/rx-audio-investigation.md`: the settings block wipe, its repair, the clone protocol
-  rules measured on the bench, and the receive audio findings.
+- `docs/rx-audio-investigation.md`: the bench measurements behind the protocol notes and the
+  receive audio findings.
 - `.claude/skills/uv5r/SKILL.md`: the operating rules an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
@@ -215,6 +291,8 @@ tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
 npm run typecheck
 npm test
 ```
+
+GitHub Actions runs both commands on every push to `main` and every pull request.
 
 `src/core/` talks to the radio: transport, protocol, codec, radio, plan and errors.
 `src/cli/` parses arguments, prints and exits. `cli` imports `core` through

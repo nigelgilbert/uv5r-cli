@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_SIZE } from '../../src/core/codec.ts';
-import { SETTLE_MS, Session, settle } from '../../src/core/protocol.ts';
+import { magicByName } from '../../src/core/ident.ts';
+import { SETTLE_MS, Session, attempt, hex, settle } from '../../src/core/protocol.ts';
 import { IMAGE_HEADER, RESTORE_RANGES, imageSettingsBlock, restoreImage, writeSettings } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
@@ -150,6 +151,21 @@ describe('settings page reads', () => {
     await drive(s.readBlock(addr, 0x10));
     const reads = write.mock.calls.map(([bytes]) => [...bytes]).filter((b) => b[0] === 0x53);
     expect(reads).toEqual([[0x53, addr >> 8, addr & 0xff, 0x10]]);
+  });
+});
+
+describe('handshake input', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('discards stale input before the magic and reads the ident with magic 291', async () => {
+    const radio = new FakeRadio();
+    radio.queueStale([0x15, 0xdd]);
+    expect(await drive(attempt(radio, magicByName('291'), { confirm: true }))).toEqual({ kind: 'ident', bytes: radio.ident, got: hex(radio.ident) });
   });
 });
 

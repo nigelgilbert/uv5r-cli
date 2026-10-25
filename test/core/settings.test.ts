@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_FIELDS, SETTINGS_SIZE, applySettings, decodeSettings, parseSettingValue } from '../../src/core/codec.ts';
-import { MAGIC, Session } from '../../src/core/protocol.ts';
+import { magicByName } from '../../src/core/ident.ts';
+import { Session } from '../../src/core/protocol.ts';
 import { imageSettingsBlock, restoreImage, startFreshSession, verifyRestoredRanges, verifySettingsBlock, verifySettingsInFreshSession, writeSettings } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
@@ -23,7 +24,7 @@ async function startSession(radio: FakeRadio): Promise<Session> {
 
 /** Count handshake attempts: Session.start sends the magic one byte at a time. */
 function handshakes(write: MockInstance<FakeRadio['write']>): number {
-  return write.mock.calls.filter(([bytes]) => bytes.length === 1 && bytes[0] === MAGIC[0]).length;
+  return write.mock.calls.filter(([bytes]) => bytes.length === 1 && bytes[0] === magicByName('291').bytes[0]).length;
 }
 
 describe('settings codec', () => {
