@@ -376,7 +376,7 @@ describe('status output', () => {
     expect(process.exitCode).toBe(5);
     expect(errJson()).toMatchObject({
       reason: 'session-unavailable',
-      remedy: 'ask the human to check the radio is on and the cable is seated; if both hold, run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, keep the UV5R_MAGIC setting identify ran with',
+      remedy: 'ask the human to check the radio is on and the cable is seated; if both hold, run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, run later commands with no prefix',
       retry: 'after-remedy',
     });
   });

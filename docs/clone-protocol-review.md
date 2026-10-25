@@ -12,7 +12,7 @@ on `feature/clone-protocol`. `npm run typecheck` and `npm test` pass.
 ### 001
 
 - `ident.ts` matches spec sections 4.1, 4.2, 4.3 and 9. `classify` runs the `HN5RV01` rule first, filters basetypes by the answering magic's families, keeps a single-family magic's family on no hit, applies the `orig` exclusions and never throws.
-- `attempt` discards input, paces the magic at 10 ms, waits 1200 ms for the ack and reads the ident in one `read(14, 300)`. The serial transport returns at the deadline when fewer than 14 bytes arrive, so an 8-byte ident costs the same 300 ms as before.
+- `attempt` discards input, paces the magic at 10 ms, waits 1200 ms for the ack and reads the ident in one `read(14, 350)`. The serial transport returns at the deadline when fewer than 14 bytes arrive, so an 8-byte ident costs the same 350 ms as the old `sleep(300)` plus `read(12, 50)`.
 - `Session.start` retries on `silent` and `wrong-ack`.
 - `selectedMagic()` runs in `main.ts` before the port opens and reaches every session call site, `check.ts` and `sweep.ts` included.
 - Accepted choices: `dtmfTable` is the character table string; `N5RV` is also listed under `bf-f8hp` per spec 4.3; `FOREIGN_MAGICS` and `PROGRAM_MAGICS` landed as data in this slice.

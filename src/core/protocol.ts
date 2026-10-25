@@ -25,7 +25,7 @@ const IDENT_MAX = 14;
 /** Budget for the one bounded ident read; the whole ident lands within about 10 ms. */
 const IDENT_WAIT_MS = 350;
 /** Remedy for a verb handshake that got a byte other than 06. */
-const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, keep the UV5R_MAGIC setting identify ran with';
+const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, run later commands with no prefix';
 /** Remedy for a verb handshake that got no reply. */
 const NO_HANDSHAKE_REMEDY = `ask the human to check the radio is on and the cable is seated; if both hold, ${WRONG_ACK_REMEDY}`;
 /** Wait for the radio's 06 after the host's closing 06. */
