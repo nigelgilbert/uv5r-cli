@@ -1,5 +1,7 @@
 # Golden set rebuild plan
 
+Status: delivered 2026-10-25 with three units, `unit-1.img` to `unit-3.img`, and 3, 3 and 2 displayed channels. A fourth radio has its own channel memory. It was left out of the set because its aux block matches unit 1's, and the manifest lists it under `skipped`. The [Result section of issue 001](../issues/001-radio-survey.md#result) records the set.
+
 Branch: `feature/new-golden-set`, base `21dbcb7`. The PR goes into `main`.
 
 ## Goal
