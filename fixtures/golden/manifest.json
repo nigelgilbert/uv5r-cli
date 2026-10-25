@@ -38,7 +38,7 @@
       "firmware": "HN5RV011",
       "magic": "291",
       "auxSha256": "8cfb06c41b7b4d98cd0ba6074c79b3946d656fd03a79503b84ccc136ee04d56b",
-      "notes": "MDF-A and MDF-B are Frequency. Names are programmed on all 15 slots. Power-on display: full.",
+      "notes": "MDF-A and MDF-B are Frequency. Names are programmed on slots 0 to 13; slot 127 has none. Power-on display: full.",
       "displayed": [
         {
           "slot": 1,
