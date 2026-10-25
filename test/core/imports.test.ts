@@ -5,6 +5,7 @@ const SRC = new URL('../../src/', import.meta.url);
 const TEST = new URL('../', import.meta.url);
 const INDEX = new URL('core/index.ts', SRC).href;
 const FAKE = new URL('core/fake.ts', TEST).href;
+const GOLDEN = new URL('core/golden.ts', TEST).href;
 const SPECIFIER = /\b(?:import|export)\b[^'"]*?\bfrom\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"`]([^'"`]+)['"`]\s*\)|\bimport\s*['"`]([^'"`]+)['"`]/g;
 
 function readSpecifiers(dir: URL): { file: URL; specifiers: string[] }[] {
@@ -28,7 +29,7 @@ describe('core imports', () => {
   it('cli imports core only through index.ts', () => {
     for (const dir of [new URL('cli/', SRC), new URL('cli/', TEST)]) {
       for (const { file, specifiers } of readSpecifiers(dir)) {
-        const stray = specifiers.filter((s) => s.includes('core/') && ![INDEX, FAKE].includes(new URL(s, file).href));
+        const stray = specifiers.filter((s) => s.includes('core/') && ![INDEX, FAKE, GOLDEN].includes(new URL(s, file).href));
         expect(stray, file.pathname).toEqual([]);
       }
     }

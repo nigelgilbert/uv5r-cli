@@ -1,12 +1,18 @@
-import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
+import { PRIMARY } from '../core/golden.ts';
 
-const FIXTURE = new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url).pathname;
+/** Temp root for every file these tests write, removed in afterAll. */
+const TMP = mkdtempSync(join(tmpdir(), 'uv5r-'));
+/** Return a new subdirectory of TMP. */
+const tempDir = () => mkdtempSync(join(TMP, 'test-'));
+const FIXTURE = join(TMP, 'primary.img');
+writeFileSync(FIXTURE, PRIMARY.image);
 const README = new URL('../../README.md', import.meta.url).pathname;
 const SKILL = new URL('../../.claude/skills/uv5r/SKILL.md', import.meta.url).pathname;
 const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
@@ -54,6 +60,10 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   process.exitCode = undefined;
+});
+
+afterAll(() => {
+  rmSync(TMP, { recursive: true, force: true });
 });
 
 /** Record each open and hand back the given transport, or fail as a missing device. */
@@ -428,7 +438,7 @@ describe('UV5R_MAGIC', () => {
     await run(['status', '--json'], opener(uv82Radio()));
     expect(outJson()).toMatchObject({ magic: 'UV82', family: 'uv-82x3' });
     stdout = [];
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     await run(['dump', '--out', out, '--json'], opener(uv82Radio()));
     expect(outJson()).toMatchObject({ magic: 'UV82', family: 'uv-82x3' });
   });
@@ -474,7 +484,7 @@ describe('UV5R_MAGIC', () => {
 
   it('exits 2 on UV5R_MAGIC=BOGUS for dump before creating FILE', async () => {
     vi.stubEnv('UV5R_MAGIC', 'BOGUS');
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     const open = opener(new FakeRadio());
     await run(['dump', '--out', out, '--json'], open);
     expect(process.exitCode).toBe(2);
@@ -744,7 +754,7 @@ describe('listen input checks', () => {
 
 describe('restore input checks', () => {
   it('rejects a short image before opening the transport', async () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'short.img');
+    const file = join(tempDir(), 'short.img');
     writeFileSync(file, new Uint8Array(100));
     const open = opener(new FakeRadio());
     await cli(['restore', file, '--force', '--json'], open);
@@ -819,7 +829,7 @@ describe('dump output file', () => {
     ['a missing directory', (dir: string) => join(dir, 'missing', 'radio.img')],
     ['a directory path', (dir: string) => dir],
   ])('exits 2 on %s before opening the transport', async (_what, path) => {
-    const out = path(mkdtempSync(join(tmpdir(), 'uv5r-')));
+    const out = path(tempDir());
     const open = opener(new FakeRadio());
     await run(['dump', '--out', out, '--json'], open);
     expect(process.exitCode).toBe(2);
@@ -828,7 +838,7 @@ describe('dump output file', () => {
   });
 
   it('replaces the bytes of an existing FILE with the image', async () => {
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     writeFileSync(out, 'old bytes');
     await run(['dump', '--out', out, '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
@@ -838,14 +848,14 @@ describe('dump output file', () => {
   });
 
   it('removes a new FILE when the port does not open', async () => {
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     await run(['dump', '--out', out, '--json'], opener());
     expect(process.exitCode).toBe(3);
     expect(existsSync(out)).toBe(false);
   });
 
   it('removes a new FILE when a block read times out', async () => {
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     const radio = new FakeRadio();
     radio.silentReadAt = 0x0100;
     await run(['dump', '--out', out, '--json'], opener(radio));
@@ -855,7 +865,7 @@ describe('dump output file', () => {
   });
 
   it('exits 3 with file-write-failed and removes a new FILE when the image write fails', async () => {
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     const radio = new FakeRadio();
     // Make the probed file read-only once the port opens so the image write fails.
     const open: OpenTransport = async () => {
@@ -869,7 +879,7 @@ describe('dump output file', () => {
   });
 
   it('leaves an existing FILE in place when the port does not open', async () => {
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     writeFileSync(out, 'old bytes');
     await run(['dump', '--out', out, '--json'], opener());
     expect(process.exitCode).toBe(3);
@@ -877,7 +887,7 @@ describe('dump output file', () => {
   });
 
   it('exits 2 on a dangling FILE symlink and creates no target', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));
+    const dir = tempDir();
     const out = join(dir, 'radio.img');
     symlinkSync(join(dir, 'target.img'), out);
     const open = opener(new FakeRadio());
@@ -889,7 +899,7 @@ describe('dump output file', () => {
   });
 
   it('prints out, bytes, firmware, family and magic, the keys of the help result', async () => {
-    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'radio.img');
+    const out = join(tempDir(), 'radio.img');
     await run(['dump', '--out', out, '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     const result = outJson();
@@ -1014,22 +1024,13 @@ describe('load', () => {
 
   /** Write `plan` to a temp file and return its path. */
   function planFile(plan: object): string {
-    const file = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'plan.json');
+    const file = join(tempDir(), 'plan.json');
     writeFileSync(file, JSON.stringify(plan));
     return file;
   }
 
-  /** Return a fake radio holding the channel records and names of the bench fixture. */
-  function fixtureRadio(): FakeRadio {
-    const radio = new FakeRadio();
-    const image = readFileSync(FIXTURE);
-    radio.eeprom.set(image.subarray(8, 8 + 0x0800), 0x0000);
-    radio.eeprom.set(image.subarray(8 + 0x1000, 8 + 0x1800), 0x1000);
-    return radio;
-  }
-
   it('writes the example plan and each slot reads back the returned record', async () => {
-    const radio = fixtureRadio();
+    const radio = FakeRadio.fromImage(PRIMARY.image);
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
     expect(process.exitCode).toBe(0);
     const records = JSON.parse(stdout.join('').trim()) as Array<Record<string, unknown>>;
@@ -1049,7 +1050,7 @@ describe('load', () => {
   });
 
   it('leaves slots outside the plan byte-identical', async () => {
-    const radio = fixtureRadio();
+    const radio = FakeRadio.fromImage(PRIMARY.image);
     const before = Uint8Array.from(radio.eeprom);
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
     expect(process.exitCode).toBe(0);

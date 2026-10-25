@@ -1,0 +1,616 @@
+{
+  "settings": {
+    "squelch": 3,
+    "save": 3,
+    "abr": 5,
+    "beep": "on",
+    "timeout": 3,
+    "voice": "eng",
+    "mdfa": "freq",
+    "mdfb": "freq"
+  },
+  "slots": [
+    {
+      "channel": 0,
+      "rxMhz": "162.4",
+      "txMhz": "162.4",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "NOAA DL"
+    },
+    {
+      "channel": 1,
+      "rxMhz": "162.4",
+      "txMhz": "162.4",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "NOAA DL"
+    },
+    {
+      "channel": 2,
+      "rxMhz": "162.55",
+      "txMhz": "162.55",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "NOAA FW"
+    },
+    {
+      "channel": 3,
+      "rxMhz": "146.88",
+      "txMhz": "146.28",
+      "txTone": "110.9",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "W5FC"
+    },
+    {
+      "channel": 4,
+      "rxMhz": "146.7",
+      "txMhz": "146.1",
+      "txTone": "110.9",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "W5EBQ"
+    },
+    {
+      "channel": 5,
+      "rxMhz": "147.04",
+      "txMhz": "147.64",
+      "txTone": "141.3",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "WJ5J"
+    },
+    {
+      "channel": 6,
+      "rxMhz": "146.52",
+      "txMhz": "146.52",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "2M CALL"
+    },
+    {
+      "channel": 7,
+      "rxMhz": "462.675",
+      "txMhz": "462.675",
+      "txTone": "141.3",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "GMRS 20"
+    },
+    {
+      "channel": 8,
+      "rxMhz": "462.625",
+      "txMhz": "467.625",
+      "txTone": "141.3",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "MSQ 625"
+    },
+    {
+      "channel": 9,
+      "rxMhz": "462.7",
+      "txMhz": "467.7",
+      "txTone": "D606N",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": "MSQ 700"
+    },
+    {
+      "channel": 10,
+      "rxMhz": "153.755",
+      "txMhz": "153.755",
+      "txTone": "151.4",
+      "rxTone": "none",
+      "bandwidth": "narrow",
+      "power": "high",
+      "name": "DCFR"
+    },
+    {
+      "channel": 11,
+      "rxMhz": "154.28",
+      "txMhz": "154.28",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "narrow",
+      "power": "high",
+      "name": "FIRE MA"
+    },
+    {
+      "channel": 12,
+      "rxMhz": "460.575",
+      "txMhz": "460.575",
+      "txTone": "173.8",
+      "rxTone": "none",
+      "bandwidth": "narrow",
+      "power": "high",
+      "name": "DFR STA"
+    },
+    {
+      "channel": 13,
+      "rxMhz": "154.995",
+      "txMhz": "154.995",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "narrow",
+      "power": "high",
+      "name": "DSO 6"
+    },
+    {
+      "channel": 14,
+      "empty": true
+    },
+    {
+      "channel": 15,
+      "empty": true
+    },
+    {
+      "channel": 16,
+      "empty": true
+    },
+    {
+      "channel": 17,
+      "empty": true
+    },
+    {
+      "channel": 18,
+      "empty": true
+    },
+    {
+      "channel": 19,
+      "empty": true
+    },
+    {
+      "channel": 20,
+      "empty": true
+    },
+    {
+      "channel": 21,
+      "empty": true
+    },
+    {
+      "channel": 22,
+      "empty": true
+    },
+    {
+      "channel": 23,
+      "empty": true
+    },
+    {
+      "channel": 24,
+      "empty": true
+    },
+    {
+      "channel": 25,
+      "empty": true
+    },
+    {
+      "channel": 26,
+      "empty": true
+    },
+    {
+      "channel": 27,
+      "empty": true
+    },
+    {
+      "channel": 28,
+      "empty": true
+    },
+    {
+      "channel": 29,
+      "empty": true
+    },
+    {
+      "channel": 30,
+      "empty": true
+    },
+    {
+      "channel": 31,
+      "empty": true
+    },
+    {
+      "channel": 32,
+      "empty": true
+    },
+    {
+      "channel": 33,
+      "empty": true
+    },
+    {
+      "channel": 34,
+      "empty": true
+    },
+    {
+      "channel": 35,
+      "empty": true
+    },
+    {
+      "channel": 36,
+      "empty": true
+    },
+    {
+      "channel": 37,
+      "empty": true
+    },
+    {
+      "channel": 38,
+      "empty": true
+    },
+    {
+      "channel": 39,
+      "empty": true
+    },
+    {
+      "channel": 40,
+      "empty": true
+    },
+    {
+      "channel": 41,
+      "empty": true
+    },
+    {
+      "channel": 42,
+      "empty": true
+    },
+    {
+      "channel": 43,
+      "empty": true
+    },
+    {
+      "channel": 44,
+      "empty": true
+    },
+    {
+      "channel": 45,
+      "empty": true
+    },
+    {
+      "channel": 46,
+      "empty": true
+    },
+    {
+      "channel": 47,
+      "empty": true
+    },
+    {
+      "channel": 48,
+      "empty": true
+    },
+    {
+      "channel": 49,
+      "empty": true
+    },
+    {
+      "channel": 50,
+      "empty": true
+    },
+    {
+      "channel": 51,
+      "empty": true
+    },
+    {
+      "channel": 52,
+      "empty": true
+    },
+    {
+      "channel": 53,
+      "empty": true
+    },
+    {
+      "channel": 54,
+      "empty": true
+    },
+    {
+      "channel": 55,
+      "empty": true
+    },
+    {
+      "channel": 56,
+      "empty": true
+    },
+    {
+      "channel": 57,
+      "empty": true
+    },
+    {
+      "channel": 58,
+      "empty": true
+    },
+    {
+      "channel": 59,
+      "empty": true
+    },
+    {
+      "channel": 60,
+      "empty": true
+    },
+    {
+      "channel": 61,
+      "empty": true
+    },
+    {
+      "channel": 62,
+      "empty": true
+    },
+    {
+      "channel": 63,
+      "empty": true
+    },
+    {
+      "channel": 64,
+      "empty": true
+    },
+    {
+      "channel": 65,
+      "empty": true
+    },
+    {
+      "channel": 66,
+      "empty": true
+    },
+    {
+      "channel": 67,
+      "empty": true
+    },
+    {
+      "channel": 68,
+      "empty": true
+    },
+    {
+      "channel": 69,
+      "empty": true
+    },
+    {
+      "channel": 70,
+      "empty": true
+    },
+    {
+      "channel": 71,
+      "empty": true
+    },
+    {
+      "channel": 72,
+      "empty": true
+    },
+    {
+      "channel": 73,
+      "empty": true
+    },
+    {
+      "channel": 74,
+      "empty": true
+    },
+    {
+      "channel": 75,
+      "empty": true
+    },
+    {
+      "channel": 76,
+      "empty": true
+    },
+    {
+      "channel": 77,
+      "empty": true
+    },
+    {
+      "channel": 78,
+      "empty": true
+    },
+    {
+      "channel": 79,
+      "empty": true
+    },
+    {
+      "channel": 80,
+      "empty": true
+    },
+    {
+      "channel": 81,
+      "empty": true
+    },
+    {
+      "channel": 82,
+      "empty": true
+    },
+    {
+      "channel": 83,
+      "empty": true
+    },
+    {
+      "channel": 84,
+      "empty": true
+    },
+    {
+      "channel": 85,
+      "empty": true
+    },
+    {
+      "channel": 86,
+      "empty": true
+    },
+    {
+      "channel": 87,
+      "empty": true
+    },
+    {
+      "channel": 88,
+      "empty": true
+    },
+    {
+      "channel": 89,
+      "empty": true
+    },
+    {
+      "channel": 90,
+      "empty": true
+    },
+    {
+      "channel": 91,
+      "empty": true
+    },
+    {
+      "channel": 92,
+      "empty": true
+    },
+    {
+      "channel": 93,
+      "empty": true
+    },
+    {
+      "channel": 94,
+      "empty": true
+    },
+    {
+      "channel": 95,
+      "empty": true
+    },
+    {
+      "channel": 96,
+      "empty": true
+    },
+    {
+      "channel": 97,
+      "empty": true
+    },
+    {
+      "channel": 98,
+      "empty": true
+    },
+    {
+      "channel": 99,
+      "empty": true
+    },
+    {
+      "channel": 100,
+      "empty": true
+    },
+    {
+      "channel": 101,
+      "empty": true
+    },
+    {
+      "channel": 102,
+      "empty": true
+    },
+    {
+      "channel": 103,
+      "empty": true
+    },
+    {
+      "channel": 104,
+      "empty": true
+    },
+    {
+      "channel": 105,
+      "empty": true
+    },
+    {
+      "channel": 106,
+      "empty": true
+    },
+    {
+      "channel": 107,
+      "empty": true
+    },
+    {
+      "channel": 108,
+      "empty": true
+    },
+    {
+      "channel": 109,
+      "empty": true
+    },
+    {
+      "channel": 110,
+      "empty": true
+    },
+    {
+      "channel": 111,
+      "empty": true
+    },
+    {
+      "channel": 112,
+      "empty": true
+    },
+    {
+      "channel": 113,
+      "empty": true
+    },
+    {
+      "channel": 114,
+      "empty": true
+    },
+    {
+      "channel": 115,
+      "empty": true
+    },
+    {
+      "channel": 116,
+      "empty": true
+    },
+    {
+      "channel": 117,
+      "empty": true
+    },
+    {
+      "channel": 118,
+      "empty": true
+    },
+    {
+      "channel": 119,
+      "empty": true
+    },
+    {
+      "channel": 120,
+      "empty": true
+    },
+    {
+      "channel": 121,
+      "empty": true
+    },
+    {
+      "channel": 122,
+      "empty": true
+    },
+    {
+      "channel": 123,
+      "empty": true
+    },
+    {
+      "channel": 124,
+      "empty": true
+    },
+    {
+      "channel": 125,
+      "empty": true
+    },
+    {
+      "channel": 126,
+      "empty": true
+    },
+    {
+      "channel": 127,
+      "rxMhz": "435.725",
+      "txMhz": "435.725",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "narrow",
+      "power": "high",
+      "name": ""
+    }
+  ]
+}

@@ -62,6 +62,9 @@ export function channelPayload(n: number, ch: Channel | MalformedRecord | undefi
 /** Bytes of ident before main memory in a CHIRP image. */
 export const IMAGE_HEADER = 8;
 
+/** Image offset of the aux block, radio memory 0x1EC0..0x1FFF, in a CHIRP image. */
+export const IMAGE_AUX = 0x1808;
+
 /** Read the settings block through its 64-byte page because the radio answers 16-byte reads in 0x0E10..0x0E4F with the 0x0E40 record. */
 const SETTINGS_PAGE = 0x0e00;
 const SETTINGS_PAGE_OFFSET = SETTINGS_BASE - SETTINGS_PAGE;
@@ -371,6 +374,11 @@ export async function readChannel(s: Session, n: number): Promise<Channel | Malf
   checkChannelNumber(n);
   const mem = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
   const name = await s.readBlock(NAME_BASE + n * 16, 0x10);
+  return decodeSlot(mem, name);
+}
+
+/** Decode a channel record and its name record. Return undefined for a 0xFF first byte and a MalformedRecord for bad BCD. */
+export function decodeSlot(mem: Uint8Array, name: Uint8Array): Channel | MalformedRecord | undefined {
   const ch = decodeChannel(mem, name);
   if (ch === undefined && mem[0] !== 0xff) return { malformed: true, raw: hex(mem) };
   return ch;
