@@ -5,6 +5,9 @@ export type { Transport } from './transport.ts';
 export { Session, SETTLE_MS, IDLE_LIMIT_MS, settle, hex } from './protocol.ts';
 export type { Ident } from './protocol.ts';
 
+export { DEFAULT_MAGIC, SCAN_ORDER, FOREIGN_MAGICS, PROGRAM_MAGICS, magicByName } from './ident.ts';
+export type { Family, Magic, MagicName, IdentFlags } from './ident.ts';
+
 export {
   CHANNEL_BASE,
   NAME_BASE,
@@ -64,8 +67,11 @@ export {
   verifyRestoredRanges,
   KEY_SIGNALS,
   holdPtt,
+  SCAN_WRONG_ACK_PAUSE_MS,
+  PROGRAM_PAUSE_MS,
+  identify,
 } from './radio.ts';
-export type { ChannelPayload, MalformedRecord, ChannelResult, RadioStatus, HoldResult } from './radio.ts';
+export type { ChannelPayload, MalformedRecord, ChannelResult, RadioStatus, HoldResult, SessionOptions, IdentifyAttempt, IdentifyAnswer, IdentifyResult } from './radio.ts';
 
 export { parsePlan, readPlan } from './plan.ts';
 export type { Plan, PlanEntry } from './plan.ts';

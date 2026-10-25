@@ -13,6 +13,7 @@ import {
   withSession,
   writeChannel,
   type ChannelSpec,
+  type Magic,
   type PlanEntry,
   type Session,
   type Transport,
@@ -169,14 +170,15 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
  * applies the `check` rule. Each entry write puts the entry with its own TX setting into slot 0 in a
  * fresh clone session and waits for the reload. Each write sets `progress.slot0` to null first, then
  * sets it to the record read back once the write verifies. An error in the check carries `requestedMhz`.
+ * Every session opens with `options.magic`, 291 when absent.
  */
-export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string }): SweepSteps {
+export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string; magic?: Magic }): SweepSteps {
   const write = async (progress: SweepProgress, channel: number | null, spec: ChannelSpec, first?: (s: Session) => Promise<void>) => {
     progress.slot0 = null;
     const written = await withSession(t, async (s) => {
       await first?.(s);
       return writeChannel(s, SWEEP_SLOT, spec);
-    });
+    }, { magic: options.magic });
     progress.slot0 = { channel, name: written.name };
   };
   return {
