@@ -16,10 +16,10 @@ Extract a pure `decodeSlot(mem, name)` in core. It returns `Channel | MalformedR
 
 `golden.test.ts` writes `fixtures/golden/unit-<n>.json` through `toMatchFileSnapshot`. Each file holds the decoded settings in the shape `settings --json` prints and all 128 slots, each as `channelPayload(n, decodeSlot(mem, name))`. Empty slots are `{ channel, empty: true }`. Malformed slots are `{ channel, malformed: true, raw }`. The payload drops `scan`.
 
-The loader reads each `unit-<n>.json` into `expected` on its `GOLDEN` entry. The golden test gains three checks per unit:
+The golden test gains three checks per unit:
 
 - Decoding the image matches the `unit-<n>.json` snapshot. This catches decoder regressions only, since the same decoder writes the snapshot.
-- Each `displayed` entry in the manifest matches the slot of the same `slot` in `expected` on the fields it carries. Compare frequencies as numbers. This is the independent check and covers eight slots across the three units.
+- Each `displayed` entry in the manifest matches the slot of the same `slot` in a fresh decode of the image on the fields it carries. Compare frequencies as numbers. This is the independent check. It reads no JSON, so a decoder change fails it under `vitest -u`. It covers eight slots across the three units.
 - Encoding each well-formed channel record gives back its bytes under masks. Pass the original record as `prior` and map `txHz: null` to `rxOnly`. Compare bytes 0-11 in full, byte 12 under 0x0F, byte 13 in full, byte 14 under 0x01 and byte 15 under 0x4F. Name records stay out of the round trip.
 
 List each slot with bits set outside those masks in the unit's manifest `notes`. Leave `src/core/codec.ts` alone.
@@ -51,6 +51,7 @@ Later commits:
 - `012dcc9`: one `MDF_NAMES` const serves `mdfa` and `mdfb`. The `settings` help example shows `freq`. A `freq` entry requires `rxMhz` and a `name` entry requires `name`. The rx-audio correction note covers both fields.
 - `ae40d68`: the neither-field guard exempts `ch` entries.
 - `43a69c9`: the neither-field guard is deleted, since the mdf checks cover it.
+- `f239798`, review 1 item 2: the displayed check compares each entry with `decodeImage(unit.image)`. The loader drops `expected` and `readExpected`. Changing a unit JSON fails its snapshot case alone.
 
 The spec asked for four JSON files and 20 displayed checks. The set holds three units and the run delivered three files and 8 checks. Changing slot 2 of `unit-2.json` to 162.575 fails the unit 2 snapshot and the unit 2 slot 2 check. Reordering `MDF_NAMES` fails 5 tests.
 

@@ -36,7 +36,7 @@ The issues assumed four units. The set holds three, so the tests run 3 identity 
 
 ### Findings dropped
 
-- The displayed checks read `expected` at module load, so the first `vitest -u` run fails them. Issue 003 prescribes `expected`, and the failure message says to rerun.
+- The displayed checks read `expected` at module load, so the first `vitest -u` run failed them. Issue 003 prescribed `expected`, and the failure message said to rerun. Review 1 item 2, `f239798`, compares each entry with a fresh decode of the image, so the first run passes them and a decoder change fails them under `vitest -u`.
 - The round trip passes the original record as `prior`, so the byte 12 low nibble, byte 13 and byte 15 bits 0-3 match trivially. Issue 003 prescribes that design.
 - `test/cli/cli.test.ts` leaves its temp directory behind, as the file does for its other temp directories.
 - Round 2 asked to file the MDF order as `issues/006`. The coordinator carried it into review 1.
