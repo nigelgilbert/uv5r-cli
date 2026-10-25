@@ -34,4 +34,15 @@ describe('core imports', () => {
       }
     }
   });
+
+  it('speech imports core only through index.ts and cli only through audio.ts', () => {
+    const AUDIO = new URL('cli/audio.ts', SRC).href;
+    for (const dir of [new URL('speech/', SRC), new URL('speech/', TEST)]) {
+      for (const { file, specifiers } of readSpecifiers(dir)) {
+        const strayCore = specifiers.filter((s) => s.includes('core/') && ![INDEX, FAKE, GOLDEN].includes(new URL(s, file).href));
+        const strayCli = specifiers.filter((s) => s.includes('cli/') && new URL(s, file).href !== AUDIO);
+        expect([...strayCore, ...strayCli], file.pathname).toEqual([]);
+      }
+    }
+  });
 });

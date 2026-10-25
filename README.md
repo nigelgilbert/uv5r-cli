@@ -262,6 +262,8 @@ the next magic.
 - `channels.example.json`: the reference shape for generated plans.
 - `channels.json`: the plan the `channel-plan` skill writes for the current location.
   Ignored by git.
+- `uv5r.example.json`: the reference shape for the station config.
+- `uv5r.json`: the station config with the callsign. Ignored by git.
 - `.claude/skills/uv5r/SKILL.md`: the operating rules an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
@@ -302,6 +304,10 @@ GitHub Actions runs both commands on every push to `main` and every pull request
 `src/core/index.ts`; `core` imports nothing from `cli`. `test/core/imports.test.ts` fails on
 any import path under `src/core/` that contains `cli/`, and on any `core/` import from
 `src/cli/` or `test/cli/` other than `src/core/index.ts` and `test/core/fake.ts`.
+
+`src/speech/` holds the speech code. It imports `core` through `src/core/index.ts` and
+nothing from `cli` but `src/cli/audio.ts`, and `test/core/imports.test.ts` checks
+`src/speech/` and `test/speech/` for both rules.
 
 `test/core/fake.ts` is an in-memory radio with the bench behaviour: aligned reads, acked writes,
 VFO writes ignored, settings reload on session drop, the 16-byte read alias in
