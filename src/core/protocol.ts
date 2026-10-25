@@ -137,12 +137,13 @@ export class Session {
    * the first got silence or a byte other than 06. Then read the firmware block the way CHIRP
    * does. A 14-byte ident throws radio-unsupported, any other bad ident throws
    * protocol-reply-invalid, and a refused closing 06 throws session-unavailable at once.
+   * When both attempts fail, the error names the last wrong ack byte from either attempt.
    */
   async start(magic: Magic = DEFAULT): Promise<Ident> {
-    let last: AttemptOutcome = { kind: 'silent' };
+    let got = '';
     for (let n = 0; n < HANDSHAKE_ATTEMPTS; n++) {
       if (n > 0) await sleep(HANDSHAKE_RETRY_MS);
-      last = await attempt(this.transport, magic, { confirm: true });
+      const last = await attempt(this.transport, magic, { confirm: true });
       switch (last.kind) {
         case 'ident':
           return this.finish(magic, last.bytes);
@@ -152,9 +153,10 @@ export class Session {
           throw new DeviceStateError('protocol-reply-invalid', 'unexpected ident from radio', { magic: magic.name, got: last.got });
         case 'refused':
           throw new DeviceStateError('session-unavailable', 'radio refused the clone session', { magic: magic.name, got: last.got }, { remedy: 'wait 3 s and rerun the command' });
+        case 'wrong-ack':
+          got = last.got;
       }
     }
-    const got = last.kind === 'wrong-ack' ? last.got : '';
     const message = got ? `radio answered the clone handshake with ${got}` : 'radio did not answer the clone handshake; check the radio is on and the cable is seated';
     throw new DeviceStateError('session-unavailable', message, { magic: magic.name, got }, { remedy: got ? WRONG_ACK_REMEDY : NO_HANDSHAKE_REMEDY, retry: 'after-remedy' });
   }

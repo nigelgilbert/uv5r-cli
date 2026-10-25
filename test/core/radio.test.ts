@@ -206,6 +206,25 @@ describe('handshake', () => {
     expect(radio.handshakes).toHaveLength(2);
   });
 
+  it('names the wrong ack byte from the first attempt when the second attempt is silent with magic 291', async () => {
+    const radio = new FakeRadio();
+    radio.ackByte = 0x15;
+    const write = radio.write.bind(radio);
+    vi.spyOn(radio, 'write').mockImplementation((bytes) => {
+      write(bytes);
+      if (radio.handshakes.length === 1) radio.handshakesIgnored = 1;
+    });
+    const err = await settled(new Session(radio).start());
+    expect((err as BaofengError).toJSON()).toMatchObject({
+      reason: 'session-unavailable',
+      message: 'radio answered the clone handshake with 15',
+      remedy: WRONG_ACK_REMEDY,
+      retry: 'after-remedy',
+      got: '15',
+    });
+    expect(radio.handshakes).toHaveLength(2);
+  });
+
   it('runs the second attempt SETTLE_MS after a silent first one with magic 291', async () => {
     const radio = new FakeRadio();
     radio.handshakesIgnored = 1;
