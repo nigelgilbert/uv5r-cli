@@ -72,6 +72,7 @@ describe('golden set', () => {
     if (expected === undefined) throw new Error('run vitest -u to write the unit JSON, then check it against the radio display');
     const slot = expected.slots.find((s) => s.channel === entry.slot);
     if (slot === undefined || !('rxMhz' in slot)) throw new Error(`slot ${entry.slot} holds no channel in the unit JSON`);
+    if (entry.rxMhz === undefined && entry.name === undefined) throw new Error(`displayed slot ${entry.slot} carries neither rxMhz nor name`);
     if (entry.rxMhz !== undefined) expect(Number(slot.rxMhz)).toBe(Number(entry.rxMhz));
     if (entry.name !== undefined) expect(slot.name).toBe(entry.name);
   });
