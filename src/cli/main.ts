@@ -214,7 +214,7 @@ const verbs: Record<string, Verb> = {
     run: statusVerb,
   },
   identify: {
-    summary: 'Try each classic magic and report the one the radio answers, with the UV5R_MAGIC line to export; name a radio of another family',
+    summary: 'Try each classic magic and report the one the radio answers, with the pin line to put before every later uv5r command; name a radio of another family',
     example: 'uv5r identify',
     args: [],
     flags: COMMON_FLAGS,
@@ -225,7 +225,7 @@ const verbs: Record<string, Verb> = {
       'Stop at the first magic that opens a clone session and read the firmware block. F11, UV6 and UV6_ORIG run without the closing 06 and with no block read.',
       `When no classic magic opens a session, send the foreign magics of ${FOREIGN_MAGICS.map((m) => m.radio).join(', ')} at 9600 without the closing 06, with the same pauses. An ident stops the scan and names that radio.`,
       `Then switch the port to 115200 and send each UV17Pro magic, ${PROGRAM_MAGICS.map((m) => m.name).join(', ')}, in one write, ${PROGRAM_PAUSE_MS / 1000} s apart. An 06 stops the scan and names the model group. The port returns to 9600 after the last magic or the 06.`,
-      'pin is the UV5R_MAGIC=NAME line to export when the answering magic differs from the one the other verbs select now, UV5R_MAGIC or else 291. It is null when they match.',
+      'pin is the UV5R_MAGIC=NAME line to put before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status, when the answering magic differs from the one the other verbs select now, UV5R_MAGIC or else 291. It is null when they match.',
       'In text mode, print one line per attempt on stderr with the baud, as in ORIG at 9600: silent or PROGRAMBFNORMALU at 115200: ack.',
       'A silent radio takes about 29 s: 20 s for the classic magics, 6 s for the foreign magics and 3 s at 115200.',
     ],
@@ -650,7 +650,7 @@ function identifyText(r: IdentifyResult): string {
   const flags = Object.entries(r.flags)
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
-  return fieldLines({ ...r, flags, pin: r.pin ?? 'none; the verbs already open with this magic' });
+  return fieldLines({ ...r, flags, pin: r.pin ?? 'null; the verbs already open with this magic' });
 }
 
 function settingsText(s: Settings): string {

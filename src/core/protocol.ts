@@ -28,8 +28,10 @@ const ACK_WAIT_MS = 1200;
 const IDENT_MAX = 14;
 /** Budget for the one bounded ident read; the whole ident lands within about 10 ms. */
 const IDENT_WAIT_MS = 300;
-/** Remedy for a verb handshake that got no 06. */
-const NO_HANDSHAKE_REMEDY = 'ask the human to check the radio is on and the cable is seated; if both hold, run uv5r identify and export the UV5R_MAGIC line it prints';
+/** Remedy for a verb handshake that got a byte other than 06. */
+const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, run later commands with no prefix';
+/** Remedy for a verb handshake that got no reply. */
+const NO_HANDSHAKE_REMEDY = `ask the human to check the radio is on and the cable is seated; if both hold, ${WRONG_ACK_REMEDY}`;
 /** Wait for the radio's 06 after the host's closing 06. */
 const CONFIRM_WAIT_MS = 1000;
 /** The radio takes writes as 16-byte aligned blocks below this address. */
@@ -153,8 +155,8 @@ export class Session {
       }
     }
     const got = last.kind === 'wrong-ack' ? last.got : '';
-    const heard = got ? `answered the clone handshake with ${got}` : 'did not answer the clone handshake';
-    throw new DeviceStateError('session-unavailable', `radio ${heard}; check the radio is on and the cable is seated`, { magic: magic.name, got }, { remedy: NO_HANDSHAKE_REMEDY, retry: 'after-remedy' });
+    const message = got ? `radio answered the clone handshake with ${got}` : 'radio did not answer the clone handshake; check the radio is on and the cable is seated';
+    throw new DeviceStateError('session-unavailable', message, { magic: magic.name, got }, { remedy: got ? WRONG_ACK_REMEDY : NO_HANDSHAKE_REMEDY, retry: 'after-remedy' });
   }
 
   /**

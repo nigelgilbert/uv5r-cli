@@ -528,19 +528,21 @@ Probe sequence:
 | 2 | 9600 | `02` after `06` | 8 or 12 bytes, `AA` .. `DD` | 14 bytes `AA` .. `DD`: UV-5X3 or UV-5R-3 |
 | 3 | 9600 | Foreign magics as probes | No `06` | `06` names the radio in section 4.2 |
 | 4 | 115200 | Each of the two 16-byte `PROGRAM...U` magics | - | `06`: UV17Pro family; the magic narrows the model group |
-| 5 | 57600 | `PSEARCH` | - | `06 UV15999`: UV-17 or UV-13Pro. `06 DMR1702`: GA-510 V2. |
-| 6 | 38400 | UV-K5 hello frame | - | Reply starting `AB CD`: Quansheng UV-K5 family |
+| 5, Chirp only | 57600 | `PSEARCH` | - | `06 UV15999`: UV-17 or UV-13Pro. `06 DMR1702`: GA-510 V2. |
+| 6, Chirp only | 38400 | UV-K5 hello frame | - | Reply starting `AB CD`: Quansheng UV-K5 family |
+
+The CLI runs steps 1 to 4. A UV-17, UV-13Pro, GA-510 V2 or UV-K5 has no step there, so it gets the same report as a cable fault.
 
 Messages:
 
 | Result | Report |
 |---|---|
-| No byte at step 1, no reply at steps 4-6 | Cable or K1 plug fitment problem |
-| Reply at step 4, 5 or 6 | The detected family, and that this CLI speaks only the classic UV-5R protocol |
+| No reply at steps 1 to 4 | Cable or K1 plug fitment problem, or a radio from step 5 or 6 |
+| Reply at step 3 or 4 | The detected family, and that this CLI speaks only the classic UV-5R protocol |
 | `06` at step 1, 14-byte ident | UV-5X3-type radio |
 | `06` at step 1, ident of another length | Unknown UV-5R variant, with the ident bytes in hex |
 
-After a reply at step 4 or 5 the radio sits in program mode. Chirp has no exit command for either family.
+After a reply at step 4 the radio sits in program mode until power-cycled. Chirp has no exit command for the UV17Pro or UV17 family.
 
 ## 10. Timing constants
 

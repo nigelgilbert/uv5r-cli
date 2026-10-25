@@ -81,7 +81,7 @@ Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. I
 command prints nothing on stdout and one error object on stderr. The object has `reason`,
 `message`, `remedy` and `retry`, and each detail field below sits at its top level beside
 them. On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
-and `retry`; `uv5r help --json` lists each reason and retry value under `errors`.
+and `retry`; `uv5r help --json` lists the reasons with their exit codes and the retry meanings under `errors`.
 A `load` error from a plan entry write adds `slot`. A `sweep` error after the port is
 requested adds `summary`, the sweep result so far. An error inside the sweep loop adds
 `phase` (`check`, `entry` or `dwell`), `slot` (0), `channel` (the plan channel, `null`
@@ -102,12 +102,12 @@ opens. `key`, `listen` and `help` ignore it. `status` and `dump` report the `mag
 answered and the radio `family`, which reads `unknown` when the magic and firmware string
 do not settle it.
 
-Run `uv5r identify` when `status` exits 5 with `session-unavailable` and the human confirms
-the radio is on and the cable is seated. It tries each classic magic, then five foreign
+Run `uv5r identify` with no `UV5R_MAGIC` prefix when `status` exits 5 with `session-unavailable`
+and the human confirms the radio is on and the cable is seated. It tries each classic magic, then five foreign
 magics at 9600, then two UV17Pro magics at 115200. In text mode it prints one line per
-attempt with the baud on stderr. Export the `pin` line it prints, as in
-`export UV5R_MAGIC=ORIG`. `pin` is `null` when the verbs already open with the magic that
-answered. An F11, UV6 or UV6_ORIG answer, or an answer to a foreign or 115200 magic,
+attempt with the baud on stderr. Put the `pin` line it prints before every later `uv5r`
+command, as in `UV5R_MAGIC=ORIG uv5r status`. `pin` is `null` when the verbs already open with the magic that
+answered; run later commands with no prefix. An F11, UV6 or UV6_ORIG answer, or an answer to a foreign or 115200 magic,
 exits 5 with `radio-unsupported` naming the radio. A 115200 answer adds `powerCycle: true`;
 the radio stays in program mode until the human power-cycles it.
 

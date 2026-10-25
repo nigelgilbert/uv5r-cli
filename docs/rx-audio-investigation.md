@@ -337,3 +337,13 @@ if a[1] == "write" {
 }
 if let v = read(addr) { print(String(format: "0x%02X = 0x%08X", addr, v)) }
 ```
+
+### Bench unit confirmed, 2026-10-24
+
+A read-only `dump` of the radio on the bench differs from the 2026-10-12 fixture in 5 bytes.
+The aux block 0x1EC0-0x1FFF matches, 0x1F60 reads `00 74 75 76 77 78 79 7a 7b 7c`, and
+the factory channels are present. The 5 bytes sit at 0x0E4A, 0x0E4D, 0x0F1E, 0x0F3F in the
+settings area and at 0x1000, the slot 0 name. All of them are addresses the bench verbs write.
+The unit on the bench today is the radio the fixture came from. The 2026-10-13 and 2026-10-17
+images, with the changed aux block and the cleared channels, came from a second unit. The
+2026-10-12 sections apply to today's radio.

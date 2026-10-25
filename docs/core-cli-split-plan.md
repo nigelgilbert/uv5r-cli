@@ -14,7 +14,7 @@ Every verb keeps its output, its timing and its exit codes. The test suite prove
 
 ## Order of the two work items
 
-The split goes first. The handshake plan names `protocol.ts`, `radio.ts` and a new
+The split goes first. The handshake work changes `protocol.ts` and `radio.ts` and adds
 `ident.ts`; moving them after that work lands churns a fresh test tree. The split is a
 mechanical move with no behavior change. The handshake work then touches `core` for the
 engine and `cli` for the `identify` verb, help and README, which exercises the boundary.
@@ -86,8 +86,8 @@ file under `src/cli/` import `../core/index.ts`.
 
 ## Where the handshake engine lands
 
-The handshake plan uses the `src/core/`, `src/cli/`, `test/core/` and `test/cli/` paths. It
-stays as written with these changes:
+The handshake engine lives in `src/core/protocol.ts`, `src/core/ident.ts` and
+`src/core/radio.ts`:
 
 - `Session.start(magic)` stays in `core/protocol.ts`. The constructor keeps taking a
   `Transport`; `start` takes the magic. A constructor runs no I/O, so the handshake stays in
@@ -95,9 +95,11 @@ stays as written with these changes:
 - `selectedMagic()` reads `UV5R_MAGIC` in `cli/main.ts` and passes the magic into
   `withSession(t, fn, { magic })` and `startFreshSession(t, { magic })`. Environment variables
   are a CLI concern; `core` takes options.
-- The `identify` scan is a `core/radio.ts` function `identify(transport, onAttempt)` that
-  returns the result object. The verb in `cli/main.ts` prints the per-attempt lines from the
-  callback and maps the result to stdout.
+- The `identify` scan is a `core/radio.ts` function
+  `identify(transport, onAttempt, { magic })` that returns the result object. `magic` goes
+  first in the scan and sets `pin`; without it 291 goes first. The verb in `cli/main.ts`
+  passes `selectedMagic()`, prints the per-attempt lines from the callback and maps the
+  result to stdout.
 - The classification result lives on `Session.ident` as `family` and `flags`. Operations in
   `core/radio.ts` read the flags for firmware-dependent behavior (dropped byte, voice list,
   DTMF table).
@@ -125,7 +127,7 @@ Each item ends with `npm run typecheck` and `npm test` green.
 ## Follow-ups
 
 - Three `REASONS` remedies name `uv5r` verbs: `squelch-open`, the settings verify text and
-  the `session-unavailable` pointer at `identify` from the handshake plan. When `core` ships as
+  the `session-unavailable` pointer at `identify` in `core/protocol.ts`. When `core` ships as
   a module, move the verb names into a `cli` table keyed by reason.
 - `test/core/fake.ts` is useful to anyone building on `core`. Export it as `core/testing`
   when the package exists.

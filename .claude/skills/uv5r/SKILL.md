@@ -18,7 +18,7 @@ Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
 
 - Run one verb at a time. Start a task with `uv5r status`. Do not open, `cat`, `screen` or `stty` the serial port.
 - When `status` exits 5 with `session-unavailable` and the human confirms the radio is on and
-  the cable is seated, run `uv5r identify` once, about 29 s on a silent radio. Export the `pin` line it prints.
+  the cable is seated, run `uv5r identify` once with no `UV5R_MAGIC` prefix, about 29 s on a silent radio. Put the `pin` line it prints before every later `uv5r` command, as in `UV5R_MAGIC=ORIG uv5r status`. When `pin` is `null`, run later commands with no prefix.
 - `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
 - Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0. `tune` and `load` write any slot.
 - Run `uv5r check 162.400 --channel 0` once per session before tuning slot 0, with a NOAA
@@ -47,7 +47,7 @@ Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
 
 - A failed command prints nothing on stdout and one error object on stderr when output is JSON,
   piped or with `--json`, and the message plus a remedy line on a terminal. The object has `reason`,
-  `message`, `remedy`, `retry` and the detail fields at its top level. `uv5r help --json` lists each reason and retry value under `errors`.
+  `message`, `remedy`, `retry` and the detail fields at its top level. `uv5r help --json` lists the reasons with their exit codes and the retry meanings under `errors`.
 - `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun the
   same command once. `after-remedy`: rerun after doing the remedy.
 - A `load` error from a plan entry write carries `slot`. A `sweep` error after the port is

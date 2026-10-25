@@ -19,7 +19,8 @@ import {
 } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 
-const NO_HANDSHAKE_REMEDY = 'ask the human to check the radio is on and the cable is seated; if both hold, run uv5r identify and export the UV5R_MAGIC line it prints';
+const WRONG_ACK_REMEDY = 'run uv5r identify with no UV5R_MAGIC prefix and put the pin line it prints before every later uv5r command, as in UV5R_MAGIC=ORIG uv5r status; when pin is null, run later commands with no prefix';
+const NO_HANDSHAKE_REMEDY = `ask the human to check the radio is on and the cable is seated; if both hold, ${WRONG_ACK_REMEDY}`;
 
 /** Write channel `n` in a new session, as the tune verb does. */
 const tune = (radio: FakeRadio, n: number, spec: ChannelSpec) => withSession(radio, (s) => writeChannel(s, n, spec));
@@ -197,8 +198,8 @@ describe('handshake', () => {
     const err = await settled(new Session(radio).start());
     expect((err as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
-      message: 'radio answered the clone handshake with 15; check the radio is on and the cable is seated',
-      remedy: NO_HANDSHAKE_REMEDY,
+      message: 'radio answered the clone handshake with 15',
+      remedy: WRONG_ACK_REMEDY,
       retry: 'after-remedy',
       got: '15',
     });
@@ -398,6 +399,7 @@ describe('identify', () => {
     expect(json).toMatchObject({
       reason: 'session-unavailable',
       message: 'radio did not answer any classic magic, foreign magic or 115200 program magic',
+      remedy: 'ask the human to check the radio is on and the cable is seated',
       retry: 'after-remedy',
       answers: [],
     });
@@ -528,6 +530,8 @@ describe('identify', () => {
     expect((result as BaofengError).toJSON()).toMatchObject({
       reason: 'session-unavailable',
       message: 'radio opened no clone session; answers: PROGRAMBFNORMALU wrong-ack 15, PROGRAMCOLORPROU wrong-ack 15',
+      remedy: 'report the answers to the human; the radio answers but opens no session with a known magic',
+      retry: 'no',
       answers: PROGRAM.map((magic) => ({ magic, outcome: 'wrong-ack', got: '15' })),
     });
   });

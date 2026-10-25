@@ -183,7 +183,7 @@ export interface IdentifyResult {
   family: Family;
   flags: IdentFlags;
   droppedByte: boolean;
-  /** The UV5R_MAGIC line to export when the answering magic differs from the selected one, else null. */
+  /** The UV5R_MAGIC line to put before every later uv5r command when the answering magic differs from the selected one, else null. */
   pin: string | null;
 }
 
@@ -315,15 +315,19 @@ function scanFailed(scan: Scan): DeviceStateError {
     });
   }
   const answers = scan.answers.map((a) => `${a.magic} ${a.outcome}${a.got ? ` ${a.got}` : ''}`).join(', ');
-  const heard =
-    scan.answers.length === 0
-      ? 'did not answer any classic magic, foreign magic or 115200 program magic'
-      : `opened no clone session; answers: ${answers}`;
+  if (scan.answers.length === 0) {
+    return new DeviceStateError(
+      'session-unavailable',
+      'radio did not answer any classic magic, foreign magic or 115200 program magic',
+      { answers: scan.answers },
+      { remedy: 'ask the human to check the radio is on and the cable is seated', retry: 'after-remedy' },
+    );
+  }
   return new DeviceStateError(
     'session-unavailable',
-    `radio ${heard}`,
+    `radio opened no clone session; answers: ${answers}`,
     { answers: scan.answers },
-    { remedy: 'ask the human to check the radio is on and the cable is seated', retry: 'after-remedy' },
+    { remedy: 'report the answers to the human; the radio answers but opens no session with a known magic', retry: 'no' },
   );
 }
 
