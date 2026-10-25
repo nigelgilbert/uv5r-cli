@@ -29,3 +29,16 @@ In `docs/clone-protocol-review.md`, mark the "Golden files" open item done with 
 
 - issues/003-decoded-expectations.md
 - issues/004-restore-round-trip.md
+
+## Result
+
+Implemented in `ff4d18e`. No README-grep test in the CLI tests needed a change.
+
+Later commits:
+
+- `142b17f`: the README Bench files entry names slots 22-127 of `unit-1.img` as holding the 155.700 record behind an FF first byte. The entry splits into an images bullet with sub-bullets for the manifest and the unit JSON.
+- `d7391f8`: the Status lines of issues 002 to 005 carry their commit hashes.
+
+The spec states no unit counts, so nothing differs.
+
+At `7fe8005`, `npm test` passes 599 tests in 20 files, 123 of them in `test/cli/cli.test.ts`. `npm run typecheck` passes.

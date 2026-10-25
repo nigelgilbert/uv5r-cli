@@ -52,3 +52,19 @@ Before the commit, the human reviews the channel names and the power-on message 
 ## Blocked by
 
 None - can start immediately
+
+## Result
+
+Implemented in `20f2106`. `1604a05` set the status, ticked the criteria and let a unit with fewer than three programmed channels list every one.
+
+The set holds three units, each image 6472 bytes. All three report ident `aa 30 76 04 00 05 20 dd`, firmware HN5RV011 and magic 291. The aux hashes differ. A fourth radio shares unit 1's aux block and sits under `skipped` in the manifest. `unit-1.img` differs from the 2026-10-12 fixture at 0x0E52, 0x0E55, 0x0F26, 0x0F47 and 0x1008 only.
+
+The plan called for four units with five displayed channels each. `20f2106` cut the spec to three units and three channels. Unit 3 holds two programmed channels, slots 0 and 127, so the manifest lists 3, 3 and 2 displayed entries.
+
+Later commits:
+
+- `ae40d68`: the example `displayed` entry gives slot 0 displayNumber 0, so it passes the displayNumber check from `eecd428`.
+- `80767ad`: the example entry becomes slot 1, displayNumber 1, 452.125, as in unit 1's manifest entry. Step 6 and the second criterion say `freq` carries `rxMhz`, `name` carries `name` and `ch` carries no further field.
+- `e4c0a72`: the unit 2 manifest note says names sit on slots 0 to 13 and slot 127 has none.
+
+`npm test` passes 575 tests in 19 files at `1604a05`. At `7fe8005` it passes 599 tests in 20 files and `npm run typecheck` passes.

@@ -37,3 +37,21 @@ Commit the generated JSON.
 ## Blocked by
 
 - issues/002-golden-loader.md
+
+## Result
+
+Implemented in `17545dd`. No slot is malformed and no slot sets bits outside the masks, so the manifest notes are unchanged. The round trip covers 21, 15 and 2 well-formed slots on units 1 to 3.
+
+Later commits:
+
+- `46827a9`: `rxMhz` is optional on a displayed entry and its comparison is guarded. The `decodeSlot` comment names a 0xFF first byte as the undefined case.
+- `f4a3690`: the displayed check throws on an entry with neither `rxMhz` nor `name`.
+- `eecd428`: the MDF names follow CHIRP's `MODE_LIST` order, `['ch', 'name', 'freq']`, at `chirp/drivers/uv5r.py:298` (kk7ds/chirp 21e42e4518c1). The unit JSON now records `mdfa` and `mdfb` as `freq`. The displayed check compares `displayNumber` with `slot` and `mdf` with `mdfa`. The spec said to leave `src/core/codec.ts` alone, and this commit edits it.
+- `0c453a2`: the body and criteria say three JSON files and 8 displayed checks, 3, 3 and 2 per unit.
+- `012dcc9`: one `MDF_NAMES` const serves `mdfa` and `mdfb`. The `settings` help example shows `freq`. A `freq` entry requires `rxMhz` and a `name` entry requires `name`. The rx-audio correction note covers both fields.
+- `ae40d68`: the neither-field guard exempts `ch` entries.
+- `43a69c9`: the neither-field guard is deleted, since the mdf checks cover it.
+
+The spec asked for four JSON files and 20 displayed checks. The set holds three units and the run delivered three files and 8 checks. Changing slot 2 of `unit-2.json` to 162.575 fails the unit 2 snapshot and the unit 2 slot 2 check. Reordering `MDF_NAMES` fails 5 tests.
+
+At `7fe8005`, `npm test` passes 599 tests in 20 files, 18 of them in `test/core/golden.test.ts`. `npm run typecheck` passes.

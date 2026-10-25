@@ -34,3 +34,16 @@ Follow the style of `test/core/fake.ts`: one-sentence doc comments, no new depen
 ## Blocked by
 
 - issues/001-radio-survey.md
+
+## Result
+
+Implemented in `b005a73`.
+
+Later commits:
+
+- `46827a9`: the `sameRadioAs` comment names an earlier unit with the same aux hash. The `readImage` comment names the IMAGE_AUX + AUX_SIZE length check.
+- `0c453a2`: the criterion says 3 identity cases. `DisplayedSlot` and `ManifestUnit` lose `export`. The `PRIMARY` comment names the CLI and protocol tests in place of the deleted fixture.
+
+The spec asked for 4 identity cases. The set holds three units, so the golden test runs 3 identity cases and 1 distinct-units case. Flipping one aux bit in `unit-2.img` fails the unit 2 identity case only.
+
+At `7fe8005`, `npm test` passes 599 tests in 20 files, 18 of them in `test/core/golden.test.ts`. `npm run typecheck` passes.
