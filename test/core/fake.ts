@@ -1,5 +1,6 @@
-import { magicByName } from '../../src/core/ident.ts';
+import { magicByName, type MagicName } from '../../src/core/ident.ts';
 import { hex } from '../../src/core/protocol.ts';
+import { IMAGE_AUX, IMAGE_HEADER } from '../../src/core/radio.ts';
 import type { Transport } from '../../src/core/transport.ts';
 
 /** Start of the page the radio serves from its reload snapshot and aliases for 16-byte reads. */
@@ -17,8 +18,12 @@ const PROGRAM_LENGTH = 16;
 const CLASSIC_RATE = 9600;
 /** Baud of the program magics. */
 const PROGRAM_RATE = 115200;
+/** End of main memory, the part of a CHIRP image after the ident. */
+const MAIN_END = 0x1800;
+/** Start of the aux block, the part of a CHIRP image from IMAGE_AUX. */
+const AUX = 0x1ec0;
 /** Offset of the 14-byte version string in the firmware block at 0x1EC0. */
-const VERSION_AT = 0x1ec0 + 48;
+const VERSION_AT = AUX + 48;
 const VERSION_LENGTH = 14;
 
 /**
@@ -95,6 +100,17 @@ export class FakeRadio implements Transport {
     this.eeprom[0x0e4c] = 0;
     this.eeprom.set([4, 4, 6, 0, 0, 0, 0, 0], 0x0f08);
     this.reload();
+  }
+
+  /** Return a fake with the ident, main memory and aux block of a CHIRP `image` that acks `magic`. */
+  static fromImage(image: Uint8Array, { magic = '291' }: { magic?: MagicName } = {}): FakeRadio {
+    const radio = new FakeRadio();
+    radio.ident.set(image.subarray(0, IMAGE_HEADER));
+    radio.eeprom.set(image.subarray(IMAGE_HEADER, IMAGE_HEADER + MAIN_END), 0);
+    radio.eeprom.set(image.subarray(IMAGE_AUX, IMAGE_AUX + 0x2000 - AUX), AUX);
+    radio.magics = [magicByName(magic).bytes];
+    radio.reload();
+    return radio;
   }
 
   /** The version string at 0x1EF0, padded with 0xFF to 14 bytes. */

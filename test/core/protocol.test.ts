@@ -1,12 +1,11 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_SIZE } from '../../src/core/codec.ts';
 import { magicByName } from '../../src/core/ident.ts';
 import { SETTLE_MS, Session, attempt, hex, settle } from '../../src/core/protocol.ts';
-import { IMAGE_HEADER, RESTORE_RANGES, imageSettingsBlock, restoreImage, writeSettings } from '../../src/core/radio.ts';
+import { IMAGE_AUX, IMAGE_HEADER, RESTORE_RANGES, imageSettingsBlock, restoreImage, writeSettings } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
+import { GOLDEN, PRIMARY } from './golden.ts';
 
-const fixture = new Uint8Array(readFileSync(new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url)));
 const LOW = SETTINGS_BASE;
 const HIGH = SETTINGS_BASE + 0x10;
 
@@ -26,9 +25,9 @@ async function driveRejection(p: Promise<unknown>): Promise<unknown> {
   return caught;
 }
 
-async function startSession(radio: FakeRadio): Promise<Session> {
+async function startSession(radio: FakeRadio, magic = magicByName('291')): Promise<Session> {
   const s = new Session(radio);
-  await drive(s.start());
+  await drive(s.start(magic));
   return s;
 }
 
@@ -102,14 +101,40 @@ describe('settings commit guard', () => {
     expect(radio.writes).not.toContain(SETTINGS_COMMIT);
   });
 
-  it('restores an image in address order through the guard', async () => {
-    const radio = new FakeRadio();
-    radio.eeprom.fill(0, SETTINGS_BASE, SETTINGS_BASE + SETTINGS_SIZE);
-    const s = await startSession(radio);
+  it.each(GOLDEN)('restores unit $label in address order through the guard', async ({ image, manifest }) => {
+    const radio = FakeRadio.fromImage(image, { magic: manifest.magic });
+    radio.eeprom.fill(0xff, 0x0000, 0x1800);
+    // The handshake in startSession reloads the 0x0E00 page from the filled memory.
+    const s = await startSession(radio, magicByName(manifest.magic));
     const expected = RESTORE_RANGES.reduce((n, [start, end]) => n + (end - start) / 0x10, 0);
-    expect(await drive(restoreImage(s, fixture))).toBe(expected);
-    expect(settingsBytes(radio)).toEqual([...imageSettingsBlock(fixture)]);
-    expect([...radio.eeprom.subarray(0x0000, 0x0cf0)]).toEqual([...fixture.subarray(IMAGE_HEADER, IMAGE_HEADER + 0x0cf0)]);
+    expect(await drive(restoreImage(s, image))).toBe(expected);
+    expect(settingsBytes(radio)).toEqual([...imageSettingsBlock(image)]);
+    expect([...radio.eeprom.subarray(0x0000, 0x0cf0)]).toEqual([...image.subarray(IMAGE_HEADER, IMAGE_HEADER + 0x0cf0)]);
+  });
+});
+
+describe('fake from an image', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('answers the handshake with the ident and firmware of PRIMARY', async () => {
+    const radio = FakeRadio.fromImage(PRIMARY.image, { magic: PRIMARY.manifest.magic });
+    const s = await startSession(radio, magicByName(PRIMARY.manifest.magic));
+    expect(hex(s.startedIdent.bytes)).toBe(hex(PRIMARY.image.subarray(0, IMAGE_HEADER)));
+    expect(s.startedIdent.firmware).toBe(PRIMARY.manifest.firmware);
+  });
+  it('answers the handshake with a changed ident and firmware', async () => {
+    const image = Uint8Array.from(PRIMARY.image);
+    image[6] = 0x21;
+    image.fill(0xff, IMAGE_AUX + 48, IMAGE_AUX + 48 + 14);
+    image.set(Buffer.from('BFB297', 'latin1'), IMAGE_AUX + 48);
+    const s = await startSession(FakeRadio.fromImage(image));
+    expect(hex(s.startedIdent.bytes)).toBe('aa 30 76 04 00 05 21 dd');
+    expect(s.startedIdent.firmware).toBe('BFB297');
   });
 });
 
