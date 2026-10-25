@@ -201,7 +201,7 @@ export function summarize(device: string, seconds: number, levels: Levels, floor
 }
 
 /** Join the last three non-empty stderr lines for an error message. */
-function stderrTail(stderr: string): string {
+export function stderrTail(stderr: string): string {
   return stderr
     .split('\n')
     .map((line) => line.trim())
@@ -263,7 +263,7 @@ export function play(file: string, seconds: number): Promise<void> {
 }
 
 /** The dependency-missing error for an ffmpeg absent from PATH. */
-function ffmpegMissing(): TransportError {
+export function ffmpegMissing(): TransportError {
   return new TransportError('dependency-missing', 'ffmpeg not found on PATH; install it with brew install ffmpeg', {}, { remedy: 'run brew install ffmpeg' });
 }
 
