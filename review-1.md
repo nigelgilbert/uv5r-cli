@@ -4,9 +4,22 @@ Two adversarial reviews. Part 1 covers `feature/new-golden-set`, 1604a05..b996b5
 
 Each item carries a tag: both-agree, Opus-only or Sol-only. Opus checked the whisper.cpp claims against upstream `server.cpp`. In part 2, line numbers refer to `docs/speech-plan.md` at ccbd081 unless a file is named.
 
+## Decisions, 2026-10-25
+
+Settled before the swarm run. Do not interview on these again; implement as written.
+
+- Branches. Part 1 lands on `feature/new-golden-set` from 4fe5711. Part 2 lands on `feature/speech-plan` from ccbd081 in a worktree. One agent edits `docs/speech-plan.md` for every Part 2 item.
+- Item 10. `hear` opens no serial port. The squelch gate stays with `uv5r check` and the SKILL rule. `converse` keeps the clone-session squelch read. Open item 406 closes. The SKILL rule at line 365 becomes "run no clone-session verb while `hear` runs".
+- Item 11. `addressed` is a callee check. Replies are gated by the callee check and the rate limit on `say`. No speaker allowlist.
+- Item 16. Dropped. Keep `--config FILE` and `UV5R_CONFIG`. Drop the SKILL rule at line 363 that forbids writing `callsign` or `service`. A README line says where to put the callsign. A user who lets their agent write a fake callsign owns that outcome. The tool is batteries included.
+- Item 20. Step 3 is the config loader and phonetic table. Step 4 is the transmit path, `id`, `say --rehearse`, the first bench transmission, then `talk`.
+- Item 23. Line 32 becomes "The callsign comes from the config file." No reference to flags or env vars.
+- Item 4. The golden set branch has no PR yet. Record the CLI change in issue 003 now and in the PR description when the PR is opened. `pr5-body.md` belongs to PR 5, the speech plan.
+- Fix text with an "or": pick the simplest option and record it in the commit message.
+
 ## Part 1: golden set branch
 
-`src/` has no correctness bug. The nine items cover test gaps, an unrecorded CLI change, a stale plan, wrong statements in the run docs and duplicated constants.
+`src/` has no correctness bug. The nine items cover test gaps, an unrecorded CLI change, a stale plan, run-doc statements that item 2 makes stale and duplicated constants.
 
 ### 1. Pin the golden set size
 
@@ -58,7 +71,7 @@ Commit eecd428 reorders `MDF_NAMES` to `['ch','name','freq']`. The note at issue
 
 **Fix:** throw unless the image length is `IMAGE_AUX + 0x140`. Add a test for a short image.
 
-### 6. Cover or drop the `reload()` in `fromImage`
+### 6. Drop the `reload()` in `fromImage`
 
 **Severity:** low. **Tag:** Opus-only, verified by mutation.
 
@@ -66,7 +79,7 @@ Commit eecd428 reorders `MDF_NAMES` to `['ch','name','freq']`. The note at issue
 
 Removing `radio.reload()` from `fromImage` leaves 599 of 599 passing. Every caller handshakes, and the handshake reloads the page.
 
-**Fix:** add a test that reads the 0x0E00 page from a `fromImage` fake before any handshake, or drop the line.
+**Fix:** drop the line.
 
 ### 7. Bring the plan in line with the delivered set
 
@@ -74,19 +87,18 @@ Removing `radio.reload()` from `fromImage` leaves 599 of 599 passing. Every call
 
 **Files:** `docs/golden-set-plan.md`.
 
-The plan still names base 21dbcb7, four units, `unit-4.img` and five channels per unit. Its pairwise aux comparison keeps a radio with a matching aux block when the tape labels differ and marks it with `sameRadioAs`. The skipped radio has its own channel memory and was left out because its aux block matches unit 1's. Units 1 and 3 also share the calibration rows 0x1F00-0x1F9F, so a matching aux block is weak evidence of the same radio.
+The plan still names four units, `unit-4.img` and five channels per unit. Its pairwise aux comparison keeps a radio with a matching aux block when the tape labels differ and marks it with `sameRadioAs`. The skipped radio has its own channel memory and was left out because its aux block matches unit 1's. Units 1 and 3 also share the calibration rows 0x1F00-0x1F9F, so a matching aux block is weak evidence of the same radio.
 
-**Fix:** add a note at the top of the plan naming the delivered set: three units, three channels each, and the skipped radio with the reason it was skipped. Link the Result section of issue 001.
+**Fix:** add a note at the top of the plan naming the delivered set: three units with 3, 3 and 2 displayed channels, and the skipped radio with the reason it was skipped. Link the Result section of issue 001.
 
-### 8. Correct three claims in the run docs
+### 8. Update the run docs when item 2 lands
 
-**Severity:** low. **Tag:** Opus-only, verified against the code and manifest.
+**Severity:** low. **Tag:** Opus-only, verified against the code.
 
-**Files:** `docs/golden-set-swarm-log.md:39`, `issues/003-decoded-expectations.md:22`, `issues/001-radio-survey.md:60`.
+**Files:** `docs/golden-set-swarm-log.md:39`, `issues/003-decoded-expectations.md:22`.
 
-- Swarm log line 39 says the failure message says to rerun. The message says to run `vitest -u`, which is the run that failed. Rewrite the line to match item 2 once it lands.
-- The acceptance criteria of issue 003 (line 22) call the display check "the independent check". It reads the committed JSON. Reword it to match item 2 once it lands.
-- The Result section of issue 001 (line 60) says "a fourth radio" shares unit 1's aux block. The manifest's `skipped` note calls it the "Third radio dumped". Use the manifest's wording.
+- Swarm log line 39 drops a finding because of the current `vitest -u` behaviour. Update it once item 2 lands.
+- Issue 003 line 22 calls the display check "the independent check". It reads the committed JSON. Reword it to match item 2 once it lands.
 
 ### 9. Remove duplicated constants and helpers
 
@@ -101,7 +113,7 @@ The plan still names base 21dbcb7, four units, `unit-4.img` and five channels pe
 - `golden.test.ts:35` has a doc comment that restates the code. Delete it.
 - `protocol.test.ts:130-131` uses literals next to the named constants. Use the constants.
 - `src/core/index.ts` re-exports `IMAGE_AUX` and `decodeSlot`, and nothing that imports `index.ts` uses them. Remove the re-exports.
-- `cli.test.ts:10` creates a temp directory and never removes it, as do twelve other `mkdtempSync` calls in the file. Create one temp directory, share it and remove it in `afterAll`.
+- `cli.test.ts:10` creates a temp directory and never removes it, as do twelve other `mkdtempSync` calls in the file. Create one temp root, give each test its own subdirectory and remove the root in `afterAll`.
 
 ## Part 2: speech plan
 
@@ -115,7 +127,7 @@ The audit covers ten `/code-review` findings. Nine hold. Finding 10 holds for li
 
 Phase 1 runs `uv5r hear --json | bridge | uv5r talk`. Lines 179-180 rule out two long-lived `uv5r` processes. The shell starts every stage at once. `hear` runs a clone session at start, and `talk` holds the port for the session. The transport opens the port with `lock: true` and maps a lock failure to `BusyError`, so the second process to open fails. The SKILL rule at line 365 also says to run `hear` alone before any other verb. Lines 201-203 already concede the half-duplex gap. Audio does not contend, because input and output are separate AIOC devices.
 
-**Fix:** have `talk` open the port per utterance, or settle the open item at line 406 so phase 1 skips `hear`'s clone session.
+**Fix:** have `talk` open the port per utterance, or settle the open item at line 406 so phase 1 skips `hear`'s clone session. Reconcile the SKILL rule at line 365 with the phase 1 pipeline.
 
 ### 11. Separate the callee check from speaker authorization
 
@@ -146,11 +158,11 @@ Any callsign-shaped token other than ours exits 2. A normal call such as "W1AW, 
 **Files:** `speech-plan.md:54`, `:82-83`, `:108-109`, `:117`, `:348`, `src/core/codec.ts:308`, `src/core/radio.ts:70-76`, `README.md:51-52`, `:73`.
 
 - Lines 108-109 have `hear` and `say` read `timeout` in a clone session. Line 83 says checks run before the port opens, and line 348 says `say` and `talk` open no session. `hear` never transmits, and `talk`, `id` and `converse` are left out.
-- The "~3 s receiver reload" does not apply to reads. README line 73 puts the reload on settings writes only. A read costs one clone session and about 3 s of handshake retry when verbs run back to back (README lines 51-52).
+- Review finding 3's "~3 s receiver reload" does not apply to reads. README line 73 puts the reload on settings writes only. A read costs one clone session and about 3 s of handshake retry when verbs run back to back (README lines 51-52).
 - The codec stores `timeout` as an index from 0 to 39. Line 108 reads it as seconds with no mapping.
 - The cap covers WAV length. Lead, ffmpeg start, tail and the 5 s watchdog margin at line 117 add keyed time on top.
 
-**Fix:** read `timeout` in the clone session `converse` already opens, and give `say`, `talk` and `id` a config value or the static 55 s cap. Drop the read from `hear`. Map the index to seconds. Cap total keyed time, including lead, tail and the watchdog margin.
+**Fix:** read `timeout` in the clone session `converse` already opens, and give `say`, `talk` and `id` a TOT config value, with the 55 s cap at the 60 s default TOT. Drop the read from `hear`. Map the index to seconds. Cap total keyed time, including lead, tail and the watchdog margin.
 
 ### 14. Correct the whisper-server flags
 
@@ -175,9 +187,11 @@ Any callsign-shaped token other than ours exits 2. A normal call such as "W1AW, 
 
 `uv5r id` at line 257 closes an exchange by hand. `--no-id` is a documented exception at line 55, so line 255's "every `say`" needs a qualifier.
 
-**Fix:** on an interrupted transmission, report `idOwed: true` with the remedy `uv5r id`. Send `talk`'s final ID on EOF or the second Ctrl-C. Add a `speakUtterance` parameter that drops the per-line ID in `talk` and `converse`. Identify before an utterance that would cross the 600 s mark.
+**Fix:** on an interrupted transmission, report `idOwed: true` with the remedy `uv5r id`. Send `talk`'s final ID on EOF or the second Ctrl-C. Add a `speakUtterance` parameter that drops the per-line ID in `talk` and `converse`. Identify before an utterance that would cross the ID interval. Qualify line 255 with the `--no-id` exception.
 
 ### 16. Lock the callsign to the repo config
+
+**Status:** dropped, see Decisions.
 
 **Severity:** medium. **Tag:** Opus-only, checked against the plan.
 
@@ -193,7 +207,7 @@ The config path comes from `--config FILE` or `UV5R_CONFIG` before `<repo>/uv5r.
 
 **Files:** `speech-plan.md:126`, `:131-132`, `:379-380`, `src/cli/audio.ts:55`.
 
-Line 131 says the 0.88 ratio comes from avfoundation timestamps and does not apply without `-t`. The code comment records 48000-sample frames stamped about 1.137 s apart. Timestamps alone cannot separate a fast timestamp clock from a device that delivers about 42.2k samples per second. If samples run short, sample-count durations drift about 12% from the wall clock. `aresample=16000` at line 126 trusts the declared rate, so whisper hears audio about 12% fast. Bench item 4 at lines 379-380 measures this.
+Line 131 says the 0.88 ratio comes from avfoundation timestamps and does not apply without `-t`. The code comment records 48000-sample frames stamped about 1.137 s apart. Timestamps alone cannot separate a fast timestamp clock from a device that delivers about 42.2k samples per second. If samples run short, sample-count durations drift about 12% from the wall clock. `aresample=16000` at line 126 trusts the declared rate, so whisper hears audio about 14% fast. Bench item 4 at lines 379-380 measures this.
 
 **Fix:** reword line 131 as a hypothesis pending bench item 4. Keep wall-clock segment times. If item 4 shows a shortfall, correct the capture rate before segmenting.
 
@@ -235,7 +249,7 @@ Step 3 says "`id` verb. First transmission on the bench." The `id` verb raises P
 
 `converse` splits long replies at sentence boundaries and caps each transmission at `--chunk-seconds`. The `say` path rejects a WAV past `--max-seconds` after synthesis, in step 4.
 
-**Fix:** split before synthesis and reserve time for the ID and "over".
+**Fix:** split at sentence boundaries before synthesis, measure each chunk and split again at a clause or word boundary when it passes `--chunk-seconds`. Reserve time for the ID and "over".
 
 ### 22. Bench the harness command phase 1 runs
 
