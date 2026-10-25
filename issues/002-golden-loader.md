@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done 2026-10-25
 
 ## Parent
 
@@ -26,10 +26,10 @@ Follow the style of `test/core/fake.ts`: one-sentence doc comments, no new depen
 
 ## Acceptance criteria
 
-- [ ] `npm test` runs the golden test with 4 identity cases and 1 distinct-units case, all passing.
-- [ ] Changing one byte in the aux block of any image makes the test fail.
-- [ ] `npm run typecheck` passes.
-- [ ] `test/core/imports.test.ts` passes with the new helper.
+- [x] `npm test` runs the golden test with 4 identity cases and 1 distinct-units case, all passing.
+- [x] Changing one byte in the aux block of any image makes the test fail.
+- [x] `npm run typecheck` passes.
+- [x] `test/core/imports.test.ts` passes with the new helper.
 
 ## Blocked by
 

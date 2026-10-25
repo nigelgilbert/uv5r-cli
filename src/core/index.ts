@@ -49,6 +49,7 @@ export type { Tone, Channel, ChannelSpec, ChannelJson, SettingName, Settings } f
 export {
   channelPayload,
   IMAGE_HEADER,
+  IMAGE_AUX,
   readSettings,
   writeSettings,
   verifySettingsBlock,
