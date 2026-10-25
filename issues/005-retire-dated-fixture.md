@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done 2026-10-25
 
 ## Parent
 
@@ -20,10 +20,10 @@ In `docs/clone-protocol-review.md`, mark the "Golden files" open item done with 
 
 ## Acceptance criteria
 
-- [ ] `git ls-files fixtures` lists only files under `fixtures/golden/`.
-- [ ] `grep -rn "hn5rv011-2026-10-12" src test README.md` prints nothing.
-- [ ] `grep -n "fixtures/golden" README.md` prints the new Bench files entry.
-- [ ] `npm test` and `npm run typecheck` pass.
+- [x] `git ls-files fixtures` lists only files under `fixtures/golden/`.
+- [x] `grep -rn "hn5rv011-2026-10-12" src test README.md` prints nothing.
+- [x] `grep -n "fixtures/golden" README.md` prints the new Bench files entry.
+- [x] `npm test` and `npm run typecheck` pass.
 
 ## Blocked by
 

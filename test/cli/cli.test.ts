@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
+import { PRIMARY } from '../core/golden.ts';
 
-const FIXTURE = new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url).pathname;
+const FIXTURE = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'primary.img');
+writeFileSync(FIXTURE, PRIMARY.image);
 const README = new URL('../../README.md', import.meta.url).pathname;
 const SKILL = new URL('../../.claude/skills/uv5r/SKILL.md', import.meta.url).pathname;
 const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
@@ -1019,17 +1021,8 @@ describe('load', () => {
     return file;
   }
 
-  /** Return a fake radio holding the channel records and names of the bench fixture. */
-  function fixtureRadio(): FakeRadio {
-    const radio = new FakeRadio();
-    const image = readFileSync(FIXTURE);
-    radio.eeprom.set(image.subarray(8, 8 + 0x0800), 0x0000);
-    radio.eeprom.set(image.subarray(8 + 0x1000, 8 + 0x1800), 0x1000);
-    return radio;
-  }
-
   it('writes the example plan and each slot reads back the returned record', async () => {
-    const radio = fixtureRadio();
+    const radio = FakeRadio.fromImage(PRIMARY.image);
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
     expect(process.exitCode).toBe(0);
     const records = JSON.parse(stdout.join('').trim()) as Array<Record<string, unknown>>;
@@ -1049,7 +1042,7 @@ describe('load', () => {
   });
 
   it('leaves slots outside the plan byte-identical', async () => {
-    const radio = fixtureRadio();
+    const radio = FakeRadio.fromImage(PRIMARY.image);
     const before = Uint8Array.from(radio.eeprom);
     await run(['load', EXAMPLE_PLAN, '--json'], opener(radio));
     expect(process.exitCode).toBe(0);

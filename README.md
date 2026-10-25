@@ -250,8 +250,11 @@ the next magic.
 
 ## Bench files
 
-- `fixtures/uv5r-hn5rv011-2026-10-12.img`: image of the bench radio before any write.
-  Channel 127 holds a corrupted 155.700 record.
+- `fixtures/golden/`: CHIRP images of the reference radios, `unit-<n>.img`.
+  `manifest.json` records each unit's ident, firmware, magic, aux hash and the slots its
+  display showed. `unit-<n>.json` holds the decoded settings and all 128 slots, written by
+  `test/core/golden.test.ts`. Slot 127 of `unit-1.img` holds a 155.700 record behind an FF
+  first byte, so it decodes as empty.
 - `scenarios/big-sky-2026-10.json`: test data, channels and sweep windows from the Big Sky
   SITREP. Nothing reads it.
 - `channels.example.json`: the reference shape for generated plans.

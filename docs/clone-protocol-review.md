@@ -63,4 +63,4 @@ Firmware `HN5RV011` on the AIOC. The unit does not ack `ORIG`.
 ## Open items
 
 - Bench unit: settled on 2026-10-24, see [rx-audio-investigation.md](rx-audio-investigation.md). The radio on the bench is the 2026-10-12 fixture unit.
-- Golden files: rebuild them from the reference UV-5Rs.
+- Golden files: rebuilt from the reference UV-5Rs on 2026-10-25, see [golden-set-plan.md](golden-set-plan.md).
