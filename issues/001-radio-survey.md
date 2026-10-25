@@ -28,7 +28,7 @@ Write `fixtures/golden/manifest.json` with one entry per unit in the shape the p
 ```json
 { "label": "1", "image": "unit-1.img", "dumped": "2026-10-25", "ident": "aa 30 76 04 00 05 20 dd",
   "firmware": "HN5RV011", "magic": "291", "auxSha256": "…", "notes": "2026-10-12 fixture radio",
-  "displayed": [{ "slot": 0, "displayNumber": 1, "mdf": "freq", "rxMhz": "162.400" }] }
+  "displayed": [{ "slot": 0, "displayNumber": 0, "mdf": "freq", "rxMhz": "162.400" }] }
 ```
 
 When two `auxSha256` values are equal, re-seat each radio once and compare the tape labels. When the labels differ, add `"sameRadioAs": "<label>"` to the later unit.
