@@ -244,8 +244,8 @@ const verbs: Record<string, Verb> = {
     exits: [
       { code: 5, when: 'radio-unsupported on an F11, UV6 or UV6_ORIG ident, a BF-A58 version under A58, a 14-byte ident or a foreign magic ident, naming the radio' },
       { code: 5, when: 'radio-unsupported with powerCycle true on a 06 at 115200, naming the UV17Pro model group; the radio stays in program mode until the human power-cycles it' },
-      { code: 5, when: 'protocol-reply-invalid with the first bad classic ident in got when no magic opened a session' },
-      { code: 5, when: 'otherwise session-unavailable with answers, each wrong ack, refusal and foreign bad ident by magic name; empty on a silent cable' },
+      { code: 5, when: 'protocol-reply-invalid with the first bad ident on a supported magic in got when no magic opened a session' },
+      { code: 5, when: 'otherwise session-unavailable with answers, each wrong ack, refusal and bad ident on a foreign or unsupported magic by magic name; a refusal sets retry once; empty on a silent cable' },
     ],
     positionals: 0,
     run: identifyVerb,
