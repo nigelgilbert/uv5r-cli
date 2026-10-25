@@ -145,6 +145,9 @@ describe('fake from an image', () => {
     const radio = FakeRadio.fromImage(PRIMARY.image, { magic: 'ORIG' });
     expect(await driveRejection(new Session(radio).start(magicByName('291')))).toMatchObject({ kind: 'device-state', reason: 'session-unavailable' });
   });
+  it('throws on an image shorter than a CHIRP image', () => {
+    expect(() => FakeRadio.fromImage(PRIMARY.image.subarray(0, IMAGE_HEADER))).toThrow(`image is ${IMAGE_HEADER} bytes`);
+  });
 });
 
 describe('write shape', () => {

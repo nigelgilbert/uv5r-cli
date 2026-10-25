@@ -2,6 +2,7 @@ import { magicByName, type MagicName } from '../../src/core/ident.ts';
 import { hex } from '../../src/core/protocol.ts';
 import { IMAGE_AUX, IMAGE_HEADER } from '../../src/core/radio.ts';
 import type { Transport } from '../../src/core/transport.ts';
+import { AUX_SIZE } from './golden.ts';
 
 /** Start of the page the radio serves from its reload snapshot and aliases for 16-byte reads. */
 const PAGE = 0x0e00;
@@ -104,6 +105,7 @@ export class FakeRadio implements Transport {
 
   /** Return a fake with the ident, main memory and aux block of a CHIRP `image` that acks `magic`. */
   static fromImage(image: Uint8Array, { magic = '291' }: { magic?: MagicName } = {}): FakeRadio {
+    if (image.length !== IMAGE_AUX + AUX_SIZE) throw new Error(`image is ${image.length} bytes; expected ${IMAGE_AUX + AUX_SIZE}`);
     const radio = new FakeRadio();
     radio.ident.set(image.subarray(0, IMAGE_HEADER));
     radio.eeprom.set(image.subarray(IMAGE_HEADER, IMAGE_HEADER + MAIN_END), 0);
