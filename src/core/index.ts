@@ -79,4 +79,4 @@ export { parsePlan, readPlan } from './plan.ts';
 export type { Plan, PlanEntry } from './plan.ts';
 
 export { BaofengError, UsageError, TransportError, TimeoutError, DeviceStateError, BusyError, UnexpectedError, REASONS, RETRY, withDetail } from './errors.ts';
-export type { ErrorKind, ErrorReason, Retry, Guidance } from './errors.ts';
+export type { ErrorKind, ErrorReason, TransportReason, UsageReason, Retry, Guidance } from './errors.ts';

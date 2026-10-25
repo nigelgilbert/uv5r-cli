@@ -1,6 +1,6 @@
 ---
 name: uv5r
-description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, MR or VFO mode, checking the live channel, loading or sweeping a channel plan, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, or audio levels.
+description: Operate the Baofeng UV-5R on the bench through the `uv5r` CLI and the AIOC cable, with JSON output. Use when the user mentions the Baofeng, the UV-5R, the AIOC, tuning or keying the radio, a memory channel, MR or VFO mode, checking the live channel, loading or sweeping a channel plan, CTCSS or DCS tones, repeater offsets, PTT, backing up the radio, menu settings, voice or beep, squelch, listening to receive audio, audio levels, speaking text over the radio, or station identification and the callsign.
 ---
 
 # uv5r
@@ -10,8 +10,7 @@ Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
 ## Find help
 
 - `uv5r help` lists the verbs, the operating rules and the exit codes. `uv5r help VERB`
-  prints a verb's flags, defaults, effects, preconditions, result example and the exit cases
-  it adds to that table. `uv5r help VERB --json` prints the same as JSON.
+  prints a verb's flags, defaults, effects, preconditions, result example and exit cases.
 - Read `uv5r help VERB --json` before the first run of a verb in a session.
 
 ## Operating rules
@@ -35,26 +34,27 @@ Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
 - Write a plan to its own slots with one `uv5r load PLAN.json`.
 - Write public-safety listening channels with `--rx-only`.
 - The radio speaker is silent while the AIOC is plugged in. The human hears receive audio
-  only through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
-  `uv5r sweep PLAN --out-dir DIR` renames each capture into DIR after its dwell.
+  only through `uv5r listen --seconds 5 --out FILE --play` or the `sweep --out-dir` WAVs.
 - The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.
 - On `input clips`, ask the human to turn the volume knob down, then listen again.
-- `key` raises PTT on the channel the radio display shows. The CLI cannot read that
-  channel, and a receive-only slot radiates nothing. Key only when the human asked and the
-  frequency is one they may transmit on, after asking the human what the display shows.
+- `key`, `say` and `id` raise PTT on the channel the radio display shows. The CLI cannot read
+  that channel, and a receive-only slot radiates nothing. Run them only when the human asked
+  and the frequency is one they may transmit on, after asking the human what the display shows.
+- The human stays at the radio as control operator for every transmission (§97.105, §97.109).
+  `say` and `id` end with the callsign from `uv5r.json`. Run `say --rehearse` before the first
+  transmission of a session.
 
 ## On a failed command
 
 - A failed command prints nothing on stdout and one error object on stderr when output is JSON,
   piped or with `--json`, and the message plus a remedy line on a terminal. The object has `reason`,
   `message`, `remedy`, `retry` and the detail fields at its top level. `uv5r help --json` lists the reasons with their exit codes and the retry meanings under `errors`.
-- `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun the
-  same command once. `after-remedy`: rerun after doing the remedy.
+- `retry: no`: do not rerun; follow the remedy and report to the human. `once`: rerun once. `after-remedy`: rerun after the remedy.
 - A `load` error from a plan entry write carries `slot`. A `sweep` error after the port is
-  requested carries `summary`. One in the loop adds `phase` (`check`, `entry` or `dwell`),
-  `slot` (0), `channel` (null during the check) and `requestedMhz` (the `checkMhz`
-  frequency during the check); a failed check adds the check fields.
-- On SIGINT, SIGTERM, SIGHUP or SIGTSTP after `key` or `sweep` opens the port, the result
-  prints on stdout with `interrupted` and exit 128 plus the signal number. Other verbs print nothing.
-- After a failed `key`, report and wait for the human. A failed PTT release after a signal
-  exits 3 with `interrupted` in the error.
+  requested carries `summary`. One in the loop adds `phase`, `slot`, `channel` and
+  `requestedMhz`; a failed check adds the check fields.
+- On SIGINT, SIGTERM, SIGHUP or SIGTSTP after `key`, `say`, `id` or `sweep` opens the port, the
+  result prints on stdout with `interrupted` and exit 128 plus the signal number. Other verbs
+  print nothing. On `idOwed: true`, tell the human to identify by voice or run `uv5r id`.
+- After a failed `key`, `say` or `id`, report and wait for the human. A failed PTT release after a
+  signal exits 3 with `interrupted` in the error.

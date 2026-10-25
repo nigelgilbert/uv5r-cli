@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile }));
 
-import { CLIP_WARNING, KILL_GRACE_MS, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, summarize, wholeSeconds } from '../../src/cli/audio.ts';
+import { CLIP_WARNING, KILL_GRACE_MS, astatsFilter, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, runFfmpeg, summarize, wholeSeconds } from '../../src/cli/audio.ts';
 
 /** Pre-high-pass astats fields for one frame: sample min and max on the float scale, and the count of samples at either. */
 interface Raw {
@@ -364,6 +364,34 @@ describe('checkFfmpeg', () => {
     expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { code: 1 } });
     expect(err.message).toBe('ffmpeg -version exited with code 1: dyld: Library not loaded: libavdevice.62.dylib');
     expect(err.remedy).not.toContain('--device');
+  });
+});
+
+describe('astatsFilter', () => {
+  it('builds the per-frame form listen uses and the accumulating form', () => {
+    expect(astatsFilter(['Peak_level', 'RMS_level'])).toBe('astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=Peak_level+RMS_level');
+    expect(astatsFilter(['RMS_level'], 0)).toBe('astats=metadata=1:reset=0:measure_perchannel=none:measure_overall=RMS_level');
+  });
+});
+
+describe('runFfmpeg', () => {
+  beforeEach(() => {
+    execFile.mockReset();
+  });
+
+  it('resolves the stderr on exit 0', async () => {
+    ffmpegReturns(null, 'lavfi.astats.Overall.RMS_level=-20');
+    await expect(runFfmpeg(['-i', 'a.wav'], 'measuring a.wav', 1000)).resolves.toBe('lavfi.astats.Overall.RMS_level=-20');
+    expect(execFile.mock.calls[0]!.slice(0, 2)).toEqual(['ffmpeg', ['-i', 'a.wav']]);
+  });
+
+  it('maps a missing ffmpeg to dependency-missing and a failure to audio-process-failed naming the step', async () => {
+    ffmpegReturns({ code: 'ENOENT' }, '');
+    await expect(runFfmpeg([], 'measuring a.wav', 1000)).rejects.toMatchObject({ reason: 'dependency-missing' });
+    ffmpegReturns({ code: 1 as unknown as string }, 'a.wav: No such file or directory');
+    const err = await runFfmpeg([], 'measuring a.wav', 1000).catch((e) => e);
+    expect(err).toMatchObject({ reason: 'audio-process-failed', detail: { code: 1 } });
+    expect(err.message).toBe('ffmpeg exited with code 1 measuring a.wav: a.wav: No such file or directory');
   });
 });
 

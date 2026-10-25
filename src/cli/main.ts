@@ -3,6 +3,7 @@ import { accessSync, closeSync, constants as fsConstants, mkdirSync, openSync, r
 import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, checkFfmpeg, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
+import { readStation, resolveConfigPath } from './config.ts';
 import {
   BaofengError,
   channelPayload,
@@ -64,13 +65,16 @@ import {
 import { EXIT, exitCodeFor, signalExitCode } from './exit.ts';
 import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type Slot0, type SweepSummary } from './sweep.ts';
+import { idSentence } from '../speech/phonetic.ts';
+import { defaultSpeechDeps, ID_OWED_REMEDY, speakUtterance, type SpeakOptions, type SpeakResult, type SpeechDeps } from '../speech/speak.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
 export type OpenTransport = (target: string | undefined) => Promise<Transport>;
 
-/** Parsed arguments plus the transport opener the verb uses. */
+/** Parsed arguments plus the transport opener and speech dependencies the verb uses. */
 interface Invocation extends ParsedArgs {
   open: OpenTransport;
+  deps: SpeechDeps;
 }
 
 interface Verb extends VerbDoc {
@@ -84,6 +88,14 @@ const MAX_LISTEN_SECONDS = 600;
 const MIN_FLOOR_DBFS = -100;
 const MAX_FLOOR_DBFS = 0;
 const DEFAULT_AUDIO_DEVICE = 'AIOC Audio';
+const DEFAULT_VOICE = 'Samantha';
+const DEFAULT_LEAD_MS = 300;
+const DEFAULT_TAIL_MS = 400;
+const MAX_PAD_MS = 5000;
+const DEFAULT_MAX_SECONDS = 30;
+/** Cap on --max-seconds, under the UV-5R default TOT of 60 s. */
+const MAX_UTTERANCE_SECONDS = 55;
+const MAX_CLEAR_SECONDS = 30;
 /** Seconds after the command ends until the radio reloads and applies a write. */
 const APPLIES_AFTER_SECONDS = SETTLE_MS / 1000;
 /** Bytes a restore image needs to cover its header and every restore range. */
@@ -94,6 +106,11 @@ export const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. ' +
   'The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.';
 
+/** The control-operator rule for the transmit verbs; help and README.md carry it word for word. */
+export const TRANSMIT_RULE =
+  'You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C. Each transmission ends with the callsign from uv5r.json. ' +
+  'A stock UV-5R is not certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and control operator.';
+
 /** Operating rules `help` prints for an agent that reads no other doc. */
 const RULES = {
   checkFirst:
@@ -103,9 +120,12 @@ const RULES = {
   scratchSlot: 'Slot 0 is the scratch slot. `check` examples use slot 0 and `sweep` writes only slot 0. `tune` and `load` write any slot.',
   channel: CHANNEL_RULE,
   oneVerb: 'Run one verb at a time. Do not open, cat, screen or stty the serial port.',
-  clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.',
+  clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry. key, say and id open no clone session.',
   speaker:
     'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or by playing the WAVs in sweep --out-dir DIR after the run.',
+  transmit: TRANSMIT_RULE,
+  station:
+    'say and id read the callsign from uv5r.json at the repo root, or from the file --config or UV5R_CONFIG names. Without a callsign they exit 2 with station-unconfigured before synthesis.',
 };
 
 const OUTPUT_RULE = 'JSON on stdout when piped or with --json, text on a terminal; a failed command prints nothing on stdout and its error on stderr in the same format';
@@ -115,11 +135,11 @@ const EXIT_CODES: Record<string, string> = {
   '0': 'ok: the result is on stdout',
   '1': 'unexpected: an error the CLI has no kind for',
   '2': 'usage: bad input; argument errors exit before the port opens',
-  '3': 'transport: no device, a serial error, an ffmpeg or afplay failure, or a failed file write',
+  '3': 'transport: no device, a serial error, an ffmpeg, afplay or say failure, an absent output device, or a failed file write',
   '4': 'timeout: no ack before a block read, or a short block payload',
-  '5': 'device-state: no handshake, a bad reply, an unsupported radio, a refused write, a failed verification, an image ident mismatch, an open squelch or a check under 80% active seconds',
+  '5': 'device-state: no handshake, a bad reply, an unsupported radio, a refused write, a failed verification, an image ident mismatch, an open squelch, a check under 80% active seconds or a busy channel before say keys',
   '6': 'busy: another process holds the serial port',
-  '128+signal': 'interrupted by SIGINT, SIGTERM, SIGHUP or SIGTSTP: key releases PTT and sweep prints its summary',
+  '128+signal': 'interrupted by SIGINT, SIGTERM, SIGHUP or SIGTSTP: key, say and id release PTT and sweep prints its summary',
 };
 
 const ERROR_GUIDANCE =
@@ -130,7 +150,9 @@ const ERROR_GUIDANCE =
   'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +
   'An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check). ' +
   'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +
-  'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
+  'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key, say, id or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
+  `A say or id result after a signal adds idOwed. idOwed true means audio went out without the full ID, and its remedy reads: ${ID_OWED_REMEDY}. ` +
+  'A player failure while say or id is keyed exits 3 with audio-process-failed and retry no, and adds pttAsserted, released and playedSeconds. ' +
   'A failed PTT release after the signal exits 3 with interrupted in the error. Other verbs end on a signal with no output.';
 
 /** The errors section of `help --json`: the error format, each reason with its exit code, and the retry values. */
@@ -161,6 +183,18 @@ const FLOOR_FLAG: FlagDoc = {
   help: `a second is active when its RMS is above DBFS, ${MIN_FLOOR_DBFS}..${MAX_FLOOR_DBFS}`,
 };
 
+const VOICE_FLAG: FlagDoc = { name: 'voice', value: 'NAME', default: DEFAULT_VOICE, help: 'macOS say voice; say -v ? lists them' };
+const OUTPUT_DEVICE_FLAG: FlagDoc = {
+  name: 'output',
+  value: 'NAME',
+  default: `config outputDevice, else ${DEFAULT_AUDIO_DEVICE}`,
+  help: 'audiotoolbox output by name or UID; the index is resolved on every run',
+};
+const LEAD_FLAG: FlagDoc = { name: 'lead', value: 'MS', default: DEFAULT_LEAD_MS, help: `silence before the speech while PTT rises, 0..${MAX_PAD_MS}; use 500 for repeaters` };
+const TAIL_FLAG: FlagDoc = { name: 'tail', value: 'MS', default: DEFAULT_TAIL_MS, help: `PTT hold after the player exits, 0..${MAX_PAD_MS}` };
+const CONFIG_FLAG: FlagDoc = { name: 'config', value: 'FILE', default: 'UV5R_CONFIG, else uv5r.json at the repo root', help: 'station config with the callsign' };
+const TRANSMIT_FLAGS = [VOICE_FLAG, OUTPUT_DEVICE_FLAG, LEAD_FLAG, TAIL_FLAG, CONFIG_FLAG];
+
 const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'receive frequency in MHz (154.680), Hz (154680000) or exponent form, in 136-174 or 400-520 MHz, in 10 Hz steps' };
 const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
 
@@ -169,6 +203,23 @@ const AUDIO_READY = 'ffmpeg is on PATH and the terminal has microphone access.';
 const CAPTURE_READY = ['--device names the AIOC input.', 'Squelch is above 0; uv5r status reports it.'];
 const FFMPEG_FIRST = 'Run ffmpeg -version before the port opens. A missing or failing ffmpeg exits 3 with nothing written.';
 const APPLIES = `The radio reloads and applies the write about ${APPLIES_AFTER_SECONDS} s after the command ends.`;
+
+const TRANSMIT_READY = [
+  TRANSMIT_RULE,
+  RADIO_READY,
+  'uv5r.json holds the callsign.',
+  'Ask the human what the display shows.',
+  'Transmit only when the human asked and the frequency is one they may transmit on.',
+];
+const TRANSMIT_SIGNALS =
+  'Once keyed, Ctrl-C, Ctrl-Z, SIGTERM or SIGHUP drops PTT, stops the player, adds interrupted and idOwed to the result and exits 128 plus the signal number. ' +
+  `idOwed true means audio went out without the full ID; ${ID_OWED_REMEDY}.`;
+const TRANSMIT_EXITS = [
+  { code: 2, when: 'station-unconfigured with no callsign in the config, before synthesis' },
+  { code: 3, when: 'speech-engine-failed when say fails or writes digital zero, or audio-device-unavailable when the output is absent, both before the port opens' },
+  { code: 3, when: 'audio-process-failed with retry no when the player fails while keyed; the error adds pttAsserted, released, playedSeconds and idOwed' },
+];
+const ID_EXAMPLE = 'This is Kilo, Juliett, Seven, Alfa, Bravo, Charlie';
 
 const CHANNEL_RECORD = { rxMhz: '154.68', txMhz: '154.68', txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
 const SETTINGS_EXAMPLE = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'freq', mdfb: 'freq' };
@@ -375,6 +426,87 @@ const verbs: Record<string, Verb> = {
     exits: [{ code: 3, when: 'a PTT control failure' }],
     positionals: 0,
     run: keyVerb,
+  },
+  say: {
+    summary: 'Speak TEXT over the radio and end with the phonetic callsign: synthesize, key PTT, play into the AIOC, release',
+    example: 'uv5r say "bench check, over"',
+    args: [{ name: 'TEXT', help: 'text to speak; say -- TEXT passes text that starts with --' }],
+    flags: [
+      ...TRANSMIT_FLAGS,
+      { name: 'max-seconds', value: 'S', default: DEFAULT_MAX_SECONDS, help: `cap on the padded WAV plus --tail, 0 < S <= ${MAX_UTTERANCE_SECONDS}; lower it on a radio with a TOT under 60 s` },
+      {
+        name: 'clear',
+        value: 'S',
+        default: 0,
+        help: `listen S seconds on the config inputDevice, else ${DEFAULT_AUDIO_DEVICE}, before keying and exit 5 with channel-busy above ${DEFAULT_FLOOR_DBFS} dBFS; 0 skips it, at most ${MAX_CLEAR_SECONDS}`,
+      },
+      { name: 'out', value: 'FILE', help: 'keep the conditioned WAV at FILE and report out; overwrites FILE' },
+      { name: 'rehearse', help: 'stop after the measurement and play through the system default output with the port closed' },
+      ...COMMON_FLAGS,
+    ],
+    effects: [
+      'Read the station config. No callsign exits 2 with station-unconfigured before synthesis.',
+      'Append the ID sentence and synthesize with macOS say at 48 kHz.',
+      'Filter and pad in one ffmpeg pass: 300 Hz high-pass, 3 kHz low-pass, limiter, --lead of leading silence and 0.3 s of trailing silence.',
+      'Measure peak and RMS over the whole WAV. Digital zero exits 3 with speech-engine-failed. The padded WAV plus --tail past --max-seconds exits 2 with utterance-too-long.',
+      'Resolve the output index from the audiotoolbox device list. An absent device exits 3 with audio-device-unavailable.',
+      `With --clear S, listen S seconds first. A 20 ms frame above ${DEFAULT_FLOOR_DBFS} dBFS exits 5 with channel-busy.`,
+      'Every check runs before the port opens. say opens no clone session.',
+      'Raise PTT, play the WAV, hold PTT for --tail after the player exits, then release.',
+      'identified is true when the player exits 0, since the ID ends the WAV.',
+      TRANSMIT_SIGNALS,
+      'With --rehearse, run the steps up to the measurement, then play through the system default output with afplay and the port closed. The result adds rehearsed with pttAsserted false.',
+      'UV5R_MAGIC has no effect.',
+    ],
+    preconditions: [...TRANSMIT_READY, 'Run say --rehearse before the first transmission of a session.'],
+    writesToRadio: { writes: false, note: 'raises PTT only, which transmits on a TX-capable channel' },
+    result: {
+      text: 'bench check, over',
+      spoken: `bench check, over. ${ID_EXAMPLE}`,
+      identified: true,
+      seconds: 6.4,
+      peakDbfs: -0.9,
+      rmsDbfs: -17.2,
+      device: DEFAULT_AUDIO_DEVICE,
+      pttAsserted: true,
+      released: true,
+    },
+    exits: [
+      TRANSMIT_EXITS[0]!,
+      { code: 2, when: 'utterance-too-long when the padded WAV plus --tail passes --max-seconds, before the port opens' },
+      ...TRANSMIT_EXITS.slice(1),
+      { code: 5, when: 'channel-busy when --clear hears activity, before PTT' },
+    ],
+    positionals: Infinity,
+    run: sayVerb,
+  },
+  id: {
+    summary: 'Send the phonetic callsign alone over the radio, the station identification that ends every say',
+    example: 'uv5r id',
+    args: [],
+    flags: [...TRANSMIT_FLAGS, ...COMMON_FLAGS],
+    effects: [
+      `Speak the ID sentence for the config callsign, as in ${ID_EXAMPLE}, through the say transmit path.`,
+      `Run the say checks with --max-seconds ${DEFAULT_MAX_SECONDS} and no clear check.`,
+      TRANSMIT_SIGNALS,
+      'UV5R_MAGIC has no effect.',
+    ],
+    preconditions: TRANSMIT_READY,
+    writesToRadio: { writes: false, note: 'raises PTT only, which transmits on a TX-capable channel' },
+    result: {
+      text: ID_EXAMPLE,
+      spoken: ID_EXAMPLE,
+      identified: true,
+      seconds: 4.9,
+      peakDbfs: -0.9,
+      rmsDbfs: -17.8,
+      device: DEFAULT_AUDIO_DEVICE,
+      pttAsserted: true,
+      released: true,
+    },
+    exits: TRANSMIT_EXITS,
+    positionals: 0,
+    run: idVerb,
   },
   dump: {
     summary: 'Save the full memory image',
@@ -840,6 +972,76 @@ async function keyVerb(args: Invocation): Promise<number> {
   return EXIT.ok;
 }
 
+/** Return a millisecond flag, or its default, and throw UsageError outside 0..MAX_PAD_MS. */
+function msFlag(flags: Map<string, string | true>, name: string, fallback: number): number {
+  const ms = numberFlag(flags, name) ?? fallback;
+  if (ms < 0 || ms > MAX_PAD_MS) throw new UsageError(`--${name} takes 0..${MAX_PAD_MS} ms; got ${ms}`, { flag: name });
+  return ms;
+}
+
+/** Read the flags say and id share and the station config; a config with no callsign throws station-unconfigured. */
+function transmitOptions(args: Invocation): Omit<SpeakOptions, 'text' | 'maxSeconds' | 'clearSeconds'> {
+  const voice = stringFlag(args.flags, 'voice') ?? DEFAULT_VOICE;
+  const leadMs = msFlag(args.flags, 'lead', DEFAULT_LEAD_MS);
+  const tailMs = msFlag(args.flags, 'tail', DEFAULT_TAIL_MS);
+  const { path, required } = resolveConfigPath(stringFlag(args.flags, 'config'));
+  const station = readStation(path, { required });
+  if (station.callsign === undefined) {
+    throw new UsageError(`no callsign in ${path}; say and id end every transmission with it`, { file: path }, {}, 'station-unconfigured');
+  }
+  return {
+    callsign: station.callsign,
+    voice,
+    output: stringFlag(args.flags, 'output') ?? station.outputDevice ?? DEFAULT_AUDIO_DEVICE,
+    input: station.inputDevice ?? DEFAULT_AUDIO_DEVICE,
+    leadMs,
+    tailMs,
+  };
+}
+
+function speakText(r: SpeakResult): string {
+  const ptt = r.rehearsed ? `not asserted; rehearsed ${r.seconds} s with the port closed` : `asserted for ${r.seconds} s; released`;
+  return [
+    `spoken     ${r.spoken}`,
+    `device     ${r.device}`,
+    `levels     peak ${r.peakDbfs} dBFS, rms ${r.rmsDbfs} dBFS`,
+    `PTT        ${ptt}`,
+    `identified ${r.identified ? 'yes' : 'no'}`,
+    ...(r.interrupted ? [`interrupted by ${r.interrupted}`] : []),
+    ...(r.idOwed ? [`ID owed    ${ID_OWED_REMEDY}`] : []),
+    ...(r.out === undefined ? [] : [`out        ${r.out}`]),
+  ].join('\n');
+}
+
+/** Speak through speakUtterance, print the result and return the exit code. */
+async function transmit(args: Invocation, options: SpeakOptions): Promise<number> {
+  const result = await speakUtterance(options, args.deps, (fn) => withTransport(args, fn));
+  print(args, result, () => speakText(result));
+  return result.interrupted ? signalExitCode(result.interrupted) : EXIT.ok;
+}
+
+async function sayVerb(args: Invocation): Promise<number> {
+  checkFlags('say', args.flags, flagNames('say'));
+  const text = args.positionals.join(' ').trim();
+  if (!text) throw new UsageError('say needs TEXT, as in: say "bench check, over"; pass say -- TEXT for text that starts with --');
+  const maxSeconds = numberFlag(args.flags, 'max-seconds') ?? DEFAULT_MAX_SECONDS;
+  if (maxSeconds <= 0 || maxSeconds > MAX_UTTERANCE_SECONDS) {
+    throw new UsageError(`--max-seconds takes 0 < S <= ${MAX_UTTERANCE_SECONDS}; got ${maxSeconds}`, { flag: 'max-seconds' });
+  }
+  const clearSeconds = numberFlag(args.flags, 'clear') ?? 0;
+  if (clearSeconds < 0 || clearSeconds > MAX_CLEAR_SECONDS) throw new UsageError(`--clear takes 0..${MAX_CLEAR_SECONDS} seconds; got ${clearSeconds}`, { flag: 'clear' });
+  const out = stringFlag(args.flags, 'out');
+  if (out === '-') throw new UsageError('--out takes a file path; got "-", as in: say "bench check" --out tx.wav', { flag: 'out' });
+  const rehearse = args.flags.get('rehearse') === true;
+  return transmit(args, { ...transmitOptions(args), text, maxSeconds, clearSeconds, out, rehearse });
+}
+
+async function idVerb(args: Invocation): Promise<number> {
+  checkFlags('id', args.flags, flagNames('id'));
+  const options = transmitOptions(args);
+  return transmit(args, { ...options, text: idSentence(options.callsign), idOnly: true, maxSeconds: DEFAULT_MAX_SECONDS, clearSeconds: 0 });
+}
+
 /** Name a dump file from the local time, as in uv5r-2026-10-12T14-03-09.img. */
 function defaultDumpName(now = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -1086,14 +1288,14 @@ async function main(args: Invocation): Promise<number> {
  * Run one command line and set process.exitCode; errors go to stderr as JSON or text.
  * The process exits on its own once stdout and stderr drain, so piped output arrives whole.
  */
-export async function cli(argv: string[], open: OpenTransport = openSerial): Promise<void> {
+export async function cli(argv: string[], open: OpenTransport = openSerial, deps: SpeechDeps = defaultSpeechDeps()): Promise<void> {
   // Read --json from argv so an error from parseArgs keeps the requested format.
   const end = argv.indexOf('--');
   let flags = new Map<string, string | true>((end < 0 ? argv : argv.slice(0, end)).includes('--json') ? [['json', true]] : []);
   try {
     const args = parseArgs(argv, BOOLEAN_FLAGS);
     flags = args.flags;
-    process.exitCode = await main({ ...args, open });
+    process.exitCode = await main({ ...args, open, deps });
   } catch (err) {
     const error = err instanceof BaofengError ? err : new UnexpectedError(err instanceof Error ? err.message : String(err));
     if (wantsJson(flags)) process.stderr.write(`${JSON.stringify(error)}\n`);

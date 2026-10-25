@@ -75,6 +75,17 @@ const CLIP_FRACTION = 0.01;
 
 export const CLIP_WARNING = 'input clips: turn the volume knob down';
 
+/** An astats measure that parseAstats reads. */
+export type AstatsMeasure = keyof typeof SERIES;
+
+/**
+ * astats filter that sets the overall `measures` as frame metadata for ametadata=print.
+ * reset 1 starts each frame afresh; reset 0 accumulates, so the last frame covers the whole input.
+ */
+export function astatsFilter(measures: readonly AstatsMeasure[], reset: 0 | 1 = 1): string {
+  return `astats=metadata=1:reset=${reset}:measure_perchannel=none:measure_overall=${measures.join('+')}`;
+}
+
 /** Duration to pass to `-t` so that at least `seconds` whole frames come back. */
 export function captureSeconds(seconds: number): number {
   return Math.ceil(seconds / RATIO) + PAD_SECONDS;
@@ -100,9 +111,9 @@ export function ffmpegArgs(device: string, seconds: number, out?: string): strin
     [
       `aformat=sample_fmts=flt:sample_rates=${RATE}:channel_layouts=mono`,
       `asetnsamples=n=${RATE}:p=0`,
-      'astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=Min_level+Max_level+Peak_count',
+      astatsFilter(['Min_level', 'Max_level', 'Peak_count']),
       `highpass=f=${HIGHPASS_HZ}`,
-      'astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=Peak_level+RMS_level+Number_of_samples',
+      astatsFilter(['Peak_level', 'RMS_level', 'Number_of_samples']),
       'ametadata=print',
     ].join(','),
     '-f',
@@ -224,10 +235,11 @@ export async function listen(device: string, seconds: number, floorDbfs = DEFAUL
   return { ...result, out };
 }
 
-type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
+/** The error execFile passes to its callback. */
+export type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
 
 /** Describe how a child process run with a `timeoutMs` timeout failed. */
-function exitHow(e: ExecError, timeoutMs: number): string {
+export function exitHow(e: ExecError, timeoutMs: number): string {
   if (e.killed && e.signal) return `timed out after ${timeoutMs / 1000}s`;
   return e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
 }
@@ -265,6 +277,29 @@ export function play(file: string, seconds: number): Promise<void> {
 /** The dependency-missing error for an ffmpeg absent from PATH. */
 export function ffmpegMissing(): TransportError {
   return new TransportError('dependency-missing', 'ffmpeg not found on PATH; install it with brew install ffmpeg', {}, { remedy: 'run brew install ffmpeg' });
+}
+
+/**
+ * Run ffmpeg with `args` and resolve its stderr on exit 0. Reject with dependency-missing
+ * when ffmpeg is absent from PATH and with audio-process-failed naming `what` on any other
+ * failure, a run past `timeoutMs` included.
+ */
+export function runFfmpeg(args: string[], what: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('ffmpeg', args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
+      const e = err as ExecError | null;
+      if (!e) {
+        resolve(String(stderr ?? ''));
+        return;
+      }
+      if (e.code === 'ENOENT') {
+        reject(ffmpegMissing());
+        return;
+      }
+      const tail = stderrTail(String(stderr ?? ''));
+      reject(new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, timeoutMs)} ${what}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null }));
+    });
+  });
 }
 
 /**

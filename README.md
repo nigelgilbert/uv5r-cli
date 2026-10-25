@@ -4,7 +4,8 @@
 
 Control a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable from the
 command line: put a frequency in a memory channel, read the radio's state, back up and
-restore its memory, listen to receive audio and key PTT.
+restore its memory, listen to receive audio, key PTT, and speak text over the air ending
+with the station callsign.
 
 Phase 1 of the sweep-and-listen bench: the sibling `tinysa-cli` sweeps, this CLI points the
 radio at what the sweep finds. The phase 2 sequencer lives on top of both.
@@ -47,14 +48,14 @@ through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
 `uv5r sweep PLAN --out-dir DIR` renames each capture into DIR after its dwell.
 
 A radio verb runs one or more short clone sessions. `sweep` runs one per write, `settings`
-with pairs and `restore` add a verification session, and `key` opens no session. The
-receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the
-handshake retry. Run one verb at a time. Do not open, `cat`, `screen` or `stty` the serial
-port.
+with pairs and `restore` add a verification session, and `key`, `say` and `id` open no
+session. The receiver is deaf during a clone session. Back-to-back verbs take about 3 s
+longer for the handshake retry. Run one verb at a time. Do not open, `cat`, `screen` or
+`stty` the serial port.
 
-`key` raises PTT on the channel the radio display shows. The CLI cannot read that channel,
-and a receive-only slot radiates nothing. Key only when the human asked and the frequency is
-one they may transmit on, after asking the human what the display shows.
+`key`, `say` and `id` raise PTT on the channel the radio display shows. The CLI cannot read
+that channel, and a receive-only slot radiates nothing. Key only when the human asked and the
+frequency is one they may transmit on, after asking the human what the display shows.
 
 ## Verbs
 
@@ -68,6 +69,8 @@ one they may transmit on, after asking the human what the display shows.
 | `read` | no | one clone session | `channel`, record keys; `empty` for an empty slot; `malformed` and `raw`, the record bytes as hex, for a record whose frequency bytes are not valid BCD |
 | `erase` | 0xFF over the record and name of slot N | one clone session | `channel`, `empty`, `appliesAfterSeconds` |
 | `key` | no; raises PTT | `--seconds` | `pttAsserted`, `seconds`, `released`; `interrupted` on a signal |
+| `say` | no; raises PTT | synthesis, then the padded WAV plus `--tail` | `text`, `spoken`, `identified`, `seconds`, `peakDbfs`, `rmsDbfs`, `device`, `pttAsserted`, `released`; `interrupted` and `idOwed` on a signal |
+| `id` | no; raises PTT | about 5 s | the `say` keys with `spoken` set to the phonetic callsign |
 | `dump` | no; writes the image file | about 14 s | `out`, `bytes`, `firmware`, `family`, `magic` |
 | `restore` | channels, names and settings from the image. On post-291 firmware the ident encodes the band limits, so a restore after a band-limit change exits 5 with `image-incompatible`; dump again first | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
 | `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
@@ -91,17 +94,19 @@ during the check) and `requestedMhz` (the entry frequency, or the `checkMhz` fre
 the check). `summary.slot0` says whether a write landed. A failed check also carries
 the check result fields.
 
-On SIGINT, SIGTERM, SIGHUP or SIGTSTP (Ctrl-Z) once `key` or `sweep` has opened the port, the
-verb prints its result on stdout with `interrupted` and no error, and exits 128 plus the
-signal number. SIGTSTP exits 146 on macOS and 148 on Linux. A failed PTT release after the
-signal exits 3 with `interrupted` in the error. Other verbs end on a signal with no output.
+On SIGINT, SIGTERM, SIGHUP or SIGTSTP (Ctrl-Z) once `key`, `say`, `id` or `sweep` has opened
+the port, the verb prints its result on stdout with `interrupted` and no error, and exits 128
+plus the signal number. SIGTSTP exits 146 on macOS and 148 on Linux. A `say` or `id` result
+after a signal adds `idOwed`; `true` means audio went out without the full ID, so identify by
+voice or run `uv5r id`. A failed PTT release after the signal exits 3 with `interrupted` in
+the error. Other verbs end on a signal with no output.
 An uncaught error lowers PTT on any open port and exits 1.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
 `UV5R_MAGIC=NAME` opens every clone session with another classic magic: `291`, the default,
 `ORIG`, `UV82`, `A58` or `UV5G`. An unknown or unsupported name exits 2 before the port
-opens. `key`, `listen` and `help` ignore it. `status` and `dump` report the `magic` that
+opens. `key`, `say`, `id`, `listen` and `help` ignore it. `status` and `dump` report the `magic` that
 answered and the radio `family`, which reads `unknown` when the magic and firmware string
 do not settle it.
 
@@ -148,6 +153,63 @@ after setting the knob.
 
 ffmpeg 9 on macOS 26 returns about 88 percent of the `-t` length as samples. The CLI asks
 ffmpeg for `ceil(seconds / 0.88) + 2`, which also covers the first second the CLI drops.
+
+## Transmit audio
+
+You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C. Each transmission ends with the callsign from uv5r.json. A stock UV-5R is not certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and control operator.
+
+`uv5r say "bench check, over"` speaks the text and ends with the ID sentence, as in "This is
+Kilo, Juliett, Seven, Alfa, Bravo, Charlie". `uv5r id` sends the ID sentence alone. Both run
+these steps:
+
+1. Read the station config. No callsign exits 2 with `station-unconfigured`.
+2. Synthesize the text and the ID sentence with macOS `say -v Samantha` at 48 kHz.
+3. Filter and pad in one ffmpeg pass: a 300 Hz high-pass that keeps energy out of the CTCSS
+   band, a 3 kHz low-pass, `alimiter`, `--lead` of leading silence (300 ms; use 500 for
+   repeaters) and 0.3 s of trailing silence.
+4. Measure peak and RMS over the whole WAV. Digital zero exits 3 with
+   `speech-engine-failed`. The padded WAV plus `--tail` past `--max-seconds` (30, at most 55)
+   exits 2 with `utterance-too-long`.
+5. Resolve the output index from the audiotoolbox device list by name or UID. When the AIOC
+   input and output share a name, the output is the one whose UID ends in `:1`. An absent
+   device exits 3 with `audio-device-unavailable`.
+6. With `say --clear S`, listen S seconds on the input device and exit 5 with
+   `channel-busy` when a 20 ms frame reads above -50 dBFS.
+7. Open the port, raise PTT, play the WAV with `ffmpeg -f audiotoolbox`, hold PTT for
+   `--tail` (400 ms) and release.
+
+Every check runs before the port opens. `identified` is true when the player exits 0, since
+the ID ends the WAV. A player failure while keyed exits 3 with `audio-process-failed`,
+`retry: no`, `pttAsserted`, `released`, `playedSeconds` and `idOwed`. A player that runs past
+the padded WAV plus `--tail` plus 5 s loses PTT at the watchdog and exits 3 the same way.
+
+`say --rehearse` runs steps 1 to 4, then plays the WAV through the system default output
+with `afplay` and the port closed. With PTT low and VOX off it radiates nothing. Run it
+before the first transmission of a session. `--out FILE` keeps the conditioned WAV.
+
+The AIOC applies the macOS output volume of its device before the DAC, so the transmit
+level follows that volume. The `--max-seconds` cap assumes the UV-5R default TOT of 60 s;
+lower it on a radio set to a shorter TOT.
+
+## Station config
+
+`say` and `id` read the callsign from `uv5r.json` at the repo root. `uv5r.example.json`
+shows the shape:
+
+```json
+{
+  "callsign": "KJ7ABC",
+  "outputDevice": "AIOC Audio",
+  "inputDevice": "AIOC Audio",
+  "model": "models/ggml-base.en-q5_1.bin"
+}
+```
+
+`--config FILE` names another file, then `UV5R_CONFIG`, then `uv5r.json`. A file named by
+`--config` or `UV5R_CONFIG` has to exist. Unknown keys are ignored. A file that fails to
+parse, or a key of the wrong type, exits 2 with `invalid-argument`. `callsign` takes letters
+and digits. `outputDevice` sets the `--output` default and `inputDevice` the device
+`say --clear` listens on; both default to `AIOC Audio`.
 
 ## Protocol notes from the bench
 

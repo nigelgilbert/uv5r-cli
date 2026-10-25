@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { signalExitCode } from '../../src/cli/exit.ts';
-import { cli, fatal, type OpenTransport } from '../../src/cli/main.ts';
+import { cli, fatal, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
 import { PRIMARY } from '../core/golden.ts';
 
@@ -29,6 +29,8 @@ const REASON_ENUM = [
   'audio-process-failed',
   'capture-incomplete',
   'file-write-failed',
+  'speech-engine-failed',
+  'audio-device-unavailable',
   'session-unavailable',
   'protocol-reply-invalid',
   'radio-unsupported',
@@ -37,7 +39,10 @@ const REASON_ENUM = [
   'image-incompatible',
   'audio-inactive',
   'squelch-open',
+  'channel-busy',
   'invalid-argument',
+  'station-unconfigured',
+  'utterance-too-long',
   'device-busy',
   'serial-timeout',
   'unexpected-error',
@@ -197,9 +202,11 @@ describe('help', () => {
       scratchSlot: expect.stringContaining('Slot 0'),
       channel: CHANNEL_RULE,
       oneVerb: 'Run one verb at a time. Do not open, cat, screen or stty the serial port.',
-      clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.',
+      clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry. key, say and id open no clone session.',
       speaker:
         'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or by playing the WAVs in sweep --out-dir DIR after the run.',
+      transmit: TRANSMIT_RULE,
+      station: expect.stringContaining('UV5R_CONFIG'),
     });
     expect(Object.keys(help.exitCodes)).toEqual(['0', '1', '2', '3', '4', '5', '6', '128+signal']);
     expect(help.errors.format).toContain('reason');
@@ -207,7 +214,7 @@ describe('help', () => {
     expect(help.errors.format).toContain('when output is JSON, piped or with --json');
     expect(help.errors.format).toContain('On a terminal it prints the message and a remedy line as text.');
     expect(help.errors.format).toContain(
-      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
+      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key, say, id or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
     );
     expect(help.errors.format).toContain('A failed PTT release after the signal exits 3 with interrupted in the error.');
     expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check).');
@@ -215,7 +222,7 @@ describe('help', () => {
     for (const line of Object.values(help.errors.reasons)) expect(line).toMatch(/^exit \d: /);
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
-    expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'dump', 'restore', 'settings', 'listen', 'sweep']);
+    expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'sweep']);
     const flag = (verb: string, name: string) => help.verbs[verb].flags.find((f: { flag: string }) => f.flag === name);
     expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--device', '--json', '--target']);
     expect(flag('sweep', '--seconds').default).toBe(30);
@@ -273,7 +280,7 @@ describe('help', () => {
     const line = stderr.join('');
     expect(Buffer.byteLength(line)).toBeLessThan(300);
     expect(errJson().message).toBe(
-      'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, dump, restore, settings, listen, sweep; run uv5r help VERB',
+      'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, say, id, dump, restore, settings, listen, sweep; run uv5r help VERB',
     );
     expect(line).not.toContain('usage:');
     expect(line).not.toContain('exit codes');
