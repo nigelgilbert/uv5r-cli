@@ -21,7 +21,7 @@ The boxes are ticked on that basis. `FakeRadio.fromImage` defaults `magic` to 29
 ### 002 Golden loader and unit identity test: b005a73
 
 - `src/core/radio.ts`, `src/core/index.ts`: export `IMAGE_AUX = 0x1808` next to `IMAGE_HEADER`.
-- `test/core/golden.ts` (new): reads the manifest and images into `GOLDEN` and `PRIMARY`; exports `AUX_SIZE`, `ManifestUnit`, `DisplayedSlot` and `GoldenUnit`. It checks each image length.
+- `test/core/golden.ts` (new): reads the manifest and images into `GOLDEN` and `PRIMARY`; exports `AUX_SIZE` and `GoldenUnit`. It checks each image length.
 - `test/core/golden.test.ts` (new): one case per unit for ident, firmware and aux sha256, plus a distinct-aux case.
 - A one-bit change in the aux block of each unit fails that unit's case only. The agent checked this on a scratch copy.
 

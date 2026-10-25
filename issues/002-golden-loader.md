@@ -26,7 +26,7 @@ Follow the style of `test/core/fake.ts`: one-sentence doc comments, no new depen
 
 ## Acceptance criteria
 
-- [x] `npm test` runs the golden test with 4 identity cases and 1 distinct-units case, all passing.
+- [x] `npm test` runs the golden test with 3 identity cases and 1 distinct-units case, all passing.
 - [x] Changing one byte in the aux block of any image makes the test fail.
 - [x] `npm run typecheck` passes.
 - [x] `test/core/imports.test.ts` passes with the new helper.

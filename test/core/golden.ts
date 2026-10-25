@@ -8,7 +8,7 @@ const DIR = new URL('../../fixtures/golden/', import.meta.url);
 export const AUX_SIZE = 0x140;
 
 /** A slot the radio showed on its display when the unit was dumped. */
-export interface DisplayedSlot {
+interface DisplayedSlot {
   slot: number;
   displayNumber: number;
   mdf: string;
@@ -17,7 +17,7 @@ export interface DisplayedSlot {
 }
 
 /** One entry of `units` in `fixtures/golden/manifest.json`. */
-export interface ManifestUnit {
+interface ManifestUnit {
   label: string;
   image: string;
   dumped: string;
@@ -74,5 +74,5 @@ export const GOLDEN: GoldenUnit[] = manifest.units.map((unit) => {
   return { label: unit.label, image: readImage(unit.image), manifest: unit, expectedFile, expected: readExpected(expectedFile) };
 });
 
-/** Unit 1, the radio the older fixture came from. */
+/** Unit 1, the radio the CLI and protocol tests use. */
 export const PRIMARY: GoldenUnit = GOLDEN.find((unit) => unit.label === '1')!;

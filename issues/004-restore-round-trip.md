@@ -30,7 +30,7 @@ Put the `fromImage` tests in `protocol.test.ts`. One runs on `PRIMARY`. One runs
 ## Acceptance criteria
 
 - [x] `grep -rn "2026-10-12" test/core` prints nothing.
-- [x] The restore round trip runs 4 cases, one per unit, all passing.
+- [x] The restore round trip runs 3 cases, one per unit, all passing.
 - [x] A test asserts `FakeRadio.fromImage` reads back the image ident and firmware, on `PRIMARY` and on the changed copy.
 - [x] `npm test` and `npm run typecheck` pass.
 
