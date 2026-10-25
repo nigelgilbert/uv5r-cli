@@ -20,7 +20,7 @@ const PROGRAM_LENGTH = 16;
 const CLASSIC_RATE = 9600;
 /** Baud of the program magics. */
 const PROGRAM_RATE = 115200;
-/** End of main memory, the part of a CHIRP image after the ident. */
+/** Radio address where main memory ends. */
 const MAIN_END = IMAGE_AUX - IMAGE_HEADER;
 /** Address of the 14-byte version string. */
 const VERSION_AT = ADDR.firmwareBlock + VERSION_OFFSET;

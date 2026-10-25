@@ -8,7 +8,7 @@
       "firmware": "HN5RV011",
       "magic": "291",
       "auxSha256": "7a5252d198f8da8e14821172b62debbee83895c14f7b7d32f58165b6d87f96c1",
-      "notes": "2026-10-12 fixture radio. MDF-A and MDF-B are Frequency. Power-on display: message.",
+      "notes": "Fixture radio from 2026-10-12. MDF-A and MDF-B are Frequency. Power-on display: message. No names programmed.",
       "displayed": [
         {
           "slot": 1,
@@ -38,7 +38,7 @@
       "firmware": "HN5RV011",
       "magic": "291",
       "auxSha256": "8cfb06c41b7b4d98cd0ba6074c79b3946d656fd03a79503b84ccc136ee04d56b",
-      "notes": "MDF-A and MDF-B are Frequency. Names are programmed on slots 0 to 13; slot 127 has none. Power-on display: full.",
+      "notes": "MDF-A and MDF-B are Frequency. Power-on display: full. Names on slots 0 to 13. Slot 127 has no name.",
       "displayed": [
         {
           "slot": 1,
@@ -68,7 +68,7 @@
       "firmware": "HN5RV011",
       "magic": "291",
       "auxSha256": "807e4ce9f53da741cf93ccedbb3eb409df05604b5a8421651b756f48d7205269",
-      "notes": "UV-5R 25th anniversary edition, transparent housing. Factory reset on 2026-10-25 before the dump; the BAOFENG 25TH power-on text survived in the aux block but the power-on display setting is full, so it stays hidden until menu 38 is set to MSG. MDF-A and MDF-B are Frequency. On the AIOC the data contact only lands with the plug pressed in and tilted; receive audio comes through at any seating.",
+      "notes": "UV-5R 25th anniversary edition with a transparent housing. Factory reset on 2026-10-25 before the dump. MDF-A and MDF-B are Frequency. Power-on display: full. The aux block holds the BAOFENG 25TH power-on text. No names programmed. On the AIOC the data contact lands only with the plug pressed in and tilted. Receive audio passes at any seating.",
       "displayed": [
         {
           "slot": 0,
@@ -88,7 +88,7 @@
   "skipped": [
     {
       "label": null,
-      "notes": "Third radio dumped on 2026-10-25: HN5RV011 on magic 291, aux block identical to unit 1 (sha256 7a5252d1...), channel memory differs. Left out of the set because the aux block adds nothing new. Dump kept off the repo."
+      "notes": "Fourth radio, dumped on 2026-10-25. HN5RV011 on magic 291. Channel memory differs from unit 1. Left out because its aux block matches unit 1 (sha256 7a5252d1...). Dump kept off the repo."
     }
   ]
 }

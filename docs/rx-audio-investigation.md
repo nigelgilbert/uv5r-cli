@@ -59,13 +59,13 @@ Decoded with CHIRP's `uv5r.py` settings struct at 0x0E20:
 | 0x0E2E | voice | 1 (English) | 0 (off) |
 | 0x0E30 | dtmfst | 3 | 0 |
 | 0x0E34 | pttlt | 5 | 0 |
-| 0x0E35 | mdfa | 2 (name, see correction) | 2 (name, see correction) |
+| 0x0E35 | mdfa | 2 (Frequency) | 2 (Frequency) |
 | 0x0E36 | mdfb | 2 | 0 |
 | 0x0E3D..3F | wtled, rxled, txled | 3, 1, 2 | 0, 0, 0 |
 
-Correction, 2026-10-25: `mdfa` and `mdfb` value 2 is Frequency. CHIRP's `MODE_LIST` in
-`uv5r.py` orders the display modes Channel, Name, Frequency. The "(name)" labels above come
-from the earlier CLI table.
+Value 2 of `mdfa` and `mdfb` is Frequency. CHIRP's `MODE_LIST` in `uv5r.py` orders the
+display modes Channel, Name, Frequency. Before 2026-10-25 this table labelled value 2 as name,
+copied from the earlier CLI table.
 
 The live 0x0E30 block is a zero-filled buffer with only `mdfa` set. The deleted
 `CODE_REVIEW.md` in the first commit lists `ADDR.tdr`, `ADDR.mdfa`, `ADDR.mdfb`,

@@ -108,7 +108,7 @@ export function radioUnsupported(radio: string, magic: string, got: string): Dev
   return new DeviceStateError('radio-unsupported', `the radio answered as a ${radio}; this CLI speaks the classic UV-5R protocol`, { radio, magic, got });
 }
 
-/** Return the version bytes `version` as text with bytes outside 0x20..0x7E dropped, trimmed. */
+/** Return `version` as trimmed text with bytes outside 0x20..0x7E dropped. */
 export function firmwareText(version: Uint8Array): string {
   return Buffer.from(version)
     .toString('latin1')

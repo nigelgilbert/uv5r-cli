@@ -377,7 +377,7 @@ export async function readChannel(s: Session, n: number): Promise<Channel | Malf
   return decodeSlot(mem, name);
 }
 
-/** Decode a channel record and its name record; a record with a 0xFF first byte gives undefined and a record with bad BCD gives a MalformedRecord. */
+/** Decode a channel record and its name record. Return undefined for a 0xFF first byte and a MalformedRecord for bad BCD. */
 export function decodeSlot(mem: Uint8Array, name: Uint8Array): Channel | MalformedRecord | undefined {
   const ch = decodeChannel(mem, name);
   if (ch === undefined && mem[0] !== 0xff) return { malformed: true, raw: hex(mem) };
