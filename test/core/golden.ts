@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import type { Settings } from '../../src/core/codec.ts';
 import type { MagicName } from '../../src/core/ident.ts';
 import { IMAGE_AUX, type ChannelResult } from '../../src/core/radio.ts';
@@ -39,15 +39,13 @@ export interface Expected {
   slots: ChannelResult[];
 }
 
-/** A golden unit with its image bytes, manifest entry and decoded expectations. */
+/** A golden unit with its image bytes, manifest entry and snapshot path. */
 export interface GoldenUnit {
   label: string;
   image: Uint8Array;
   manifest: ManifestUnit;
   /** Path of `unit-<n>.json` relative to the golden directory. */
   expectedFile: string;
-  /** Undefined until a `vitest -u` run writes `expectedFile`. */
-  expected: Expected | undefined;
 }
 
 /** Read `name` from the golden directory and check it holds IMAGE_AUX + AUX_SIZE bytes. */
@@ -59,19 +57,12 @@ function readImage(name: string): Uint8Array {
   return image;
 }
 
-/** Read `name` from the golden directory, or return undefined when it does not exist. */
-function readExpected(name: string): Expected | undefined {
-  const url = new URL(name, DIR);
-  if (!existsSync(url)) return undefined;
-  return JSON.parse(readFileSync(url, 'utf8')) as Expected;
-}
-
 const manifest = JSON.parse(readFileSync(new URL('manifest.json', DIR), 'utf8')) as { units: ManifestUnit[] };
 
 /** Every unit in the manifest, in manifest order. */
 export const GOLDEN: GoldenUnit[] = manifest.units.map((unit) => {
   const expectedFile = unit.image.replace(/\.img$/, '.json');
-  return { label: unit.label, image: readImage(unit.image), manifest: unit, expectedFile, expected: readExpected(expectedFile) };
+  return { label: unit.label, image: readImage(unit.image), manifest: unit, expectedFile };
 });
 
 /** Unit 1, the radio the CLI and protocol tests use. */

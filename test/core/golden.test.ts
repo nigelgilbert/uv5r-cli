@@ -49,8 +49,8 @@ function masked(record: Uint8Array): string {
   return hex(record.map((b, i) => b & ROUND_TRIP_MASKS[i]!));
 }
 
-/** Every manifest `displayed` entry with the label and expectations of its unit. */
-const DISPLAYED = GOLDEN.flatMap(({ label, manifest, expected }) => manifest.displayed.map((entry) => ({ label, slot: entry.slot, entry, expected })));
+/** Every manifest `displayed` entry with the label and image of its unit. */
+const DISPLAYED = GOLDEN.flatMap(({ label, manifest, image }) => manifest.displayed.map((entry) => ({ label, slot: entry.slot, entry, image })));
 
 describe('golden set', () => {
   it('holds units 1, 2 and 3 with distinct images and a displayed slot each', () => {
@@ -74,10 +74,10 @@ describe('golden set', () => {
     await expect(`${JSON.stringify(decodeImage(image), null, 2)}\n`).toMatchFileSnapshot(`../../fixtures/golden/${expectedFile}`);
   });
 
-  it.each(DISPLAYED)('unit $label slot $slot matches the radio display', ({ entry, expected }) => {
-    if (expected === undefined) throw new Error('run vitest -u to write the unit JSON, then check it against the radio display');
+  it.each(DISPLAYED)('unit $label slot $slot matches the radio display', ({ entry, image }) => {
+    const expected = decodeImage(image);
     const slot = expected.slots.find((s) => s.channel === entry.slot);
-    if (slot === undefined || !('rxMhz' in slot)) throw new Error(`slot ${entry.slot} holds no channel in the unit JSON`);
+    if (slot === undefined || !('rxMhz' in slot)) throw new Error(`slot ${entry.slot} decodes to no channel`);
     // The UV-5R numbers its channels 0 to 127 as the CLI does.
     expect(entry.displayNumber).toBe(entry.slot);
     expect(entry.mdf).toBe(expected.settings.mdfa);
