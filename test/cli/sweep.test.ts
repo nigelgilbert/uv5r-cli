@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIP_WARNING, listen, type ListenResult } from '../../src/cli/audio.ts';
-import { BusyError, KEY_SIGNALS, readPlan, TransportError } from '../../src/core/index.ts';
+import { BusyError, KEY_SIGNALS, magicByName, readPlan, TransportError } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { captureName, dwell, newProgress, runSweep, slotZero, type SweepSteps } from '../../src/cli/sweep.ts';
 import { FakeRadio } from '../core/fake.ts';
@@ -34,6 +34,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   listenMock.mockReset();
   process.exitCode = undefined;
 });
@@ -117,6 +118,16 @@ function planFile(plan: object): string {
 }
 
 describe('sweep', () => {
+  it('opens the check session and every slot 0 session with the magic UV5R_MAGIC names', async () => {
+    vi.stubEnv('UV5R_MAGIC', 'UV82');
+    const radio = new FakeRadio();
+    radio.magics = [magicByName('UV82').bytes];
+    listenMock.mockImplementation(async (_device, seconds) => heard(seconds, seconds));
+    await run([...SWEEP, '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(radio.handshakes).toEqual(new Array(1 + PLAN_CHANNELS.length).fill('50 bb ff 20 13 01 05'));
+  });
+
   it('runs a 5 s check, then writes each entry into slot 0 and dwells 30 s, with no flags and piped stdin', async () => {
     const stdin = stubStdin();
     const radio = new FakeRadio();

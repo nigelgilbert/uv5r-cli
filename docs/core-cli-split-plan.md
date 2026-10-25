@@ -8,13 +8,13 @@ open.
 Divide `src/` into a `core` area that talks to the radio and a `cli` area that parses
 arguments, prints and exits. `core` becomes an npm module later. Adjacent modules such as TTS
 build on `core` and are used by `cli`. The device handshake work in
-[clone-protocol-plan.md](clone-protocol-plan.md) lands inside `core` after this split.
+`uv5r identify` lands inside `core` after this split.
 
 Every verb keeps its output, its timing and its exit codes. The test suite proves the move.
 
 ## Order of the two work items
 
-The split goes first. The handshake plan names `protocol.ts`, `radio.ts` and a new
+The split goes first. The handshake work changes `protocol.ts` and `radio.ts` and adds
 `ident.ts`; moving them after that work lands churns a fresh test tree. The split is a
 mechanical move with no behavior change. The handshake work then touches `core` for the
 engine and `cli` for the `identify` verb, help and README, which exercises the boundary.
@@ -66,7 +66,7 @@ containing `cli/`. `tsconfig.json` keeps one project.
 | `errors.ts` `REASONS` | `core/errors.ts` | The `means` and `remedy` text stays as is. Three remedies name `uv5r` verbs; leave them and list them under follow-ups. |
 | `args.ts` `parseDecimal` | `cli/args.ts` | `codec.ts` and `plan.ts` import it today. Move `parseDecimal` to `core/codec.ts` and have `cli/args.ts` re-export it, so core stops depending on the argument parser. |
 | `radio.ts` `holdPtt` | `core/radio.ts` | Keeps its `EventEmitter` parameter; `cli/main.ts` passes `process`. |
-| `protocol.ts` `MAGIC` | `core/protocol.ts` | `test/core/fake.ts` imports it from there. The handshake work moves it into `ident.ts`. |
+| `protocol.ts` `MAGIC` | `core/protocol.ts` | `test/core/fake.ts` imports it from there. The handshake work deletes it; tests use `magicByName('291').bytes`. |
 
 Everything else moves to the directory named in the layout with its imports rewritten.
 
@@ -86,8 +86,8 @@ file under `src/cli/` import `../core/index.ts`.
 
 ## Where the handshake engine lands
 
-The handshake plan uses the `src/core/`, `src/cli/`, `test/core/` and `test/cli/` paths. It
-stays as written with these changes:
+The handshake engine lives in `src/core/protocol.ts`, `src/core/ident.ts` and
+`src/core/radio.ts`:
 
 - `Session.start(magic)` stays in `core/protocol.ts`. The constructor keeps taking a
   `Transport`; `start` takes the magic. A constructor runs no I/O, so the handshake stays in
@@ -95,9 +95,11 @@ stays as written with these changes:
 - `selectedMagic()` reads `UV5R_MAGIC` in `cli/main.ts` and passes the magic into
   `withSession(t, fn, { magic })` and `startFreshSession(t, { magic })`. Environment variables
   are a CLI concern; `core` takes options.
-- The `identify` scan is a `core/radio.ts` function `identify(transport, onAttempt)` that
-  returns the result object. The verb in `cli/main.ts` prints the per-attempt lines from the
-  callback and maps the result to stdout.
+- The `identify` scan is a `core/radio.ts` function
+  `identify(transport, onAttempt, { magic })` that returns the result object. `magic` goes
+  first in the scan and sets `pin`; without it 291 goes first. The verb in `cli/main.ts`
+  passes `selectedMagic()`, prints the per-attempt lines from the callback and maps the
+  result to stdout.
 - The classification result lives on `Session.ident` as `family` and `flags`. Operations in
   `core/radio.ts` read the flags for firmware-dependent behavior (dropped byte, voice list,
   DTMF table).
@@ -108,8 +110,7 @@ Each item ends with `npm run typecheck` and `npm test` green.
 
 1. Create `src/core/` and `src/cli/`. `git mv` each file to the directory in the layout.
    Rewrite relative imports. Move the tests into `test/core/` and `test/cli/` and fix their
-   paths. Update `vitest.config.ts` to `test/**/*.test.ts` (unchanged) and the `bin` and
-   `uv5r` script in `package.json` to `src/cli/main.ts`.
+   paths. Point the `bin` and `uv5r` script in `package.json` at `src/cli/main.ts`.
 2. Split `errors.ts`: `EXIT`, `exitCodeFor` and `signalExitCode` go to `cli/exit.ts`.
    `cli/main.ts` and `cli/help.ts` import them from there. `test/cli/errors.test.ts` covers
    the exit mapping; the reason table tests stay in `test/core/errors.test.ts`.
@@ -126,7 +127,7 @@ Each item ends with `npm run typecheck` and `npm test` green.
 ## Follow-ups
 
 - Three `REASONS` remedies name `uv5r` verbs: `squelch-open`, the settings verify text and
-  the `session-unavailable` pointer at `identify` from the handshake plan. When `core` ships as
+  the `session-unavailable` pointer at `identify` in `core/protocol.ts`. When `core` ships as
   a module, move the verb names into a `cli` table keyed by reason.
 - `test/core/fake.ts` is useful to anyone building on `core`. Export it as `core/testing`
   when the package exists.

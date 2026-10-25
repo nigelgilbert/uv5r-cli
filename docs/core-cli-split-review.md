@@ -34,12 +34,9 @@ Fix: run `npm install --package-lock-only`. In a temp worktree this changed that
 
 Fixed in 0cd3c4d.
 
-- `docs/rx-audio-investigation.md:97` runs `node src/main.ts dump --out before-repair.img`.
-- `docs/clone-protocol-plan.md:9`, `:129` and `:220` link to `../src/protocol.ts`,
-  `../src/radio.ts` and `../test/fake.ts`.
+`docs/rx-audio-investigation.md:97` runs `node src/main.ts dump --out before-repair.img`.
 
-Fix: point them at `src/cli/main.ts`, `src/core/protocol.ts`, `src/core/radio.ts` and
-`test/core/fake.ts`.
+Fix: point it at `src/cli/main.ts`.
 
 ## 4. The cli half of the import rule is untested
 

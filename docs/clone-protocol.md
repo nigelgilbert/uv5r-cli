@@ -2,7 +2,7 @@
 
 ## 1. Scope and sources
 
-This spec describes the serial clone protocol of the classic Baofeng UV-5R family and the neighbor protocols a radio sold as a "UV-5R" may speak instead. It derives from Chirp at commit `c604141b` (2026-10-17) through four research notes in `docs/chirp-notes/`: `01-handshake.md`, `02-device-id-table.md`, `03-transfer-and-memory.md` and `04-history-and-neighbors.md`. The notes carry the `file:LINE` citations into the Chirp tree. This spec carries only the facts. Facts marked **Bench** were measured on the project's radio: a UV-5R with firmware `HN5RV011`, ident `AA 30 76 04 00 05 20 DD`, on an AIOC cable (USB `1209:7388`). Unmarked facts describe Chirp's behavior.
+This spec describes the serial clone protocol of the classic Baofeng UV-5R family and the neighbor protocols a radio sold as a "UV-5R" may speak instead. It derives from Chirp at commit `c604141b` (2026-10-17) through four research notes that carried `file:LINE` citations into the Chirp tree. The notes are no longer in the repo. Facts marked **Bench** were measured on the project's radio: a UV-5R with firmware `HN5RV011`, ident `AA 30 76 04 00 05 20 DD`, on an AIOC cable (USB `1209:7388`). Unmarked facts describe Chirp's behavior.
 
 Terms:
 
@@ -245,7 +245,7 @@ History. In 2012 Chirp parsed ident bytes 1-6 as `BFB` and a version number. Whe
 
 ### 4.6 Classification procedure
 
-1. Drain input. Try the classic magics in this order: `291`, `ORIG`, `UV82`, `F11`, `UV6`, `UV6_ORIG`, `A58`, `UV5G`. Pace per section 3.4. The first magic that completes the handshake wins. This order is a proposal; Chirp never scans.
+1. Drain input. Try the classic magics in this order: `291`, `ORIG`, `UV82`, `A58`, `UV5G`, `F11`, `UV6`, `UV6_ORIG`. The supported magics run first. Pace per section 3.4. The first magic that completes the handshake wins. Chirp never scans.
 2. If every classic magic fails, probe each foreign magic without the closing `06`. A reply names the foreign radio. Report it and stop.
 3. Narrow the family by the magic that answered:
 
@@ -507,7 +507,7 @@ Rules that follow:
 
 "UV-5R Plus" is ambiguous: the Baofeng UV-5R+ is classic and the Quansheng UV-5R Plus is a UV-K5. "UV-5R Pro 2nd gen" and "UV-5R EX Gen3" have no Chirp entry.
 
-UV17Pro magics:
+UV17Pro magics. The CLI probes the first two, since the others name no radio sold as a UV-5R.
 
 | ASCII | Models |
 |---|---|
@@ -527,20 +527,22 @@ Probe sequence:
 | 1 | 9600 | Classic magic, byte-paced | `06` within 1 s | Chirp has no record of a UV17 or UV17Pro reply at 9600 |
 | 2 | 9600 | `02` after `06` | 8 or 12 bytes, `AA` .. `DD` | 14 bytes `AA` .. `DD`: UV-5X3 or UV-5R-3 |
 | 3 | 9600 | Foreign magics as probes | No `06` | `06` names the radio in section 4.2 |
-| 4 | 115200 | Each 16-byte `PROGRAM...U` magic | - | `06`: UV17Pro family; the magic narrows the model group |
-| 5 | 57600 | `PSEARCH` | - | `06 UV15999`: UV-17 or UV-13Pro. `06 DMR1702`: GA-510 V2. |
-| 6 | 38400 | UV-K5 hello frame | - | Reply starting `AB CD`: Quansheng UV-K5 family |
+| 4 | 115200 | Each of the two 16-byte `PROGRAM...U` magics | - | `06`: UV17Pro family; the magic narrows the model group |
+| 5, Chirp only | 57600 | `PSEARCH` | - | `06 UV15999`: UV-17 or UV-13Pro. `06 DMR1702`: GA-510 V2. |
+| 6, Chirp only | 38400 | UV-K5 hello frame | - | Reply starting `AB CD`: Quansheng UV-K5 family |
+
+The CLI runs steps 1 to 4. A UV-17, UV-13Pro, GA-510 V2 or UV-K5 has no step there, so it gets the same report as a cable fault.
 
 Messages:
 
 | Result | Report |
 |---|---|
-| No byte at step 1, no reply at steps 4-6 | Cable or K1 plug fitment problem |
-| Reply at step 4, 5 or 6 | The detected family, and that this CLI speaks only the classic UV-5R protocol |
+| No reply at steps 1 to 4 | Cable or K1 plug fitment problem, or a radio from step 5 or 6 |
+| Reply at step 3 or 4 | The detected family, and that this CLI speaks only the classic UV-5R protocol |
 | `06` at step 1, 14-byte ident | UV-5X3-type radio |
 | `06` at step 1, ident of another length | Unknown UV-5R variant, with the ident bytes in hex |
 
-After a reply at step 4 or 5 the radio sits in program mode. Chirp has no exit command for either family.
+After a reply at step 4 the radio sits in program mode until power-cycled. Chirp has no exit command for the UV17Pro or UV17 family.
 
 ## 10. Timing constants
 
@@ -579,18 +581,17 @@ After a reply at step 4 or 5 the radio sits in program mode. Chirp has no exit c
 12. What do radio `0x0CF0`-`0x0CFF` and `0x0DF0`-`0x0DFF` hold, and why does the default upload skip them?
 13. What does radio `0x1800`-`0x1EBF` hold? Is it readable?
 14. Does any firmware without `BFB` in its version string use the old band-limit and squelch layout?
-15. Resolved against the source on 2026-10-23: orig radios get the VFO step setting with the 6-entry list. Note 02 section 4.4 and step 6 were corrected.
-16. On a dropped-byte radio, does a full-aux upload restore bytes that the next `0x40` read would corrupt?
-17. Do real tri-power radios report `N5RV` or `N5R2`? A metadata-less image of one would open in Chirp as a two-power UV-5R.
-18. Does `HN5RV01` mark a firmware family spanning UV-82X3, UV-5G, UV-5G Pro and the UV-5R? The bench UV-5R reports `HN5RV011`.
-19. A radio that ACKs `A58` may be a BF-F8HP or a WP970I-family radio. Is the version string enough to separate them?
-20. Does a UV17Pro-family radio emit anything at 9600 when sent a classic magic?
-21. Does a UV17Pro magic at 115200 have any side effect on a classic UV-5R?
-22. After a UV17Pro or UV17 probe, does the radio need a power cycle before the next probe?
-23. The UV17Pro `46` and `4D` replies likely hold model and firmware text. Can they name the exact model?
-24. What protocol do the "UV-5R Pro 2nd gen" and "UV-5R EX Gen3" speak?
-25. Which hardware batches show the `0x1E80` symptom and the dropped byte? Chirp issue #10505 may list them.
-26. The README says writes at `0x0E4C` and `0x0E76`-`0x0E77` are ignored. The bench repair log shows a write of the `0x0E40` block committing the staging buffer. Does the radio apply any byte of the `0x0E40` block, or only treat the write as the commit trigger?
-27. BJ-UV55 in Chirp reads `0x40` bytes at `0x1FF0`, past `0x2000`, and reaches the aux branch with the dropped-byte flag unset. Treat BJ-UV55 as unsupported until a bench capture exists.
-28. Chirp image detection: a `0x1950` image compares a byte slice to a text model name, which appears never to match under Python 3, and a `0x1808` image never auto-detects. Confirm before relying on Chirp-written files of these sizes.
-29. Chirp gates some settings on the model name, so the Tenway UV-82 Pro alias appears to lose the UV-82HP-only settings. Confirm if the CLI ever mirrors Chirp's settings set.
+15. On a dropped-byte radio, does a full-aux upload restore bytes that the next `0x40` read would corrupt?
+16. Do real tri-power radios report `N5RV` or `N5R2`? A metadata-less image of one would open in Chirp as a two-power UV-5R.
+17. Does `HN5RV01` mark a firmware family spanning UV-82X3, UV-5G, UV-5G Pro and the UV-5R? The bench UV-5R reports `HN5RV011`.
+18. A radio that ACKs `A58` may be a BF-F8HP or a WP970I-family radio. Is the version string enough to separate them?
+19. Does a UV17Pro-family radio emit anything at 9600 when sent a classic magic?
+20. Does a UV17Pro magic at 115200 have any side effect on a classic UV-5R?
+21. After a UV17Pro or UV17 probe, does the radio need a power cycle before the next probe?
+22. The UV17Pro `46` and `4D` replies likely hold model and firmware text. Can they name the exact model?
+23. What protocol do the "UV-5R Pro 2nd gen" and "UV-5R EX Gen3" speak?
+24. Which hardware batches show the `0x1E80` symptom and the dropped byte? Chirp issue #10505 may list them.
+25. The README says writes at `0x0E4C` and `0x0E76`-`0x0E77` are ignored. The bench repair log shows a write of the `0x0E40` block committing the staging buffer. Does the radio apply any byte of the `0x0E40` block, or only treat the write as the commit trigger?
+26. BJ-UV55 in Chirp reads `0x40` bytes at `0x1FF0`, past `0x2000`, and reaches the aux branch with the dropped-byte flag unset. Treat BJ-UV55 as unsupported until a bench capture exists.
+27. Chirp image detection: a `0x1950` image compares a byte slice to a text model name, which appears never to match under Python 3, and a `0x1808` image never auto-detects. Confirm before relying on Chirp-written files of these sizes.
+28. Chirp gates some settings on the model name, so the Tenway UV-82 Pro alias appears to lose the UV-82HP-only settings. Confirm if the CLI ever mirrors Chirp's settings set.
