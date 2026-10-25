@@ -58,6 +58,7 @@ export {
   verifySettingsInFreshSession,
   readStatus,
   readChannel,
+  decodeSlot,
   writeChannel,
   eraseChannel,
   dumpImage,

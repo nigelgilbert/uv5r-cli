@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done 2026-10-25
 
 ## Parent
 
@@ -28,11 +28,11 @@ Commit the generated JSON.
 
 ## Acceptance criteria
 
-- [ ] Running `vitest -u` writes four JSON files, and a second `npm test` leaves `git diff` empty.
-- [ ] Each JSON has a settings object and 128 slot entries.
-- [ ] `npm test` passes, including 20 `displayed` checks (5 per unit) and the masked encode round trip on every well-formed slot.
-- [ ] Changing one channel frequency in a JSON file makes the test fail.
-- [ ] `npm run typecheck` passes.
+- [x] Running `vitest -u` writes four JSON files, and a second `npm test` leaves `git diff` empty.
+- [x] Each JSON has a settings object and 128 slot entries.
+- [x] `npm test` passes, including 20 `displayed` checks (5 per unit) and the masked encode round trip on every well-formed slot.
+- [x] Changing one channel frequency in a JSON file makes the test fail.
+- [x] `npm run typecheck` passes.
 
 ## Blocked by
 

@@ -374,6 +374,11 @@ export async function readChannel(s: Session, n: number): Promise<Channel | Malf
   checkChannelNumber(n);
   const mem = await s.readBlock(CHANNEL_BASE + n * 16, 0x10);
   const name = await s.readBlock(NAME_BASE + n * 16, 0x10);
+  return decodeSlot(mem, name);
+}
+
+/** Decode a channel record and its name record; an erased record gives undefined and a record with bad BCD gives a MalformedRecord. */
+export function decodeSlot(mem: Uint8Array, name: Uint8Array): Channel | MalformedRecord | undefined {
   const ch = decodeChannel(mem, name);
   if (ch === undefined && mem[0] !== 0xff) return { malformed: true, raw: hex(mem) };
   return ch;
