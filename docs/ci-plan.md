@@ -33,6 +33,9 @@ non-root user, under CPU contention, and with `CI=true`. It has not run on a Git
 
 An agent does items 1 to 5 on `feature/ci`. Nigel does items 6 to 8.
 
+Leave `src/`, `test/` and `vitest.config.ts` unchanged. If a test fails, report the test name
+and its log excerpt, and stop.
+
 ### 1. Run the suite locally on Node 24
 
 Run `node --version` and confirm it prints v24. Then run:
@@ -98,8 +101,9 @@ gh pr checks --watch
 ```
 
 The PR page shows the check as `ci / test`. On failure, read the log with
-`gh run view <run-id> --log-failed` and diagnose the cause, which may be the workflow or a
-test. Fix it, push, and watch again. After a second failure, stop and report.
+`gh run view <run-id> --log-failed`. If a test failed, report it and stop. If the workflow
+failed, fix `.github/workflows/ci.yml`, push, and watch again. After a second workflow
+failure, stop and report.
 
 ### 5. Add Dependabot and the README lines
 
