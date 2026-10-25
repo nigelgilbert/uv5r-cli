@@ -307,8 +307,8 @@ export const SETTINGS_FIELDS = {
   beep: { offset: 0x08, max: 1, names: ['off', 'on'] },
   timeout: { offset: 0x09, max: 39 },
   voice: { offset: 0x0e, max: 2, names: ['off', 'eng', 'chi'] },
-  mdfa: { offset: 0x15, max: 2, names: ['freq', 'ch', 'name'] },
-  mdfb: { offset: 0x16, max: 2, names: ['freq', 'ch', 'name'] },
+  mdfa: { offset: 0x15, max: 2, names: ['ch', 'name', 'freq'] },
+  mdfb: { offset: 0x16, max: 2, names: ['ch', 'name', 'freq'] },
 } as const satisfies Record<string, SettingField>;
 
 export type SettingName = keyof typeof SETTINGS_FIELDS;

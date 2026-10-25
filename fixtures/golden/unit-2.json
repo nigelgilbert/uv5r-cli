@@ -6,8 +6,8 @@
     "beep": "on",
     "timeout": 3,
     "voice": "eng",
-    "mdfa": "name",
-    "mdfb": "name"
+    "mdfa": "freq",
+    "mdfb": "freq"
   },
   "slots": [
     {

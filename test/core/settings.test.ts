@@ -39,7 +39,7 @@ describe('settings codec', () => {
   it('parses names and menu indexes', () => {
     expect(parseSettingValue('voice', 'ENG')).toBe(1);
     expect(parseSettingValue('beep', 'on')).toBe(1);
-    expect(parseSettingValue('mdfa', 'name')).toBe(2);
+    expect(parseSettingValue('mdfa', 'name')).toBe(1);
     expect(parseSettingValue('squelch', '9')).toBe(9);
     expect(parseSettingValue('timeout', '39')).toBe(39);
   });
@@ -106,7 +106,7 @@ describe('settings write', () => {
     const s = await startSession(radio);
     const block = await drive(writeSettings(s, { squelch: 3, save: 3, abr: 5, beep: 1, timeout: 3, voice: 1, mdfa: 2, mdfb: 2 }));
     expect([...block].filter((_, i) => !FIELD_OFFSETS.has(i)).every((b) => b === 0)).toBe(true);
-    expect(await drive(verifySettingsInFreshSession(radio, block))).toEqual({ squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'name', mdfb: 'name' });
+    expect(await drive(verifySettingsInFreshSession(radio, block))).toEqual({ squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'freq', mdfb: 'freq' });
   });
 });
 
