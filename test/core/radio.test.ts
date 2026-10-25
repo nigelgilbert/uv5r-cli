@@ -395,6 +395,20 @@ describe('identify', () => {
     });
   });
 
+  it('lists an invalid ident on the unsupported F11 in answers and ends with session-unavailable when silence follows', async () => {
+    const radio = radioAcking('F11');
+    radio.identReply = NINE_BYTES;
+    const { result, names } = await scan(radio);
+    expect(names.slice(9, 13)).toEqual(['UV5G silent', 'F11 invalid', 'UV6 silent', 'UV6_ORIG silent']);
+    expect(names).toHaveLength(20);
+    expect((result as BaofengError).toJSON()).toMatchObject({
+      reason: 'session-unavailable',
+      message: expect.stringContaining('F11 invalid aa 30 76 04 00 05 20 00 dd'),
+      retry: 'no',
+      answers: [{ magic: 'F11', outcome: 'invalid', got: 'aa 30 76 04 00 05 20 00 dd' }],
+    });
+  });
+
   it('reports radio-unsupported naming the UV-6 on a UV6 ack, with no closing 06 and no block read', async () => {
     const radio = radioAcking('UV6');
     const write = vi.spyOn(radio, 'write');
@@ -602,13 +616,27 @@ describe('identify', () => {
     });
   });
 
-  it('lists a refused closing 06 in answers and pauses SETTLE_MS before the next magic', async () => {
+  it('lists a refused closing 06 in answers, pauses SETTLE_MS before the next magic and ends with retry once', async () => {
     const radio = new FakeRadio();
     refuseClosingAck(radio);
     const { result, attempts, names } = await scan(radio);
     expect(names.slice(0, 2)).toEqual(['291 refused', 'ORIG silent']);
     expect(attempts[1]!.at - attempts[0]!.at).toBe(SETTLE_MS + SEND_MS);
-    expect((result as BaofengError).toJSON()).toMatchObject({ reason: 'session-unavailable', answers: [{ magic: '291', outcome: 'refused', got: '' }] });
+    expect((result as BaofengError).toJSON()).toMatchObject({
+      reason: 'session-unavailable',
+      remedy: 'wait 3 s and rerun the command',
+      retry: 'once',
+      answers: [{ magic: '291', outcome: 'refused', got: '' }],
+    });
+  });
+
+  it('pauses SETTLE_MS after a wrong ack on the first magic and SCAN_WRONG_ACK_PAUSE_MS after the second', async () => {
+    const radio = new FakeRadio();
+    radio.ackByte = 0x15;
+    const { attempts, names } = await scan(radio);
+    expect(names.slice(0, 3)).toEqual(['291 wrong-ack', '291 wrong-ack', 'ORIG silent']);
+    expect(attempts[1]!.at - attempts[0]!.at).toBe(SETTLE_MS + SEND_MS);
+    expect(attempts[2]!.at - attempts[1]!.at).toBe(SCAN_WRONG_ACK_PAUSE_MS + SEND_MS);
   });
 
   it('tries a stale pinned ORIG first and reports pin UV5R_MAGIC=291 when only 291 acks', async () => {
