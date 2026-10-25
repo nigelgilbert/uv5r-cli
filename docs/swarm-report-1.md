@@ -8,7 +8,7 @@ Tests at the final commit: `npm test` passes 599 tests in 20 files, and `npm run
 
 - **Item 3.** The 291 rejection runs through `new Session(radio).start(magicByName('291'))`. `startSession` drives the promise itself and returns a settled session, so `driveRejection` has nothing to wait on. The test builds a second fake for the rejection because the first is already in a session.
 - **Item 7.** Issue 004 prescribes a `PRIMARY` `fromImage` test that checks the handshake ident and firmware. The test keeps those assertions and is renamed `answers the handshake as PRIMARY and loads its main memory and aux block`. A comment says the changed-copy test covers the ident load, since PRIMARY's ident and firmware match the default constructor. The memory comparisons already fail when `fromImage` returns the default constructor or skips either load. Sol agreed: deleting the assertions would leave issue 004's ticked box false.
-- **Item 2.** Issue 005 states no unit or check count, so it is unchanged. Issue 003 also had "five slots per unit" in its body and "(5 per unit)" in a criterion. Both now give the 3, 3 and 2 split.
+- **Item 2.** Issue 005 states no unit or check count, so it is unchanged. Issue 003 also had "five slots per unit" in its body and "(5 per unit)" in a criterion. The body now says eight slots across the three units and the criterion gives the 3, 3 and 2 split.
 
 ## What landed
 
@@ -20,7 +20,7 @@ CHIRP master, kk7ds/chirp 21e42e4518c1, `chirp/drivers/uv5r.py:298` reads `MODE_
 - `fixtures/golden/unit-1.json` to `unit-3.json`: regenerated. Only `mdfa` and `mdfb` changed, from "name" to "freq".
 - `test/core/settings.test.ts`: `:42` expects 1 for `'name'`. `:109` expects `'freq'` for both fields.
 - `test/core/golden.test.ts`: the displayed check compares `displayNumber` with `slot` and `mdf` with the decoded `mdfa`. The UV-5R numbers channels 0 to 127 as the CLI does; unit 3's entries for slots 0 and 127 confirm it.
-- `docs/rx-audio-investigation.md`: a dated correction note under the settings table. The history is unchanged.
+- `docs/rx-audio-investigation.md`: a dated correction note under the settings table. The history stays, with the `mdfa` cells annotated.
 
 ### Items 3, 6 and 7 fake and protocol tests: 787b2ce
 
@@ -66,7 +66,7 @@ CHIRP master, kk7ds/chirp 21e42e4518c1, `chirp/drivers/uv5r.py:298` reads `MODE_
 
 - `issues/001-radio-survey.md:29-31`: the example manifest entry names unit 1 and shows 162.400 on slot 0. Unit 1's slot 0 is empty; 162.400 is on unit 2.
 - `issues/001-radio-survey.md:24` says the displayed field goes in `rxMhz` or `name`. A `ch` entry displays only `displayNumber`.
-- `docs/review-1.md:9` and `docs/swarm-report-0.md:81` repeat the "names on every one of its 15 slots" claim. Both are records and stay as written.
+- `docs/review-1.md:9` and `docs/swarm-report-0.md:81` claim names on all 15 of unit 2's slots. Both are records and stay as written.
 - Two worktrees from earlier runs remain under `.claude/worktrees/`: `agent-a7c8fe491c985bec9` and `agent-aa0712616e0ffadcc`.
 
 ## Next step
