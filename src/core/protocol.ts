@@ -135,8 +135,8 @@ export class Session {
   /**
    * Open the session with `magic`: up to two attempts SETTLE_MS apart, the second only when
    * the first got silence or a byte other than 06. Then read the firmware block the way CHIRP
-   * does. A 14-byte ident throws radio-unsupported, any other bad ident throws
-   * protocol-reply-invalid, and a refused closing 06 throws session-unavailable at once.
+   * does. A 14-byte ident or a BF-A58 version throws radio-unsupported, any other bad ident
+   * throws protocol-reply-invalid, and a refused closing 06 throws session-unavailable at once.
    * When both attempts fail, the error names the last wrong ack byte from either attempt.
    */
   async start(magic: Magic = DEFAULT): Promise<Ident> {
@@ -163,7 +163,8 @@ export class Session {
 
   /**
    * Run the reads that follow a confirmed handshake with `magic` and ident `bytes`, and
-   * build the ident with the firmware, the dropped-byte flag and the classification.
+   * build the ident with the firmware, the dropped-byte flag and the classification. A
+   * `bf-a58` classification throws radio-unsupported and leaves `ident` unset.
    */
   async finish(magic: Magic, bytes: Uint8Array): Promise<Ident> {
     this.lastCommandAt = Date.now();
@@ -179,6 +180,7 @@ export class Session {
       .replace(/[^\x20-\x7e]/g, '')
       .trim();
     const { family, flags } = classify(magic.name, version, bytes);
+    if (family === 'bf-a58') throw radioUnsupported('Baofeng BF-A58', magic.name, hex(bytes));
     this.ident = { bytes, firmware, firmwareHex: hex(version), droppedByte: tail[15] === 0xff, magic: magic.name, family, flags };
     return this.ident;
   }

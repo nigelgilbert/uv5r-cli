@@ -107,7 +107,7 @@ and the human confirms the radio is on and the cable is seated. It tries each cl
 magics at 9600, then two UV17Pro magics at 115200. In text mode it prints one line per
 attempt with the baud on stderr. Put the `pin` line it prints before every later `uv5r`
 command, as in `UV5R_MAGIC=ORIG uv5r status`. `pin` is `null` when the verbs already open with the magic that
-answered; run later commands with no prefix. An F11, UV6 or UV6_ORIG answer, or an answer to a foreign or 115200 magic,
+answered; run later commands with no prefix. An F11, UV6 or UV6_ORIG answer, a BF-A58 version under A58, or an answer to a foreign or 115200 magic,
 exits 5 with `radio-unsupported` naming the radio. A 115200 answer adds `powerCycle: true`;
 the radio stays in program mode until the human power-cycles it.
 
@@ -119,8 +119,8 @@ ignores them. The CLI does not offer those writes, so the human selects the chan
 session ends after 2.5 s of silence. The radio then reloads from EEPROM and the new
 frequency is live about 3 s after the command ends. When the handshake gets no ack, the CLI
 waits 3 s and retries it once, which covers a session still closing from the previous verb.
-A 14-byte ident names a UV-5X3-type radio, which speaks another protocol; the verb exits 5
-with `radio-unsupported`.
+A 14-byte ident names a UV-5X3-type radio, which speaks another protocol, and a `BFT515` or
+`BFT517` version under A58 names a BF-A58. Either exits 5 with `radio-unsupported`.
 
 Name the channel after the frequency; with menu 21 MDF-A on NAME the display then shows it.
 

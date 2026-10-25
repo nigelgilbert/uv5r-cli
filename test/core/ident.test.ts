@@ -34,7 +34,7 @@ describe('magic table', () => {
   it.each([
     ['291', '50 bb ff 20 12 07 25', ['uv5r', 'bf-f8hp', 'kt-980hp'], true],
     ['ORIG', '50 bb ff 01 25 98 4d', ['uv5r'], true],
-    ['A58', '50 bb ff 20 14 04 13', ['bf-f8hp'], true],
+    ['A58', '50 bb ff 20 14 04 13', ['bf-a58', 'bf-f8hp'], true],
     ['UV82', '50 bb ff 20 13 01 05', ['uv-82', 'uv-82hp', 'uv-82x3'], true],
     ['F11', '50 bb ff 13 a1 11 dd', ['f-11'], false],
     ['UV6', '50 bb ff 20 12 08 23', ['uv-6'], false],
@@ -94,6 +94,7 @@ describe('basetypes', () => {
   const HOME: Record<Exclude<Family, 'unknown' | 'uv-5g'>, MagicName> = {
     uv5r: 'ORIG',
     'bf-f8hp': 'A58',
+    'bf-a58': 'A58',
     'kt-980hp': '291',
     'uv-82': 'UV82',
     'uv-82hp': 'UV82',
@@ -131,6 +132,22 @@ describe('basetypes', () => {
   it('gives uv5r for N5RV with magic 291 and bf-f8hp with A58', () => {
     expect(family('291', 'N5RV')).toBe('uv5r');
     expect(family('A58', 'N5RV')).toBe('bf-f8hp');
+  });
+
+  it.each(['BFT515 ', 'BFT517 '])('gives bf-a58 without triPower for %j with magic A58', (text) => {
+    expect(classify('A58', version(text, 0x20), IDENT)).toMatchObject({ family: 'bf-a58', flags: { basetype: text.trim(), triPower: false } });
+  });
+
+  it('gives bf-f8hp from BFT for another BFT version with magic A58', () => {
+    expect(classify('A58', version('BFT5xx other'), IDENT)).toMatchObject({ family: 'bf-f8hp', flags: { basetype: 'BFT', triPower: true } });
+  });
+
+  it('gives bf-f8hp from BFT for BFT515 with magic 291', () => {
+    expect(classify('291', version('BFT515 '), IDENT)).toMatchObject({ family: 'bf-f8hp', flags: { basetype: 'BFT' } });
+  });
+
+  it('keeps bf-f8hp for blank firmware with magic A58', () => {
+    expect(classify('A58', new Uint8Array(14).fill(0xff), IDENT)).toMatchObject({ family: 'bf-f8hp', flags: { basetype: null } });
   });
 
   it('resolves N5R2 by the magic: uv5r with 291, uv-82hp with UV82', () => {

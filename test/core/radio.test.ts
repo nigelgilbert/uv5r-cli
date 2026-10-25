@@ -266,6 +266,23 @@ describe('handshake', () => {
     expect(radio.handshakes).toEqual(['50 bb ff 20 13 01 05']);
   });
 
+  it('fails with radio-unsupported naming the BF-A58 on a BFT515 version with magic A58 and leaves the ident unset', async () => {
+    const radio = new FakeRadio();
+    const a58 = magicByName('A58');
+    radio.magics = [a58.bytes];
+    radio.firmware = 'BFT515 ';
+    const session = new Session(radio);
+    const err = await settled(session.start(a58));
+    expect((err as BaofengError).toJSON()).toMatchObject({
+      reason: 'radio-unsupported',
+      message: expect.stringContaining('BF-A58'),
+      radio: 'Baofeng BF-A58',
+      magic: 'A58',
+      got: 'aa 30 76 04 00 05 20 dd',
+    });
+    expect(session.ident).toBeUndefined();
+  });
+
   it('stops after the ident without the closing 06 when attempt runs without confirm, magic 291', async () => {
     const radio = new FakeRadio();
     const write = vi.spyOn(radio, 'write');
@@ -393,6 +410,19 @@ describe('identify', () => {
     });
     expect(writesAfterIdentRequest(write)).toEqual([]);
     expect(write.mock.calls.some(([bytes]) => bytes[0] === 0x53)).toBe(false);
+  });
+
+  it('reports radio-unsupported naming the BF-A58 on an A58 ack with a BFT517 version', async () => {
+    const radio = radioAcking('A58');
+    radio.firmware = 'BFT517 ';
+    const { result, names } = await scan(radio);
+    expect(names.at(-1)).toBe('A58 ident');
+    expect((result as BaofengError).toJSON()).toMatchObject({
+      reason: 'radio-unsupported',
+      message: expect.stringContaining('BF-A58'),
+      radio: 'Baofeng BF-A58',
+      magic: 'A58',
+    });
   });
 
   it('ends the scan with radio-unsupported on a 14-byte ident on the second magic', async () => {

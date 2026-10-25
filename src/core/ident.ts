@@ -6,7 +6,7 @@ import { UsageError } from './errors.ts';
  */
 
 /** Radio families the classification can report; `unknown` keeps every verb working. */
-export type Family = 'uv5r' | 'bf-f8hp' | 'kt-980hp' | 'uv-5g' | 'uv-82' | 'uv-82hp' | 'uv-82x3' | 'f-11' | 'uv-6' | 'unknown';
+export type Family = 'uv5r' | 'bf-f8hp' | 'bf-a58' | 'kt-980hp' | 'uv-5g' | 'uv-82' | 'uv-82hp' | 'uv-82x3' | 'f-11' | 'uv-6' | 'unknown';
 
 /** Names of the eight classic magics. */
 export type MagicName = '291' | 'ORIG' | 'A58' | 'UV82' | 'F11' | 'UV6' | 'UV6_ORIG' | 'UV5G';
@@ -25,7 +25,7 @@ const magic = (name: MagicName, bytes: number[], families: Family[], supported =
 export const MAGICS: readonly Magic[] = [
   magic('291', [0x50, 0xbb, 0xff, 0x20, 0x12, 0x07, 0x25], ['uv5r', 'bf-f8hp', 'kt-980hp']),
   magic('ORIG', [0x50, 0xbb, 0xff, 0x01, 0x25, 0x98, 0x4d], ['uv5r']),
-  magic('A58', [0x50, 0xbb, 0xff, 0x20, 0x14, 0x04, 0x13], ['bf-f8hp']),
+  magic('A58', [0x50, 0xbb, 0xff, 0x20, 0x14, 0x04, 0x13], ['bf-a58', 'bf-f8hp']),
   magic('UV82', [0x50, 0xbb, 0xff, 0x20, 0x13, 0x01, 0x05], ['uv-82', 'uv-82hp', 'uv-82x3']),
   magic('F11', [0x50, 0xbb, 0xff, 0x13, 0xa1, 0x11, 0xdd], ['f-11'], false),
   magic('UV6', [0x50, 0xbb, 0xff, 0x20, 0x12, 0x08, 0x23], ['uv-6'], false),
@@ -57,10 +57,12 @@ export const PROGRAM_MAGICS: ReadonlyArray<{ name: string; radio: string; bytes:
 /**
  * Firmware substrings by family in match order, most specific first, after spec section 4.6
  * step 5. `classify` tries only the entries whose family the answering magic lists, so the
- * magic resolves the overlaps of `N5R2` and `N5RV`.
+ * magic resolves the overlaps of `N5R2` and `N5RV`. The `bf-a58` entry runs ahead of `BFT`
+ * and only magic A58 lists it, after spec section 4.2.
  */
 export const BASETYPES: ReadonlyArray<{ family: Family; strings: readonly string[] }> = [
   { family: 'kt-980hp', strings: ['BFP3V3 B'] },
+  { family: 'bf-a58', strings: ['BFT515', 'BFT517'] },
   { family: 'bf-f8hp', strings: ['BFP3V3 F', 'N5R-3', 'N5R3', 'F5R3', 'BFT'] },
   { family: 'uv-82hp', strings: ['N82-3', 'N823'] },
   { family: 'uv-82', strings: ['US2S2', 'B82S', 'BF82', 'N82-2', 'N822'] },
@@ -71,6 +73,9 @@ export const BASETYPES: ReadonlyArray<{ family: Family; strings: readonly string
   { family: 'bf-f8hp', strings: ['N5RV'] },
   { family: 'uv5r', strings: ['BFS', 'BFB', 'N5R-2', 'BTS', 'D5R2', 'B5R2'] },
 ];
+
+/** Families a version string has to name; the no-hit fallback skips them. */
+const NAMED_ONLY: readonly Family[] = ['bf-a58'];
 
 /** Family the HN5RV01 rule gives per magic; the rule runs before the family filter. */
 const HN5RV01 = 'HN5RV01';
@@ -137,7 +142,7 @@ export function parseIdent(reply: Uint8Array): ParsedIdent {
   return { kind: 'invalid' };
 }
 
-/** Return the family and basetype for `version`, keeping a single-family magic's family on no hit. */
+/** Return the family and basetype for `version`; on no hit, keep the magic's one family outside NAMED_ONLY. */
 function matchFamily(m: Magic | undefined, version: string): { family: Family; basetype: string | null } {
   const families = m?.families ?? [];
   const pinned = m ? HN5RV01_FAMILY[m.name] : undefined;
@@ -147,7 +152,8 @@ function matchFamily(m: Magic | undefined, version: string): { family: Family; b
     const hit = strings.find((s) => version.includes(s));
     if (hit) return { family, basetype: hit };
   }
-  return { family: families.length === 1 ? families[0]! : 'unknown', basetype: null };
+  const fallback = families.filter((f) => !NAMED_ONLY.includes(f));
+  return { family: fallback.length === 1 ? fallback[0]! : 'unknown', basetype: null };
 }
 
 /** Return the BFB number when the three bytes after the first BFB are ASCII digits, else undefined. */
@@ -161,7 +167,7 @@ function bfbNumber(version: string): number | undefined {
 /**
  * Classify the radio from the magic that answered, the 14 raw version bytes at 0x1EF0 and
  * the 8-byte ident. Never throws; an unmatched version string gives the magic's family when
- * it lists one, and `unknown` otherwise.
+ * it lists one outside NAMED_ONLY, and `unknown` otherwise. Session.finish refuses `bf-a58`.
  */
 export function classify(magicName: string, versionBytes: Uint8Array, identBytes: Uint8Array): Classification {
   const m = findMagic(magicName);

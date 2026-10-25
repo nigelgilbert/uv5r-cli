@@ -227,7 +227,7 @@ function scanOrder(first: Magic): Magic[] {
  * or a wrong ack; the first magic waits SETTLE_MS before it. Other attempts follow silence at
  * once, a wrong ack after SCAN_WRONG_ACK_PAUSE_MS, and an invalid ident or a refused closing
  * 06 after SETTLE_MS. Unsupported magics get one attempt and run without the closing 06; an
- * ident on one, or a 14-byte ident on any, throws radio-unsupported.
+ * ident on one, a 14-byte ident on any, or a BF-A58 version under A58 throws radio-unsupported.
  *
  * When no classic magic opens a session, probe each FOREIGN_MAGICS entry at 9600 without the
  * closing 06 and with the same pauses; an ident names that entry's radio. Then send each
