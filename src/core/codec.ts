@@ -299,6 +299,9 @@ interface SettingField {
   names?: readonly string[];
 }
 
+/** Display mode names for values 0..2, in the order of CHIRP's MODE_LIST in uv5r.py. */
+const MDF_NAMES = ['ch', 'name', 'freq'] as const;
+
 /** Settings fields the CLI reads and writes, from CHIRP's uv5r.py struct at image offset 0x0E28. */
 export const SETTINGS_FIELDS = {
   squelch: { offset: 0x00, max: 9 },
@@ -307,8 +310,8 @@ export const SETTINGS_FIELDS = {
   beep: { offset: 0x08, max: 1, names: ['off', 'on'] },
   timeout: { offset: 0x09, max: 39 },
   voice: { offset: 0x0e, max: 2, names: ['off', 'eng', 'chi'] },
-  mdfa: { offset: 0x15, max: 2, names: ['freq', 'ch', 'name'] },
-  mdfb: { offset: 0x16, max: 2, names: ['freq', 'ch', 'name'] },
+  mdfa: { offset: 0x15, max: 2, names: MDF_NAMES },
+  mdfb: { offset: 0x16, max: 2, names: MDF_NAMES },
 } as const satisfies Record<string, SettingField>;
 
 export type SettingName = keyof typeof SETTINGS_FIELDS;

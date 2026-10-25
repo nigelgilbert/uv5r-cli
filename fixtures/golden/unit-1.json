@@ -1,0 +1,652 @@
+{
+  "settings": {
+    "squelch": 3,
+    "save": 3,
+    "abr": 5,
+    "beep": "on",
+    "timeout": 3,
+    "voice": "eng",
+    "mdfa": "freq",
+    "mdfb": "freq"
+  },
+  "slots": [
+    {
+      "channel": 0,
+      "empty": true
+    },
+    {
+      "channel": 1,
+      "rxMhz": "452.125",
+      "txMhz": "452.125",
+      "txTone": "69.3",
+      "rxTone": "69.3",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 2,
+      "rxMhz": "453.225",
+      "txMhz": "453.225",
+      "txTone": "91.5",
+      "rxTone": "91.5",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 3,
+      "rxMhz": "454.325",
+      "txMhz": "454.325",
+      "txTone": "136.5",
+      "rxTone": "136.5",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 4,
+      "rxMhz": "455.425",
+      "txMhz": "455.425",
+      "txTone": "151.4",
+      "rxTone": "151.4",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 5,
+      "rxMhz": "456.525",
+      "txMhz": "456.525",
+      "txTone": "192.8",
+      "rxTone": "192.8",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 6,
+      "rxMhz": "457.625",
+      "txMhz": "457.625",
+      "txTone": "241.8",
+      "rxTone": "241.8",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 7,
+      "rxMhz": "458.725",
+      "txMhz": "458.725",
+      "txTone": "D025N",
+      "rxTone": "D025N",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 8,
+      "rxMhz": "459.825",
+      "txMhz": "459.825",
+      "txTone": "D134N",
+      "rxTone": "D134N",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 9,
+      "rxMhz": "461.925",
+      "txMhz": "461.925",
+      "txTone": "D274N",
+      "rxTone": "D274N",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 10,
+      "rxMhz": "462.225",
+      "txMhz": "462.225",
+      "txTone": "D346N",
+      "rxTone": "D346N",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 11,
+      "rxMhz": "463.325",
+      "txMhz": "463.325",
+      "txTone": "D503N",
+      "rxTone": "D503N",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 12,
+      "rxMhz": "464.425",
+      "txMhz": "464.425",
+      "txTone": "D073I",
+      "rxTone": "D073I",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 13,
+      "rxMhz": "465.525",
+      "txMhz": "465.525",
+      "txTone": "D703I",
+      "rxTone": "D703I",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 14,
+      "rxMhz": "402.225",
+      "txMhz": "402.225",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 15,
+      "rxMhz": "437.425",
+      "txMhz": "437.425",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 16,
+      "rxMhz": "479.975",
+      "txMhz": "479.975",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 17,
+      "rxMhz": "138.55",
+      "txMhz": "138.55",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 18,
+      "rxMhz": "157.65",
+      "txMhz": "157.65",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 19,
+      "rxMhz": "172.75",
+      "txMhz": "172.75",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 20,
+      "rxMhz": "438.5",
+      "txMhz": "438.5",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 21,
+      "rxMhz": "155.7",
+      "txMhz": "155.7",
+      "txTone": "none",
+      "rxTone": "none",
+      "bandwidth": "wide",
+      "power": "high",
+      "name": ""
+    },
+    {
+      "channel": 22,
+      "empty": true
+    },
+    {
+      "channel": 23,
+      "empty": true
+    },
+    {
+      "channel": 24,
+      "empty": true
+    },
+    {
+      "channel": 25,
+      "empty": true
+    },
+    {
+      "channel": 26,
+      "empty": true
+    },
+    {
+      "channel": 27,
+      "empty": true
+    },
+    {
+      "channel": 28,
+      "empty": true
+    },
+    {
+      "channel": 29,
+      "empty": true
+    },
+    {
+      "channel": 30,
+      "empty": true
+    },
+    {
+      "channel": 31,
+      "empty": true
+    },
+    {
+      "channel": 32,
+      "empty": true
+    },
+    {
+      "channel": 33,
+      "empty": true
+    },
+    {
+      "channel": 34,
+      "empty": true
+    },
+    {
+      "channel": 35,
+      "empty": true
+    },
+    {
+      "channel": 36,
+      "empty": true
+    },
+    {
+      "channel": 37,
+      "empty": true
+    },
+    {
+      "channel": 38,
+      "empty": true
+    },
+    {
+      "channel": 39,
+      "empty": true
+    },
+    {
+      "channel": 40,
+      "empty": true
+    },
+    {
+      "channel": 41,
+      "empty": true
+    },
+    {
+      "channel": 42,
+      "empty": true
+    },
+    {
+      "channel": 43,
+      "empty": true
+    },
+    {
+      "channel": 44,
+      "empty": true
+    },
+    {
+      "channel": 45,
+      "empty": true
+    },
+    {
+      "channel": 46,
+      "empty": true
+    },
+    {
+      "channel": 47,
+      "empty": true
+    },
+    {
+      "channel": 48,
+      "empty": true
+    },
+    {
+      "channel": 49,
+      "empty": true
+    },
+    {
+      "channel": 50,
+      "empty": true
+    },
+    {
+      "channel": 51,
+      "empty": true
+    },
+    {
+      "channel": 52,
+      "empty": true
+    },
+    {
+      "channel": 53,
+      "empty": true
+    },
+    {
+      "channel": 54,
+      "empty": true
+    },
+    {
+      "channel": 55,
+      "empty": true
+    },
+    {
+      "channel": 56,
+      "empty": true
+    },
+    {
+      "channel": 57,
+      "empty": true
+    },
+    {
+      "channel": 58,
+      "empty": true
+    },
+    {
+      "channel": 59,
+      "empty": true
+    },
+    {
+      "channel": 60,
+      "empty": true
+    },
+    {
+      "channel": 61,
+      "empty": true
+    },
+    {
+      "channel": 62,
+      "empty": true
+    },
+    {
+      "channel": 63,
+      "empty": true
+    },
+    {
+      "channel": 64,
+      "empty": true
+    },
+    {
+      "channel": 65,
+      "empty": true
+    },
+    {
+      "channel": 66,
+      "empty": true
+    },
+    {
+      "channel": 67,
+      "empty": true
+    },
+    {
+      "channel": 68,
+      "empty": true
+    },
+    {
+      "channel": 69,
+      "empty": true
+    },
+    {
+      "channel": 70,
+      "empty": true
+    },
+    {
+      "channel": 71,
+      "empty": true
+    },
+    {
+      "channel": 72,
+      "empty": true
+    },
+    {
+      "channel": 73,
+      "empty": true
+    },
+    {
+      "channel": 74,
+      "empty": true
+    },
+    {
+      "channel": 75,
+      "empty": true
+    },
+    {
+      "channel": 76,
+      "empty": true
+    },
+    {
+      "channel": 77,
+      "empty": true
+    },
+    {
+      "channel": 78,
+      "empty": true
+    },
+    {
+      "channel": 79,
+      "empty": true
+    },
+    {
+      "channel": 80,
+      "empty": true
+    },
+    {
+      "channel": 81,
+      "empty": true
+    },
+    {
+      "channel": 82,
+      "empty": true
+    },
+    {
+      "channel": 83,
+      "empty": true
+    },
+    {
+      "channel": 84,
+      "empty": true
+    },
+    {
+      "channel": 85,
+      "empty": true
+    },
+    {
+      "channel": 86,
+      "empty": true
+    },
+    {
+      "channel": 87,
+      "empty": true
+    },
+    {
+      "channel": 88,
+      "empty": true
+    },
+    {
+      "channel": 89,
+      "empty": true
+    },
+    {
+      "channel": 90,
+      "empty": true
+    },
+    {
+      "channel": 91,
+      "empty": true
+    },
+    {
+      "channel": 92,
+      "empty": true
+    },
+    {
+      "channel": 93,
+      "empty": true
+    },
+    {
+      "channel": 94,
+      "empty": true
+    },
+    {
+      "channel": 95,
+      "empty": true
+    },
+    {
+      "channel": 96,
+      "empty": true
+    },
+    {
+      "channel": 97,
+      "empty": true
+    },
+    {
+      "channel": 98,
+      "empty": true
+    },
+    {
+      "channel": 99,
+      "empty": true
+    },
+    {
+      "channel": 100,
+      "empty": true
+    },
+    {
+      "channel": 101,
+      "empty": true
+    },
+    {
+      "channel": 102,
+      "empty": true
+    },
+    {
+      "channel": 103,
+      "empty": true
+    },
+    {
+      "channel": 104,
+      "empty": true
+    },
+    {
+      "channel": 105,
+      "empty": true
+    },
+    {
+      "channel": 106,
+      "empty": true
+    },
+    {
+      "channel": 107,
+      "empty": true
+    },
+    {
+      "channel": 108,
+      "empty": true
+    },
+    {
+      "channel": 109,
+      "empty": true
+    },
+    {
+      "channel": 110,
+      "empty": true
+    },
+    {
+      "channel": 111,
+      "empty": true
+    },
+    {
+      "channel": 112,
+      "empty": true
+    },
+    {
+      "channel": 113,
+      "empty": true
+    },
+    {
+      "channel": 114,
+      "empty": true
+    },
+    {
+      "channel": 115,
+      "empty": true
+    },
+    {
+      "channel": 116,
+      "empty": true
+    },
+    {
+      "channel": 117,
+      "empty": true
+    },
+    {
+      "channel": 118,
+      "empty": true
+    },
+    {
+      "channel": 119,
+      "empty": true
+    },
+    {
+      "channel": 120,
+      "empty": true
+    },
+    {
+      "channel": 121,
+      "empty": true
+    },
+    {
+      "channel": 122,
+      "empty": true
+    },
+    {
+      "channel": 123,
+      "empty": true
+    },
+    {
+      "channel": 124,
+      "empty": true
+    },
+    {
+      "channel": 125,
+      "empty": true
+    },
+    {
+      "channel": 126,
+      "empty": true
+    },
+    {
+      "channel": 127,
+      "empty": true
+    }
+  ]
+}

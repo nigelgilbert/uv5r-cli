@@ -1,13 +1,13 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_FIELDS, SETTINGS_SIZE, applySettings, decodeSettings, parseSettingValue } from '../../src/core/codec.ts';
 import { magicByName } from '../../src/core/ident.ts';
 import { Session } from '../../src/core/protocol.ts';
 import { imageSettingsBlock, restoreImage, startFreshSession, verifyRestoredRanges, verifySettingsBlock, verifySettingsInFreshSession, writeSettings } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
+import { GOLDEN, PRIMARY } from './golden.ts';
 
-const fixture = new Uint8Array(readFileSync(new URL('../../fixtures/uv5r-hn5rv011-2026-10-12.img', import.meta.url)));
-const FIXTURE_SETTINGS = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'name', mdfb: 'name' };
+/** The decoded settings of the default fake. */
+const DEFAULT_SETTINGS = decodeSettings(new FakeRadio().eeprom.subarray(SETTINGS_BASE, SETTINGS_BASE + SETTINGS_SIZE));
 const FIELD_OFFSETS = new Set<number>(Object.values(SETTINGS_FIELDS).map((f) => f.offset));
 
 /** Run fake timers until `p` settles and return its result. */
@@ -16,9 +16,9 @@ async function drive<T>(p: Promise<T>): Promise<T> {
   return value;
 }
 
-async function startSession(radio: FakeRadio): Promise<Session> {
+async function startSession(radio: FakeRadio, magic = magicByName('291')): Promise<Session> {
   const s = new Session(radio);
-  await drive(s.start());
+  await drive(s.start(magic));
   return s;
 }
 
@@ -28,9 +28,6 @@ function handshakes(write: MockInstance<FakeRadio['write']>): number {
 }
 
 describe('settings codec', () => {
-  it('decodes the fixture block', () => {
-    expect(decodeSettings(imageSettingsBlock(fixture))).toEqual(FIXTURE_SETTINGS);
-  });
   it('decodes a zeroed block as the muted state', () => {
     expect(decodeSettings(new Uint8Array(0x20))).toMatchObject({ squelch: 0, voice: 'off', beep: 'off', abr: 0 });
   });
@@ -42,7 +39,7 @@ describe('settings codec', () => {
   it('parses names and menu indexes', () => {
     expect(parseSettingValue('voice', 'ENG')).toBe(1);
     expect(parseSettingValue('beep', 'on')).toBe(1);
-    expect(parseSettingValue('mdfa', 'name')).toBe(2);
+    expect(parseSettingValue('mdfa', 'name')).toBe(1);
     expect(parseSettingValue('squelch', '9')).toBe(9);
     expect(parseSettingValue('timeout', '39')).toBe(39);
   });
@@ -52,7 +49,7 @@ describe('settings codec', () => {
     expect(() => parseSettingValue('beep', '-1')).toThrow(/beep/);
   });
   it('applies a patch without touching other bytes', () => {
-    const before = imageSettingsBlock(fixture);
+    const before = imageSettingsBlock(PRIMARY.image);
     const out = applySettings(before, { squelch: 0, voice: 0 });
     const patched = new Set<number>([SETTINGS_FIELDS.squelch.offset, SETTINGS_FIELDS.voice.offset]);
     expect(out.length).toBe(SETTINGS_SIZE);
@@ -90,7 +87,7 @@ describe('settings write', () => {
     const s = await startSession(radio);
     const block = await drive(writeSettings(s, { voice: 0 }));
     const write = vi.spyOn(radio, 'write');
-    expect(await drive(verifySettingsInFreshSession(radio, block))).toEqual({ ...FIXTURE_SETTINGS, voice: 'off' });
+    expect(await drive(verifySettingsInFreshSession(radio, block))).toEqual({ ...DEFAULT_SETTINGS, voice: 'off' });
     expect(handshakes(write)).toBe(1);
   });
   it('names the settings block in the remedy when the radio does not ack a write', async () => {
@@ -109,7 +106,7 @@ describe('settings write', () => {
     const s = await startSession(radio);
     const block = await drive(writeSettings(s, { squelch: 3, save: 3, abr: 5, beep: 1, timeout: 3, voice: 1, mdfa: 2, mdfb: 2 }));
     expect([...block].filter((_, i) => !FIELD_OFFSETS.has(i)).every((b) => b === 0)).toBe(true);
-    expect(await drive(verifySettingsInFreshSession(radio, block))).toEqual(FIXTURE_SETTINGS);
+    expect(await drive(verifySettingsInFreshSession(radio, block))).toEqual({ squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'freq', mdfb: 'freq' });
   });
 });
 
@@ -121,20 +118,22 @@ describe('restore', () => {
     vi.useRealTimers();
   });
 
-  it('commits the settings block through the in-order write and verifies it with the channels and names', async () => {
-    const radio = new FakeRadio();
-    radio.eeprom.fill(0, SETTINGS_BASE, SETTINGS_BASE + SETTINGS_SIZE);
-    const s = await startSession(radio);
-    await drive(restoreImage(s, fixture));
-    const fresh = await drive(startFreshSession(radio));
-    expect(await drive(verifySettingsBlock(fresh, imageSettingsBlock(fixture)))).toEqual(FIXTURE_SETTINGS);
-    expect(await drive(verifyRestoredRanges(fresh, fixture))).toBe(64);
+  it.each(GOLDEN)('commits the settings block of unit $label through the in-order write and verifies it with the channels and names', async ({ image, manifest }) => {
+    const magic = magicByName(manifest.magic);
+    const radio = FakeRadio.fromImage(image, { magic: manifest.magic });
+    radio.eeprom.fill(0xff, 0x0000, 0x1800);
+    // The handshake in startSession reloads the 0x0E00 page from the filled memory.
+    const s = await startSession(radio, magic);
+    await drive(restoreImage(s, image));
+    const fresh = await drive(startFreshSession(radio, { magic }));
+    expect(await drive(verifySettingsBlock(fresh, imageSettingsBlock(image)))).toEqual(decodeSettings(imageSettingsBlock(image)));
+    expect(await drive(verifyRestoredRanges(fresh, image))).toBe(64);
   });
   it('says to rerun the restore when the radio does not ack a write', async () => {
     const radio = new FakeRadio();
     radio.refuseWriteAt = 0x0100;
     const s = await startSession(radio);
-    await expect(drive(restoreImage(s, fixture))).rejects.toMatchObject({
+    await expect(drive(restoreImage(s, PRIMARY.image))).rejects.toMatchObject({
       reason: 'write-unacknowledged',
       message: 'radio refused write at 0x100',
       remedy: 'rerun the restore',
@@ -147,9 +146,9 @@ describe('restore', () => {
     radio.writesIgnoredBelow = 0x1050;
     radio.writesIgnoredAbove = 0x1070;
     const s = await startSession(radio);
-    await drive(restoreImage(s, fixture));
+    await drive(restoreImage(s, PRIMARY.image));
     const fresh = await drive(startFreshSession(radio));
-    await expect(drive(verifyRestoredRanges(fresh, fixture))).rejects.toMatchObject({
+    await expect(drive(verifyRestoredRanges(fresh, PRIMARY.image))).rejects.toMatchObject({
       kind: 'device-state',
       message: 'restore did not take 2 blocks; first at 0x1050',
       detail: { mismatches: 2, first: [{ addr: '0x1050' }, { addr: '0x1060' }] },

@@ -171,7 +171,7 @@ const FFMPEG_FIRST = 'Run ffmpeg -version before the port opens. A missing or fa
 const APPLIES = `The radio reloads and applies the write about ${APPLIES_AFTER_SECONDS} s after the command ends.`;
 
 const CHANNEL_RECORD = { rxMhz: '154.68', txMhz: '154.68', txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
-const SETTINGS_EXAMPLE = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'name', mdfb: 'name' };
+const SETTINGS_EXAMPLE = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'freq', mdfb: 'freq' };
 const LISTEN_EXAMPLE = {
   device: DEFAULT_AUDIO_DEVICE,
   seconds: 5,
