@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
-import { cli, type OpenTransport } from '../../src/cli/main.ts';
+import { signalExitCode } from '../../src/cli/exit.ts';
+import { cli, fatal, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
 import { PRIMARY } from '../core/golden.ts';
 
@@ -206,7 +207,7 @@ describe('help', () => {
     expect(help.errors.format).toContain('when output is JSON, piped or with --json');
     expect(help.errors.format).toContain('On a terminal it prints the message and a remedy line as text.');
     expect(help.errors.format).toContain(
-      'On SIGINT, SIGTERM or SIGHUP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
+      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
     );
     expect(help.errors.format).toContain('A failed PTT release after the signal exits 3 with interrupted in the error.');
     expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check).');
@@ -1002,6 +1003,29 @@ describe('key output', () => {
     const err = errJson();
     expect(err).toMatchObject({ reason: 'ptt-control-failed', remedy: 'ask the human to unplug the AIOC to drop PTT', retry: 'no', target: 'fake' });
     expect(err).not.toHaveProperty('phase');
+  });
+
+  it('releases PTT on SIGTSTP and exits 128 plus the platform number', async () => {
+    const radio = new FakeRadio();
+    const done = cli(['key', '--seconds', '5', '--json'], opener(radio));
+    setTimeout(() => process.emit('SIGTSTP'), 30);
+    await done;
+    expect(process.exitCode).toBe(signalExitCode('SIGTSTP'));
+    expect(outJson()).toMatchObject({ pttAsserted: true, released: true, interrupted: 'SIGTSTP' });
+    expect(radio.pttLog.at(-1)).toBe(false);
+    expect(process.listenerCount('SIGTSTP')).toBe(0);
+  });
+
+  it('lowers PTT on the open transport and exits 1 on a fatal error', async () => {
+    const radio = new FakeRadio();
+    const done = cli(['key', '--seconds', '5', '--json'], opener(radio));
+    await vi.waitFor(() => expect(radio.ptt).toBe(true));
+    await expect(fatal(new Error('boom'))).rejects.toThrow('process.exit called');
+    expect(radio.ptt).toBe(false);
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(JSON.parse(stderr.join('').trim())).toMatchObject({ reason: 'unexpected-error', message: 'boom' });
+    process.emit('SIGINT');
+    await done;
   });
 
   it('describes the displayed channel and receive-only slots in help', async () => {

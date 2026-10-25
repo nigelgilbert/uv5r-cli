@@ -220,7 +220,7 @@ export function summarize(progress: SweepProgress, options: { seconds: number; d
 
 /**
  * Run the check, then prepare and dwell on each entry in order, and summarize. A failed check throws
- * before any entry is written. SIGINT, SIGTERM or SIGHUP ends the run. The settle waits, the check
+ * before any entry is written. SIGINT, SIGTERM, SIGHUP or SIGTSTP ends the run. The settle waits, the check
  * capture and each dwell race the signal, and a capture the signal reaches kills ffmpeg and waits for
  * it to exit. The summary then covers the dwells finished before the signal and names it in
  * `interrupted`. A dwell whose capture the signal cut short is left out. On a throw, `progress` holds

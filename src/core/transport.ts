@@ -43,7 +43,7 @@ export async function resolveTarget(given: string | undefined): Promise<string> 
   return found;
 }
 
-/** The only module that imports `serialport`; opens the port at 9600 8N1 with PTT released. */
+/** The only module that imports `serialport`; opens the port at 9600 8N1 with PTT released and HUPCL set, so the kernel drops DTR when the fd closes. */
 export class SerialTransport implements Transport {
   readonly target: string;
   private readonly port: SerialPort;
@@ -72,7 +72,7 @@ export class SerialTransport implements Transport {
 
   static async open(path: string): Promise<SerialTransport> {
     if (!existsSync(path)) throw new TransportError('device-unavailable', `no device at ${path}`, { target: path }, { remedy: 'reseat the cable or pass --target with an existing path' });
-    const port = new SerialPort({ path, baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, autoOpen: false, lock: true });
+    const port = new SerialPort({ path, baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, autoOpen: false, lock: true, hupcl: true });
     await new Promise<void>((resolve, reject) => {
       port.open((err) => {
         if (!err) return resolve();

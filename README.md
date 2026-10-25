@@ -91,10 +91,11 @@ during the check) and `requestedMhz` (the entry frequency, or the `checkMhz` fre
 the check). `summary.slot0` says whether a write landed. A failed check also carries
 the check result fields.
 
-On SIGINT, SIGTERM or SIGHUP once `key` or `sweep` has opened the port, the verb prints its
-result on stdout with `interrupted` and no error, and exits 128 plus the signal number. A
-failed PTT release after the signal exits 3 with `interrupted` in the error. Other verbs end
-on a signal with no output.
+On SIGINT, SIGTERM, SIGHUP or SIGTSTP (Ctrl-Z) once `key` or `sweep` has opened the port, the
+verb prints its result on stdout with `interrupted` and no error, and exits 128 plus the
+signal number. SIGTSTP exits 146 on macOS and 148 on Linux. A failed PTT release after the
+signal exits 3 with `interrupted` in the error. Other verbs end on a signal with no output.
+An uncaught error lowers PTT on any open port and exits 1.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 

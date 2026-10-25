@@ -66,12 +66,14 @@ export {
   VERIFY_RANGES,
   verifyRestoredRanges,
   KEY_SIGNALS,
+  STOP_GRACE_MS,
+  keyWhile,
   holdPtt,
   SCAN_WRONG_ACK_PAUSE_MS,
   PROGRAM_PAUSE_MS,
   identify,
 } from './radio.ts';
-export type { ChannelPayload, MalformedRecord, ChannelResult, RadioStatus, HoldResult, SessionOptions, IdentifyAttempt, IdentifyAnswer, IdentifyResult } from './radio.ts';
+export type { ChannelPayload, MalformedRecord, ChannelResult, RadioStatus, HoldResult, KeyOptions, SessionOptions, IdentifyAttempt, IdentifyAnswer, IdentifyResult } from './radio.ts';
 
 export { parsePlan, readPlan } from './plan.ts';
 export type { Plan, PlanEntry } from './plan.ts';

@@ -54,7 +54,7 @@ Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
   requested carries `summary`. One in the loop adds `phase` (`check`, `entry` or `dwell`),
   `slot` (0), `channel` (null during the check) and `requestedMhz` (the `checkMhz`
   frequency during the check); a failed check adds the check fields.
-- On SIGINT, SIGTERM or SIGHUP after `key` or `sweep` opens the port, the result prints on
-  stdout with `interrupted` and exit 128 plus the signal number. Other verbs print nothing.
+- On SIGINT, SIGTERM, SIGHUP or SIGTSTP after `key` or `sweep` opens the port, the result
+  prints on stdout with `interrupted` and exit 128 plus the signal number. Other verbs print nothing.
 - After a failed `key`, report and wait for the human. A failed PTT release after a signal
   exits 3 with `interrupted` in the error.

@@ -119,7 +119,7 @@ const EXIT_CODES: Record<string, string> = {
   '4': 'timeout: no ack before a block read, or a short block payload',
   '5': 'device-state: no handshake, a bad reply, an unsupported radio, a refused write, a failed verification, an image ident mismatch, an open squelch or a check under 80% active seconds',
   '6': 'busy: another process holds the serial port',
-  '128+signal': 'interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary',
+  '128+signal': 'interrupted by SIGINT, SIGTERM, SIGHUP or SIGTSTP: key releases PTT and sweep prints its summary',
 };
 
 const ERROR_GUIDANCE =
@@ -130,7 +130,7 @@ const ERROR_GUIDANCE =
   'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +
   'An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check). ' +
   'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +
-  'On SIGINT, SIGTERM or SIGHUP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
+  'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
   'A failed PTT release after the signal exits 3 with interrupted in the error. Other verbs end on a signal with no output.';
 
 /** The errors section of `help --json`: the error format, each reason with its exit code, and the retry values. */
@@ -362,7 +362,7 @@ const verbs: Record<string, Verb> = {
     effects: [
       'Raise PTT (DTR high, RTS low) for S seconds, then release it. The result reports the measured hold.',
       'Transmit on the channel the radio display shows. The CLI cannot read the displayed channel; a receive-only slot radiates nothing.',
-      'Once the port is open, Ctrl-C, SIGTERM or SIGHUP releases PTT, adds interrupted to the result and exits 128 plus the signal number.',
+      'Once the port is open, Ctrl-C, Ctrl-Z, SIGTERM or SIGHUP releases PTT, adds interrupted to the result and exits 128 plus the signal number.',
       'A failed PTT release after the signal exits 3 with interrupted in the error.',
     ],
     preconditions: [
@@ -475,7 +475,7 @@ const verbs: Record<string, Verb> = {
       'warnings holds the check warnings prefixed with check: and each dwell warning prefixed with its plan channel.',
       'slot0 is {channel, name} of the last verified entry write, {channel: null, name} after only the check write, or null when unknown. Slot 0 keeps it after the run.',
       'active[].name is the plan name. slot0.name is the name the radio holds, uppercased and cut to 7 characters. Match the two on channel.',
-      'On SIGINT, SIGTERM or SIGHUP, stop the capture in progress, print the summary with interrupted and exit 128 plus the signal number.',
+      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP, stop the capture in progress, print the summary with interrupted and exit 128 plus the signal number.',
       'Read nothing from stdin.',
     ],
     preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot 0.', 'The plan checkMhz carries audio at the location.'],
@@ -595,12 +595,43 @@ async function openSerial(target: string | undefined): Promise<Transport> {
   return SerialTransport.open(await resolveTarget(target));
 }
 
+/** Transports open in this process, for the fatal-error release. */
+const openTransports = new Set<Transport>();
+/** Milliseconds the fatal-error release waits for each port. */
+const FATAL_RELEASE_MS = 1000;
+let fatalRun = false;
+
 async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<T>): Promise<T> {
   const transport = await args.open(stringFlag(args.flags, 'target') ?? process.env.UV5R_TARGET);
+  openTransports.add(transport);
   try {
     return await fn(transport);
   } finally {
     await transport.close();
+    openTransports.delete(transport);
+  }
+}
+
+/**
+ * Handle an uncaught exception or unhandled rejection: try to lower PTT on every open
+ * transport, print the error on stderr in the cli format and exit 1. Each release gets
+ * FATAL_RELEASE_MS. A second call while the first runs does nothing.
+ */
+export async function fatal(err: unknown): Promise<void> {
+  if (fatalRun) return;
+  fatalRun = true;
+  try {
+    for (const t of openTransports) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([t.setPtt(false).catch(() => {}), new Promise<void>((resolve) => (timer = setTimeout(resolve, FATAL_RELEASE_MS)))]);
+      clearTimeout(timer);
+    }
+    const error = err instanceof BaofengError ? err : new UnexpectedError(err instanceof Error ? err.message : String(err));
+    if (wantsJson(new Map(process.argv.includes('--json') ? [['json', true]] : []))) process.stderr.write(`${JSON.stringify(error)}\n`);
+    else process.stderr.write(`uv5r: ${error.message}\nremedy: ${error.remedy} (retry: ${error.retry})\n`);
+  } finally {
+    fatalRun = false;
+    process.exit(EXIT.unexpected);
   }
 }
 
@@ -1057,7 +1088,8 @@ async function main(args: Invocation): Promise<number> {
  */
 export async function cli(argv: string[], open: OpenTransport = openSerial): Promise<void> {
   // Read --json from argv so an error from parseArgs keeps the requested format.
-  let flags = new Map<string, string | true>(argv.includes('--json') ? [['json', true]] : []);
+  const end = argv.indexOf('--');
+  let flags = new Map<string, string | true>((end < 0 ? argv : argv.slice(0, end)).includes('--json') ? [['json', true]] : []);
   try {
     const args = parseArgs(argv, BOOLEAN_FLAGS);
     flags = args.flags;
@@ -1074,4 +1106,8 @@ export async function cli(argv: string[], open: OpenTransport = openSerial): Pro
   }
 }
 
-if (import.meta.main) await cli(process.argv.slice(2));
+if (import.meta.main) {
+  process.on('uncaughtException', (err) => void fatal(err));
+  process.on('unhandledRejection', (err) => void fatal(err));
+  await cli(process.argv.slice(2));
+}

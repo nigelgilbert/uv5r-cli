@@ -19,7 +19,7 @@ describe('holdPtt', () => {
     const pending = holdPtt(radio, 0.1, em);
     await Promise.resolve();
     expect(radio.ptt).toBe(true);
-    expect(listeners(em)).toBe(3);
+    expect(listeners(em)).toBe(4);
     const result = await pending;
     expect(result.interrupted).toBeUndefined();
     expect(result.seconds).toBeGreaterThanOrEqual(0.1);
@@ -120,6 +120,11 @@ describe('signalExitCode', () => {
     expect(signalExitCode('SIGINT')).toBe(130);
     expect(signalExitCode('SIGTERM')).toBe(143);
     expect(signalExitCode('SIGHUP')).toBe(129);
+  });
+
+  it('uses the platform number for SIGTSTP', () => {
+    const number = process.platform === 'linux' ? 20 : 18;
+    expect(signalExitCode('SIGTSTP')).toBe(128 + number);
   });
 });
 

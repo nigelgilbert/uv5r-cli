@@ -41,6 +41,17 @@ describe('parseArgs', () => {
     expect(parseArgs(['tune', ...help], BOOLEAN_FLAGS).flags.get('help')).toBe(true);
   });
 
+  it('treats every argument after the first -- as a positional', () => {
+    const args = parseArgs(['say', '--json', '--', '--hello', '-h', '--', 'there'], BOOLEAN_FLAGS);
+    expect(args.verb).toBe('say');
+    expect(args.positionals).toEqual(['--hello', '-h', '--', 'there']);
+    expect([...args.flags]).toEqual([['json', true]]);
+  });
+
+  it('passes a single dash as a positional', () => {
+    expect(parseArgs(['say', '-', '-x'], BOOLEAN_FLAGS).positionals).toEqual(['-', '-x']);
+  });
+
   it('leaves the positional after a boolean flag in place', () => {
     const args = parseArgs(['restore', '--force', 'radio.img'], BOOLEAN_FLAGS);
     expect(args.verb).toBe('restore');

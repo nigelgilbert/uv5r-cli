@@ -1,14 +1,18 @@
+import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { ADDR, SETTINGS_BASE, SETTINGS_SIZE, decodeChannel, decodeSettings, encodeChannel, encodeName, parseTone, type ChannelSpec } from '../../src/core/codec.ts';
 import { BaofengError, TransportError, UsageError } from '../../src/core/errors.ts';
 import { FOREIGN_MAGICS, MAGICS, PROGRAM_MAGICS, magicByName } from '../../src/core/ident.ts';
 import { SETTLE_MS, Session, attempt, hex } from '../../src/core/protocol.ts';
 import {
+  KEY_SIGNALS,
   PROGRAM_PAUSE_MS,
   SCAN_WRONG_ACK_PAUSE_MS,
+  STOP_GRACE_MS,
   channelPayload,
   eraseChannel,
   identify,
+  keyWhile,
   readChannel,
   readSettings,
   readStatus,
@@ -923,5 +927,176 @@ describe('status', () => {
     await s.start();
     const st = await readStatus(s);
     expect(st).toMatchObject({ workmode: 'channel', squelch: 0, voice: 'off', beep: 'off', abr: 0 });
+  });
+});
+
+describe('keyWhile', () => {
+  /** Return a player that resolves when `stop` resolves and records PTT at that moment. */
+  function stoppablePlayer(radio: FakeRadio) {
+    const seen: { pttAtStop?: boolean } = {};
+    const body = async (stop: Promise<void>) => {
+      await stop;
+      seen.pttAtStop = radio.ptt;
+    };
+    return { seen, body };
+  }
+
+  const listeners = (em: EventEmitter) => KEY_SIGNALS.reduce((n, s) => n + em.listenerCount(s), 0);
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('raises PTT before the body runs and releases it when the body settles', async () => {
+    const radio = new FakeRadio();
+    let pttAtStart: boolean | undefined;
+    const result = await keyWhile(
+      radio,
+      async () => {
+        pttAtStart = radio.ptt;
+      },
+      { maxMs: 5000 },
+      new EventEmitter(),
+    );
+    expect(pttAtStart).toBe(true);
+    expect(radio.pttLog).toEqual([true, false]);
+    expect(result).toEqual({ pttAsserted: true, seconds: 0, released: true });
+  });
+
+  it.each(['SIGINT', 'SIGTSTP'] as const)('releases PTT before the player settles on %s mid-play', async (signal) => {
+    const radio = new FakeRadio();
+    const em = new EventEmitter();
+    const { seen, body } = stoppablePlayer(radio);
+    const pending = keyWhile(radio, body, { maxMs: 5000 }, em);
+    setTimeout(() => em.emit(signal), 20);
+    const result = await pending;
+    expect(seen.pttAtStop).toBe(false);
+    expect(radio.pttLog).toEqual([true, false]);
+    expect(result).toMatchObject({ pttAsserted: true, released: true, interrupted: signal });
+    expect(listeners(em)).toBe(0);
+  });
+
+  it('skips the body and releases at once on a signal during the PTT assertion', async () => {
+    const radio = new FakeRadio();
+    const em = new EventEmitter();
+    const assert = radio.setPtt.bind(radio);
+    radio.setPtt = async (on: boolean) => {
+      if (on) em.emit('SIGTERM');
+      await assert(on);
+    };
+    let ran = false;
+    const result = await keyWhile(
+      radio,
+      async () => {
+        ran = true;
+      },
+      { maxMs: 5000 },
+      em,
+    );
+    expect(ran).toBe(false);
+    expect(radio.pttLog).toEqual([true, false]);
+    expect(result).toEqual({ pttAsserted: true, seconds: 0, released: true, interrupted: 'SIGTERM' });
+  });
+
+  it('drops PTT at maxMs on a hung player and returns after the grace', async () => {
+    vi.useFakeTimers();
+    const radio = new FakeRadio();
+    const pending = keyWhile(radio, () => new Promise(() => {}), { maxMs: 100 }, new EventEmitter());
+    await vi.advanceTimersByTimeAsync(100);
+    expect(radio.ptt).toBe(false);
+    let done = false;
+    void pending.then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(STOP_GRACE_MS - 10);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await pending).toMatchObject({ pttAsserted: true, released: true, timedOut: true });
+    expect(radio.pttLog).toEqual([true, false]);
+  });
+
+  it('keeps PTT low when the player completes late, inside or after the grace', async () => {
+    vi.useFakeTimers();
+    for (const lateMs of [500, STOP_GRACE_MS + 500]) {
+      const radio = new FakeRadio();
+      const em = new EventEmitter();
+      const body = (stop: Promise<void>) => stop.then(() => new Promise<void>((_, reject) => setTimeout(() => reject(new Error('player exited late')), lateMs)));
+      const pending = keyWhile(radio, body, { maxMs: 5000 }, em);
+      await vi.advanceTimersByTimeAsync(10);
+      em.emit('SIGHUP');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(radio.ptt).toBe(false);
+      await vi.advanceTimersByTimeAsync(STOP_GRACE_MS + 1000);
+      expect(await pending).toMatchObject({ released: true, interrupted: 'SIGHUP' });
+      expect(radio.pttLog).toEqual([true, false]);
+    }
+  });
+
+  it('keeps the player failure when the release fails too', async () => {
+    const radio = new FakeRadio();
+    radio.setPtt = async (on: boolean) => {
+      radio.pttLog.push(on);
+      if (!on) throw new TransportError('ptt-control-failed', 'release failed');
+      radio.ptt = on;
+    };
+    const err = await keyWhile(
+      radio,
+      async () => {
+        throw new TransportError('audio-process-failed', 'ffmpeg exited with code 1');
+      },
+      { maxMs: 5000 },
+      new EventEmitter(),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    const body = (err as TransportError).toJSON();
+    expect(body).toMatchObject({ reason: 'audio-process-failed', retry: 'no', remedy: 'ask the human to unplug the AIOC to drop PTT', seconds: 0 });
+    expect(body.message).toBe('ffmpeg exited with code 1; PTT release unconfirmed: release failed; ask the human to unplug the AIOC to drop PTT');
+    expect(radio.pttLog).toEqual([true, false]);
+  });
+
+  it('keeps the player failure and its guidance when the release succeeds', async () => {
+    const radio = new FakeRadio();
+    const err = await keyWhile(
+      radio,
+      async () => {
+        throw new TransportError('audio-process-failed', 'ffmpeg exited with code 1', {}, { remedy: 'reseat the AIOC', retry: 'after-remedy' });
+      },
+      { maxMs: 5000 },
+      new EventEmitter(),
+    ).catch((e: unknown) => e);
+    expect((err as TransportError).toJSON()).toEqual({ reason: 'audio-process-failed', message: 'ffmpeg exited with code 1', remedy: 'reseat the AIOC', retry: 'after-remedy', seconds: 0 });
+    expect(radio.pttLog).toEqual([true, false]);
+  });
+
+  it('fails as a transport error with interrupted when the release fails after a signal', async () => {
+    const radio = new FakeRadio();
+    const em = new EventEmitter();
+    radio.setPtt = async (on: boolean) => {
+      radio.pttLog.push(on);
+      if (!on) throw new Error('release failed');
+      radio.ptt = on;
+    };
+    const { body } = stoppablePlayer(radio);
+    const pending = keyWhile(radio, body, { maxMs: 5000 }, em);
+    setTimeout(() => em.emit('SIGINT'), 20);
+    const err = await pending.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    expect((err as TransportError).kind).toBe('transport');
+    expect((err as TransportError).toJSON()).toMatchObject({ reason: 'ptt-control-failed', interrupted: 'SIGINT', remedy: 'ask the human to unplug the AIOC to drop PTT', retry: 'no' });
+    expect(listeners(em)).toBe(0);
+  });
+
+  it('ignores a player rejection that follows the stop', async () => {
+    const radio = new FakeRadio();
+    const em = new EventEmitter();
+    const pending = keyWhile(
+      radio,
+      async (stop) => {
+        await stop;
+        throw new TransportError('audio-process-failed', 'ffmpeg killed after a signal to uv5r');
+      },
+      { maxMs: 5000 },
+      em,
+    );
+    setTimeout(() => em.emit('SIGINT'), 20);
+    expect(await pending).toMatchObject({ released: true, interrupted: 'SIGINT' });
   });
 });
