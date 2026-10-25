@@ -438,6 +438,7 @@ describe('UV5R_MAGIC', () => {
     ['read', ['read', '5']],
     ['erase', ['erase', '5']],
     ['load', ['load', EXAMPLE_PLAN]],
+    ['settings', ['settings']],
   ])('opens the %s session with the magic it names', async (_verb, argv) => {
     vi.stubEnv('UV5R_MAGIC', 'UV82');
     const radio = uv82Radio();
