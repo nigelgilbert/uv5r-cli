@@ -1,0 +1,94 @@
+{
+  "units": [
+    {
+      "label": "1",
+      "image": "unit-1.img",
+      "dumped": "2026-10-25",
+      "ident": "aa 30 76 04 00 05 20 dd",
+      "firmware": "HN5RV011",
+      "magic": "291",
+      "auxSha256": "7a5252d198f8da8e14821172b62debbee83895c14f7b7d32f58165b6d87f96c1",
+      "notes": "2026-10-12 fixture radio. MDF-A and MDF-B are Frequency. Power-on display: message.",
+      "displayed": [
+        {
+          "slot": 1,
+          "displayNumber": 1,
+          "mdf": "freq",
+          "rxMhz": "452.125"
+        },
+        {
+          "slot": 2,
+          "displayNumber": 2,
+          "mdf": "freq",
+          "rxMhz": "453.225"
+        },
+        {
+          "slot": 3,
+          "displayNumber": 3,
+          "mdf": "freq",
+          "rxMhz": "454.325"
+        }
+      ]
+    },
+    {
+      "label": "2",
+      "image": "unit-2.img",
+      "dumped": "2026-10-25",
+      "ident": "aa 30 76 04 00 05 20 dd",
+      "firmware": "HN5RV011",
+      "magic": "291",
+      "auxSha256": "8cfb06c41b7b4d98cd0ba6074c79b3946d656fd03a79503b84ccc136ee04d56b",
+      "notes": "MDF-A and MDF-B are Frequency. Names are programmed on all 15 slots. Power-on display: full.",
+      "displayed": [
+        {
+          "slot": 1,
+          "displayNumber": 1,
+          "mdf": "freq",
+          "rxMhz": "162.400"
+        },
+        {
+          "slot": 2,
+          "displayNumber": 2,
+          "mdf": "freq",
+          "rxMhz": "162.550"
+        },
+        {
+          "slot": 3,
+          "displayNumber": 3,
+          "mdf": "freq",
+          "rxMhz": "146.880"
+        }
+      ]
+    },
+    {
+      "label": "3",
+      "image": "unit-3.img",
+      "dumped": "2026-10-25",
+      "ident": "aa 30 76 04 00 05 20 dd",
+      "firmware": "HN5RV011",
+      "magic": "291",
+      "auxSha256": "807e4ce9f53da741cf93ccedbb3eb409df05604b5a8421651b756f48d7205269",
+      "notes": "UV-5R 25th anniversary edition, transparent housing. Factory reset on 2026-10-25 before the dump; the BAOFENG 25TH power-on text survived in the aux block but the power-on display setting is full, so it stays hidden until menu 38 is set to MSG. MDF-A and MDF-B are Frequency. On the AIOC the data contact only lands with the plug pressed in and tilted; receive audio comes through at any seating.",
+      "displayed": [
+        {
+          "slot": 0,
+          "displayNumber": 0,
+          "mdf": "freq",
+          "rxMhz": "144.725"
+        },
+        {
+          "slot": 127,
+          "displayNumber": 127,
+          "mdf": "freq",
+          "rxMhz": "435.725"
+        }
+      ]
+    }
+  ],
+  "skipped": [
+    {
+      "label": null,
+      "notes": "Third radio dumped on 2026-10-25: HN5RV011 on magic 291, aux block identical to unit 1 (sha256 7a5252d1...), channel memory differs. Left out of the set because the aux block adds nothing new. Dump kept off the repo."
+    }
+  ]
+}
