@@ -12,7 +12,7 @@ export interface DisplayedSlot {
   slot: number;
   displayNumber: number;
   mdf: string;
-  rxMhz: string;
+  rxMhz?: string;
   name?: string;
 }
 
@@ -29,7 +29,7 @@ export interface ManifestUnit {
   auxSha256: string;
   notes: string;
   displayed: DisplayedSlot[];
-  /** Label of a unit that is the same physical radio. */
+  /** Label of an earlier unit with the same aux hash. */
   sameRadioAs?: string;
 }
 
@@ -50,7 +50,7 @@ export interface GoldenUnit {
   expected: Expected | undefined;
 }
 
-/** Read `name` from the golden directory and check it ends with the aux block. */
+/** Read `name` from the golden directory and check it holds IMAGE_AUX + AUX_SIZE bytes. */
 function readImage(name: string): Uint8Array {
   const image = new Uint8Array(readFileSync(new URL(name, DIR)));
   if (image.length !== IMAGE_AUX + AUX_SIZE) {

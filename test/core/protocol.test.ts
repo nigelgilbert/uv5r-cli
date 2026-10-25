@@ -126,6 +126,8 @@ describe('fake from an image', () => {
     const s = await startSession(radio, magicByName(PRIMARY.manifest.magic));
     expect(hex(s.startedIdent.bytes)).toBe(hex(PRIMARY.image.subarray(0, IMAGE_HEADER)));
     expect(s.startedIdent.firmware).toBe(PRIMARY.manifest.firmware);
+    expect([...radio.eeprom.subarray(0x0000, 0x1800)]).toEqual([...PRIMARY.image.subarray(IMAGE_HEADER, IMAGE_HEADER + 0x1800)]);
+    expect([...radio.eeprom.subarray(0x1ec0, 0x2000)]).toEqual([...PRIMARY.image.subarray(IMAGE_AUX)]);
   });
   it('answers the handshake with a changed ident and firmware', async () => {
     const image = Uint8Array.from(PRIMARY.image);
