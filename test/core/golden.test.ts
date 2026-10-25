@@ -1,25 +1,16 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { CHANNEL_BASE, CHANNEL_COUNT, NAME_BASE, decodeSettings, encodeChannel, type Channel } from '../../src/core/codec.ts';
-import { hex } from '../../src/core/protocol.ts';
+import { VERSION_LENGTH, VERSION_OFFSET, firmwareText, hex } from '../../src/core/protocol.ts';
 import { IMAGE_AUX, IMAGE_HEADER, channelPayload, decodeSlot, imageSettingsBlock, type MalformedRecord } from '../../src/core/radio.ts';
 import { AUX_SIZE, GOLDEN, type Expected, type GoldenUnit } from './golden.ts';
 
 /** Image offset of the 14-byte version string in the aux block. */
-const VERSION_AT = IMAGE_AUX + 48;
-const VERSION_LENGTH = 14;
+const VERSION_AT = IMAGE_AUX + VERSION_OFFSET;
 
 /** The sha256 of the aux block of `image` as hex. */
 function auxSha256(image: Uint8Array): string {
   return createHash('sha256').update(image.subarray(IMAGE_AUX, IMAGE_AUX + AUX_SIZE)).digest('hex');
-}
-
-/** The version string of `image` with bytes outside 0x20..0x7E dropped, as `Session.finish` reads it. */
-function firmware(image: Uint8Array): string {
-  return Buffer.from(image.subarray(VERSION_AT, VERSION_AT + VERSION_LENGTH))
-    .toString('latin1')
-    .replace(/[^\x20-\x7e]/g, '')
-    .trim();
 }
 
 /** Bits of each channel record byte that encodeChannel gives back from the decoded channel and its prior record. */
@@ -32,7 +23,6 @@ function slotRecords(image: Uint8Array, n: number): { mem: Uint8Array; name: Uin
   return { mem: image.subarray(mem, mem + 16), name: image.subarray(name, name + 16) };
 }
 
-/** Decode slot `n` of `image`. */
 function imageSlot(image: Uint8Array, n: number): Channel | MalformedRecord | undefined {
   const { mem, name } = slotRecords(image, n);
   return decodeSlot(mem, name);
@@ -61,7 +51,7 @@ describe('golden set', () => {
 
   it.each(GOLDEN)('unit $label matches its manifest entry', ({ image, manifest }: GoldenUnit) => {
     expect(hex(image.subarray(0, IMAGE_HEADER))).toBe(manifest.ident);
-    expect(firmware(image)).toBe(manifest.firmware);
+    expect(firmwareText(image.subarray(VERSION_AT, VERSION_AT + VERSION_LENGTH))).toBe(manifest.firmware);
     expect(auxSha256(image)).toBe(manifest.auxSha256);
   });
 

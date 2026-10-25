@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_SIZE } from '../../src/core/codec.ts';
+import { ADDR, SETTINGS_BASE, SETTINGS_COMMIT, SETTINGS_SIZE } from '../../src/core/codec.ts';
 import { magicByName } from '../../src/core/ident.ts';
-import { SETTLE_MS, Session, attempt, hex, settle } from '../../src/core/protocol.ts';
+import { SETTLE_MS, Session, VERSION_LENGTH, VERSION_OFFSET, attempt, hex, settle } from '../../src/core/protocol.ts';
 import { IMAGE_AUX, IMAGE_HEADER, RESTORE_RANGES, imageSettingsBlock, restoreImage, writeSettings } from '../../src/core/radio.ts';
 import { FakeRadio } from './fake.ts';
 import { GOLDEN, PRIMARY } from './golden.ts';
@@ -127,14 +127,14 @@ describe('fake from an image', () => {
     // PRIMARY's ident and firmware match the default constructor, so the changed-copy test covers the ident load.
     expect(hex(s.startedIdent.bytes)).toBe(hex(PRIMARY.image.subarray(0, IMAGE_HEADER)));
     expect(s.startedIdent.firmware).toBe(PRIMARY.manifest.firmware);
-    expect([...radio.eeprom.subarray(0x0000, 0x1800)]).toEqual([...PRIMARY.image.subarray(IMAGE_HEADER, IMAGE_HEADER + 0x1800)]);
-    expect([...radio.eeprom.subarray(0x1ec0, 0x2000)]).toEqual([...PRIMARY.image.subarray(IMAGE_AUX)]);
+    expect([...radio.eeprom.subarray(0, IMAGE_AUX - IMAGE_HEADER)]).toEqual([...PRIMARY.image.subarray(IMAGE_HEADER, IMAGE_AUX)]);
+    expect([...radio.eeprom.subarray(ADDR.firmwareBlock)]).toEqual([...PRIMARY.image.subarray(IMAGE_AUX)]);
   });
   it('answers the handshake with a changed ident and firmware', async () => {
     const image = Uint8Array.from(PRIMARY.image);
     image[6] = 0x21;
-    image.fill(0xff, IMAGE_AUX + 48, IMAGE_AUX + 48 + 14);
-    image.set(Buffer.from('BFB297', 'latin1'), IMAGE_AUX + 48);
+    image.fill(0xff, IMAGE_AUX + VERSION_OFFSET, IMAGE_AUX + VERSION_OFFSET + VERSION_LENGTH);
+    image.set(Buffer.from('BFB297', 'latin1'), IMAGE_AUX + VERSION_OFFSET);
     const s = await startSession(FakeRadio.fromImage(image));
     expect(hex(s.startedIdent.bytes)).toBe('aa 30 76 04 00 05 21 dd');
     expect(s.startedIdent.firmware).toBe('BFB297');

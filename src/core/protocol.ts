@@ -35,6 +35,9 @@ const MEMORY_END = 0x2000;
 const BLOCK = 0x10;
 /** The two 16-byte halves the radio stages until a write at SETTINGS_COMMIT. */
 const SETTINGS_HALVES = [SETTINGS_BASE, SETTINGS_BASE + BLOCK] as const;
+/** Offset of the 14-byte version string in the firmware block at ADDR.firmwareBlock. */
+export const VERSION_OFFSET = 48;
+export const VERSION_LENGTH = 14;
 
 /**
  * Wait `ms` on a ref'd timer, so a port that closes mid-wait still leaves the loop alive for the
@@ -105,6 +108,14 @@ export function radioUnsupported(radio: string, magic: string, got: string): Dev
   return new DeviceStateError('radio-unsupported', `the radio answered as a ${radio}; this CLI speaks the classic UV-5R protocol`, { radio, magic, got });
 }
 
+/** Return the version bytes `version` as text with bytes outside 0x20..0x7E dropped, trimmed. */
+export function firmwareText(version: Uint8Array): string {
+  return Buffer.from(version)
+    .toString('latin1')
+    .replace(/[^\x20-\x7e]/g, '')
+    .trim();
+}
+
 /**
  * One clone-mode session. Commands go back to back; the radio drops the session after
  * IDLE_LIMIT_MS of silence and reloads its settings from EEPROM when it does.
@@ -173,11 +184,8 @@ export class Session {
     await this.readBlock(0x1e80, 0x40);
     const fw = await this.readBlock(ADDR.firmwareBlock, 0x40);
     const tail = await this.readBlock(0x1fc0, 0x40);
-    const version = fw.subarray(48, 62);
-    const firmware = Buffer.from(version)
-      .toString('latin1')
-      .replace(/[^\x20-\x7e]/g, '')
-      .trim();
+    const version = fw.subarray(VERSION_OFFSET, VERSION_OFFSET + VERSION_LENGTH);
+    const firmware = firmwareText(version);
     const { family, flags } = classify(magic.name, version, bytes);
     if (family === 'bf-a58') throw radioUnsupported('Baofeng BF-A58', magic.name, got);
     this.ident = { bytes, firmware, firmwareHex: hex(version), droppedByte: tail[15] === 0xff, magic: magic.name, family, flags };

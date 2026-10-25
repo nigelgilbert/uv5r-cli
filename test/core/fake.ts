@@ -1,5 +1,6 @@
+import { ADDR } from '../../src/core/codec.ts';
 import { magicByName, type MagicName } from '../../src/core/ident.ts';
-import { hex } from '../../src/core/protocol.ts';
+import { VERSION_LENGTH, VERSION_OFFSET, hex } from '../../src/core/protocol.ts';
 import { IMAGE_AUX, IMAGE_HEADER } from '../../src/core/radio.ts';
 import type { Transport } from '../../src/core/transport.ts';
 import { AUX_SIZE } from './golden.ts';
@@ -20,12 +21,9 @@ const CLASSIC_RATE = 9600;
 /** Baud of the program magics. */
 const PROGRAM_RATE = 115200;
 /** End of main memory, the part of a CHIRP image after the ident. */
-const MAIN_END = 0x1800;
-/** Start of the aux block, the part of a CHIRP image from IMAGE_AUX. */
-const AUX = 0x1ec0;
-/** Offset of the 14-byte version string in the firmware block at 0x1EC0. */
-const VERSION_AT = AUX + 48;
-const VERSION_LENGTH = 14;
+const MAIN_END = IMAGE_AUX - IMAGE_HEADER;
+/** Address of the 14-byte version string. */
+const VERSION_AT = ADDR.firmwareBlock + VERSION_OFFSET;
 
 /**
  * In-memory UV-5R with the bench radio's behaviour: answers the clone handshake, serves
@@ -109,7 +107,7 @@ export class FakeRadio implements Transport {
     const radio = new FakeRadio();
     radio.ident.set(image.subarray(0, IMAGE_HEADER));
     radio.eeprom.set(image.subarray(IMAGE_HEADER, IMAGE_HEADER + MAIN_END), 0);
-    radio.eeprom.set(image.subarray(IMAGE_AUX), AUX);
+    radio.eeprom.set(image.subarray(IMAGE_AUX), ADDR.firmwareBlock);
     radio.magics = [magicByName(magic).bytes];
     return radio;
   }
