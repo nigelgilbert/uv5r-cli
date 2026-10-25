@@ -111,7 +111,6 @@ export class FakeRadio implements Transport {
     radio.eeprom.set(image.subarray(IMAGE_HEADER, IMAGE_HEADER + MAIN_END), 0);
     radio.eeprom.set(image.subarray(IMAGE_AUX), AUX);
     radio.magics = [magicByName(magic).bytes];
-    radio.reload();
     return radio;
   }
 
