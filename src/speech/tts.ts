@@ -1,7 +1,7 @@
-import { execFile } from 'node:child_process';
-import { exitHow, runFfmpeg, stderrTail, type ExecError } from '../cli/audio.ts';
+import { exitHow, ffmpegMissing, stderrTail } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
 import { WAV_RATE } from './levels.ts';
+import { execDetached } from './output.ts';
 
 /** Milliseconds `say` gets to render one utterance. */
 const SAY_TIMEOUT_MS = 60_000;
@@ -24,14 +24,13 @@ export function sayArgs(text: string, voice: string, wav: string): string[] {
 }
 
 /**
- * Render `text` in `voice` to `wav` with macOS `say`. A missing `say` rejects with
- * dependency-missing; any other failure rejects with speech-engine-failed and the stderr
- * tail, which names an unknown voice.
+ * Render `text` in `voice` to `wav` with macOS `say` in its own process group. A missing
+ * `say` rejects with dependency-missing; any other failure rejects with speech-engine-failed
+ * and the stderr tail, which names an unknown voice.
  */
 export function synthesize(text: string, voice: string, wav: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile('say', sayArgs(text, voice, wav), { timeout: SAY_TIMEOUT_MS }, (err, _stdout, stderr) => {
-      const e = err as ExecError | null;
+    execDetached('say', sayArgs(text, voice, wav), SAY_TIMEOUT_MS, (e, stderr) => {
       if (!e) {
         resolve();
         return;
@@ -40,7 +39,7 @@ export function synthesize(text: string, voice: string, wav: string): Promise<vo
         reject(new TransportError('dependency-missing', 'say not found on PATH; uv5r say runs on macOS', {}, { remedy: 'run uv5r say on the macOS bench' }));
         return;
       }
-      const tail = stderrTail(String(stderr ?? ''));
+      const tail = stderrTail(stderr);
       reject(new TransportError('speech-engine-failed', `say ${exitHow(e, SAY_TIMEOUT_MS)} with voice ${JSON.stringify(voice)}${tail ? `: ${tail}` : ''}`, { voice, code: e.code ?? null, signal: e.signal ?? null }));
     });
   });
@@ -72,7 +71,24 @@ export function conditionArgs(input: string, output: string, leadMs: number): st
   ];
 }
 
-/** Condition `input` into `output` with conditionArgs. */
-export async function condition(input: string, output: string, leadMs: number): Promise<void> {
-  await runFfmpeg(conditionArgs(input, output, leadMs), `conditioning ${input}`, CONDITION_TIMEOUT_MS);
+/**
+ * Condition `input` into `output` with conditionArgs, with ffmpeg in its own process group.
+ * A missing ffmpeg rejects with dependency-missing and any other failure with
+ * audio-process-failed and the stderr tail.
+ */
+export function condition(input: string, output: string, leadMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execDetached('ffmpeg', conditionArgs(input, output, leadMs), CONDITION_TIMEOUT_MS, (e, stderr) => {
+      if (!e) {
+        resolve();
+        return;
+      }
+      if (e.code === 'ENOENT') {
+        reject(ffmpegMissing());
+        return;
+      }
+      const tail = stderrTail(stderr);
+      reject(new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, CONDITION_TIMEOUT_MS)} conditioning ${input}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null }));
+    });
+  });
 }

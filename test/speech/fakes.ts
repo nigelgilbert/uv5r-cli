@@ -267,6 +267,38 @@ export function fakeTranscriber(transcribe: (wav: string) => Promise<Transcript>
   return Object.assign(fn, { calls });
 }
 
+/**
+ * A child process stand-in for spawn. `exit` writes `stderr` and emits close with the code
+ * and signal; `fail` emits a spawn error with no pid. kill records each signal in `kills`.
+ */
+export function fakeChild() {
+  const kills: NodeJS.Signals[] = [];
+  const child = Object.assign(new EventEmitter(), {
+    stderr: new EventEmitter(),
+    pid: 4242 as number | undefined,
+    kills,
+    kill: (signal: NodeJS.Signals = 'SIGTERM') => kills.push(signal) > 0,
+    exit: (code: number | null, { signal = null, stderr = '' }: { signal?: NodeJS.Signals | null; stderr?: string } = {}) => {
+      if (stderr) child.stderr.emit('data', Buffer.from(stderr));
+      child.emit('close', code, signal);
+    },
+    fail: (err: NodeJS.ErrnoException) => {
+      child.pid = undefined;
+      child.emit('error', err);
+    },
+  });
+  return child;
+}
+
+/** A spawn stand-in body that returns a fakeChild and settles it on the next tick with `settle`. */
+export function spawnThen(settle: (child: ReturnType<typeof fakeChild>) => void) {
+  return () => {
+    const child = fakeChild();
+    setImmediate(() => settle(child));
+    return child;
+  };
+}
+
 /** SpeechDeps built from the fakes, with `overrides` in place; signals is a fresh EventEmitter. */
 export function fakeSpeechDeps(overrides: Partial<SpeechDeps> = {}): SpeechDeps & { signals: EventEmitter } {
   const clock = fakeClock();

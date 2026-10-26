@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_FLOOR_DBFS, play } from '../cli/audio.ts';
-import { BaofengError, DeviceStateError, keyWhile, TransportError, UsageError, type HoldResult, type Transport } from '../core/index.ts';
+import { BaofengError, DeviceStateError, KEY_SIGNALS, keyWhile, TransportError, UsageError, type HoldResult, type Transport } from '../core/index.ts';
 import { measureWav, type WavLevels } from './levels.ts';
 import { startMonitor, type Monitor } from './monitor.ts';
 import { playTo, resolveOutput } from './output.ts';
@@ -49,6 +49,8 @@ export interface SpeechDeps {
   now: () => number;
   /** Source of the key signals. */
   signals: EventEmitter;
+  /** Station config path say and id read when neither --config nor UV5R_CONFIG names one; unset means uv5r.json at the repo root. */
+  defaultConfig?: string;
 }
 
 /** Return the real speech dependencies. */
@@ -102,7 +104,7 @@ export interface SpeakResult {
   pttAsserted: boolean;
   released: boolean;
   interrupted?: NodeJS.Signals;
-  /** Set on a signal; true when the player started and the ID did not finish. */
+  /** Set on a signal; true when the player ran past --lead and the ID did not finish. */
   idOwed?: boolean;
   /** ID_OWED_REMEDY when idOwed is true. */
   remedy?: string;
@@ -190,15 +192,33 @@ export async function checkClear(monitor: Monitor, device: string, seconds: numb
  * `withPort` opens the port. `--rehearse` stops after the measurement and plays through the
  * system default output with the port closed.
  *
+ * Without --rehearse, the key signal handlers cover the whole run. A signal before PTT rises
+ * stops the clear check, skips keying and returns the result with `interrupted`,
+ * `pttAsserted` false and `idOwed` false.
+ *
  * `identified` is true when the player exits 0 before keyWhile stops it. The ID ends the
  * WAV and only the trailing pad follows it, so a clean player exit means the ID went out.
- * A signal returns the result with `interrupted` and `idOwed`. A player failure while keyed
- * throws its audio-process-failed error with retry no, `pttAsserted`, `released`,
- * `playedSeconds` and `idOwed`. A player that runs past the watchdog throws the same reason.
+ * `idOwed` is true when the player ran longer than `leadMs` and the ID did not finish. The
+ * played time includes player start-up, so the rule is approximate. A signal while keyed
+ * returns the result with `interrupted` and `idOwed`. A player failure while keyed throws its
+ * audio-process-failed error with retry no, `pttAsserted`, `released`, `playedSeconds` and
+ * `idOwed`. A player that runs past the watchdog throws the same reason.
  */
 export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, withPort: WithPort): Promise<SpeakResult> {
   const spoken = options.idOnly ? idSentence(options.callsign) : withId(options.text, options.callsign);
   const scratch = mkdtempSync(join(tmpdir(), 'uv5r-say-'));
+  let signalled: NodeJS.Signals | undefined;
+  let onSignal = () => {};
+  const handlers = options.rehearse
+    ? []
+    : KEY_SIGNALS.map((signal) => {
+        const handler = () => {
+          signalled ??= signal;
+          onSignal();
+        };
+        deps.signals.on(signal, handler);
+        return [signal, handler] as const;
+      });
   try {
     const raw = join(scratch, 'speech.wav');
     const wav = join(scratch, 'tx.wav');
@@ -235,60 +255,92 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
       }
       return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, device: REHEARSE_DEVICE, pttAsserted: false, released: true, rehearsed: true, ...kept };
     }
+    const unkeyed = (signal: NodeJS.Signals): SpeakResult => ({
+      text: options.text,
+      spoken,
+      identified: false,
+      seconds: 0,
+      ...measured,
+      device: options.output,
+      pttAsserted: false,
+      released: true,
+      interrupted: signal,
+      idOwed: false,
+      ...kept,
+    });
+    if (signalled) return unkeyed(signalled);
     const index = await deps.resolveOutput(options.output);
-    if (options.clearSeconds > 0) await checkClear(deps.monitor(options.input), options.input, options.clearSeconds);
+    if (options.clearSeconds > 0 && !signalled) {
+      const monitor = deps.monitor(options.input);
+      onSignal = () => void monitor.stop();
+      try {
+        await checkClear(monitor, options.input, options.clearSeconds);
+      } catch (err) {
+        // Keep the signal result when the signal cut the capture short.
+        if (!signalled) throw err;
+      } finally {
+        onSignal = () => {};
+      }
+    }
+    if (signalled) return unkeyed(signalled);
     const maxMs = Math.ceil(levels.seconds * 1000) + options.tailMs + PLAYER_START_MS;
-    let started = false;
-    let startedAt = 0;
-    let playedMs = 0;
+    let startedAt: number | undefined;
+    let endedAt: number | undefined;
     let identified = false;
     let playFailed = false;
+    const playedMs = () => (startedAt === undefined ? 0 : (endedAt ?? deps.now()) - startedAt);
+    const owed = () => !identified && playedMs() > options.leadMs;
     const body = async (stop: Promise<void>) => {
       let stopped = false;
       void stop.then(() => (stopped = true));
-      started = true;
       startedAt = deps.now();
       try {
         await deps.playTo(index, wav, stop);
       } catch (err) {
-        playedMs = deps.now() - startedAt;
+        endedAt = deps.now();
         if (!stopped) playFailed = true;
         throw err;
       }
-      playedMs = deps.now() - startedAt;
+      endedAt = deps.now();
       if (!stopped) identified = true;
       await wait(options.tailMs, stop);
     };
-    let held: HoldResult;
+    let held: HoldResult | undefined;
     let released = () => false;
     try {
-      held = await withPort((t) => {
+      held = await withPort(async (t) => {
+        // Skip keying when a signal arrived while the port opened.
+        if (signalled) return undefined;
         const tracked = trackRelease(t);
         released = tracked.released;
         return keyWhile(tracked.transport, body, { maxMs }, deps.signals);
       });
     } catch (err) {
       if (playFailed && err instanceof BaofengError) {
-        err.attach({ pttAsserted: true, released: released(), playedSeconds: round(playedMs / 1000), idOwed: true }, released() ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' });
+        const idOwed = owed();
+        err.attach({ pttAsserted: true, released: released(), playedSeconds: round(playedMs() / 1000), idOwed }, idOwed && released() ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' });
       }
       throw err;
     }
+    if (held === undefined) return unkeyed(signalled!);
     if (held.timedOut) {
+      const idOwed = owed();
       throw new TransportError(
         'audio-process-failed',
         `the player ran past ${maxMs / 1000} s; PTT dropped at the watchdog`,
-        { pttAsserted: true, released: true, playedSeconds: round(playedMs / 1000), seconds: held.seconds, idOwed: true },
-        { remedy: ID_OWED_REMEDY, retry: 'no' },
+        { pttAsserted: true, released: true, playedSeconds: round(playedMs() / 1000), seconds: held.seconds, idOwed },
+        idOwed ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' },
       );
     }
     const result: SpeakResult = { text: options.text, spoken, identified, seconds: held.seconds, ...measured, device: options.output, pttAsserted: held.pttAsserted, released: held.released, ...kept };
     if (held.interrupted) {
       result.interrupted = held.interrupted;
-      result.idOwed = started && !identified;
+      result.idOwed = owed();
       if (result.idOwed) result.remedy = ID_OWED_REMEDY;
     }
     return result;
   } finally {
+    for (const [signal, handler] of handlers) deps.signals.off(signal, handler);
     rmSync(scratch, { recursive: true, force: true });
   }
 }

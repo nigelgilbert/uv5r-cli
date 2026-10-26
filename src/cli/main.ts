@@ -163,7 +163,8 @@ const ERROR_GUIDANCE =
   'An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check). ' +
   'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +
   'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key, say, id or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
-  `A say or id result after a signal adds idOwed. idOwed true means audio went out without the full ID, and its remedy reads: ${ID_OWED_REMEDY}. ` +
+  'say and id without --rehearse do the same for a signal before the port opens, with pttAsserted false. ' +
+  `A say or id result after a signal adds idOwed. idOwed true means the player ran past --lead without finishing the ID, and its remedy reads: ${ID_OWED_REMEDY}. ` +
   'A player failure while say or id is keyed exits 3 with audio-process-failed and retry no, and adds pttAsserted, released and playedSeconds. ' +
   'A failed PTT release after the signal exits 3 with interrupted in the error. ' +
   'On one of those signals hear stops capture, lets the segment in inference finish and print, prints the summary with interrupted and exits 128 plus the signal number. ' +
@@ -226,8 +227,9 @@ const TRANSMIT_READY = [
   'Transmit only when the human asked and the frequency is one they may transmit on.',
 ];
 const TRANSMIT_SIGNALS =
-  'Once keyed, Ctrl-C, Ctrl-Z, SIGTERM or SIGHUP drops PTT, stops the player, adds interrupted and idOwed to the result and exits 128 plus the signal number. ' +
-  `idOwed true means audio went out without the full ID; ${ID_OWED_REMEDY}.`;
+  'Ctrl-C, Ctrl-Z, SIGTERM or SIGHUP before PTT rises keys nothing; the result adds interrupted with pttAsserted false and idOwed false. ' +
+  'Once keyed, the same signals drop PTT, stop the player and add interrupted and idOwed to the result. Both exit 128 plus the signal number. ' +
+  `idOwed true means the player ran past --lead without finishing the ID; ${ID_OWED_REMEDY}.`;
 const TRANSMIT_EXITS = [
   { code: 2, when: 'station-unconfigured with no callsign in the config, before synthesis' },
   { code: 3, when: 'speech-engine-failed when say fails or writes digital zero, or audio-device-unavailable when the output is absent, both before the port opens' },
@@ -817,6 +819,8 @@ async function openSerial(target: string | undefined): Promise<Transport> {
 const openTransports = new Set<Transport>();
 /** Milliseconds the fatal-error release waits for each port. */
 const FATAL_RELEASE_MS = 1000;
+/** What the fatal-error message adds when a release failed or timed out. */
+const FATAL_UNCONFIRMED = 'PTT release unconfirmed; ask the human to unplug the AIOC';
 let fatalRun = false;
 
 async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<T>): Promise<T> {
@@ -833,18 +837,32 @@ async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<
 /**
  * Handle an uncaught exception or unhandled rejection: try to lower PTT on every open
  * transport, print the error on stderr in the cli format and exit 1. Each release gets
- * FATAL_RELEASE_MS. A second call while the first runs does nothing.
+ * FATAL_RELEASE_MS. When a release fails or runs past it, the message adds
+ * FATAL_UNCONFIRMED and the remedy says to unplug the AIOC with retry no. A second call
+ * while the first runs does nothing.
  */
 export async function fatal(err: unknown): Promise<void> {
   if (fatalRun) return;
   fatalRun = true;
   try {
+    let unconfirmed = false;
     for (const t of openTransports) {
       let timer: NodeJS.Timeout | undefined;
-      await Promise.race([t.setPtt(false).catch(() => {}), new Promise<void>((resolve) => (timer = setTimeout(resolve, FATAL_RELEASE_MS)))]);
+      const released = await Promise.race([
+        t.setPtt(false).then(
+          () => true,
+          () => false,
+        ),
+        new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), FATAL_RELEASE_MS))),
+      ]);
       clearTimeout(timer);
+      if (!released) unconfirmed = true;
     }
     const error = err instanceof BaofengError ? err : new UnexpectedError(err instanceof Error ? err.message : String(err));
+    if (unconfirmed) {
+      error.message = `${error.message}; ${FATAL_UNCONFIRMED}`;
+      error.attach({}, { remedy: REASONS['ptt-control-failed'].remedy, retry: 'no' });
+    }
     if (wantsJson(new Map(process.argv.includes('--json') ? [['json', true]] : []))) process.stderr.write(`${JSON.stringify(error)}\n`);
     else process.stderr.write(`uv5r: ${error.message}\nremedy: ${error.remedy} (retry: ${error.retry})\n`);
   } finally {
@@ -1070,7 +1088,7 @@ function transmitOptions(args: Invocation): Omit<SpeakOptions, 'text' | 'maxSeco
   const voice = stringFlag(args.flags, 'voice') ?? DEFAULT_VOICE;
   const leadMs = msFlag(args.flags, 'lead', DEFAULT_LEAD_MS);
   const tailMs = msFlag(args.flags, 'tail', DEFAULT_TAIL_MS);
-  const { path, required } = resolveConfigPath(stringFlag(args.flags, 'config'));
+  const { path, required } = resolveConfigPath(stringFlag(args.flags, 'config'), process.env, args.deps.defaultConfig);
   const station = readStation(path, { required });
   if (station.callsign === undefined) {
     throw new UsageError(`no callsign in ${path}; say and id end every transmission with it`, { file: path }, {}, 'station-unconfigured');

@@ -7,6 +7,7 @@ import { SETTLE_MS, Session, attempt, hex } from '../../src/core/protocol.ts';
 import {
   KEY_SIGNALS,
   PROGRAM_PAUSE_MS,
+  PTT_CONTROL_TIMEOUT_MS,
   SCAN_WRONG_ACK_PAUSE_MS,
   STOP_GRACE_MS,
   channelPayload,
@@ -1082,6 +1083,53 @@ describe('keyWhile', () => {
     expect((err as TransportError).kind).toBe('transport');
     expect((err as TransportError).toJSON()).toMatchObject({ reason: 'ptt-control-failed', interrupted: 'SIGINT', remedy: 'ask the human to unplug the AIOC to drop PTT', retry: 'no' });
     expect(listeners(em)).toBe(0);
+  });
+
+  it('fails a hung assertion after PTT_CONTROL_TIMEOUT_MS and still releases', async () => {
+    vi.useFakeTimers();
+    const radio = new FakeRadio();
+    const release = radio.setPtt.bind(radio);
+    radio.setPtt = (on: boolean) => (on ? new Promise<void>(() => radio.pttLog.push(on)) : release(on));
+    let ran = false;
+    const pending = keyWhile(
+      radio,
+      async () => {
+        ran = true;
+      },
+      { maxMs: 60_000 },
+      new EventEmitter(),
+    ).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(PTT_CONTROL_TIMEOUT_MS);
+    const err = (await pending) as TransportError;
+    expect(err).toBeInstanceOf(TransportError);
+    expect(err.toJSON()).toMatchObject({
+      reason: 'ptt-control-failed',
+      message: 'PTT assertion unconfirmed: the port did not confirm PTT high within 3 s; PTT released',
+      retry: 'no',
+    });
+    expect(ran).toBe(false);
+    expect(radio.pttLog).toEqual([true, false]);
+  });
+
+  it('reports a hung release as unconfirmed with the unplug remedy', async () => {
+    vi.useFakeTimers();
+    const radio = new FakeRadio();
+    const assert = radio.setPtt.bind(radio);
+    radio.setPtt = (on: boolean) => (on ? assert(on) : new Promise<void>(() => radio.pttLog.push(on)));
+    const pending = keyWhile(radio, async () => {}, { maxMs: 60_000 }, new EventEmitter()).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(PTT_CONTROL_TIMEOUT_MS - 1);
+    let done = false;
+    void pending.then(() => (done = true));
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const err = (await pending) as TransportError;
+    expect(err.toJSON()).toMatchObject({
+      reason: 'ptt-control-failed',
+      message: 'PTT rose and the release is unconfirmed: the port did not confirm PTT low within 3 s; ask the human to unplug the AIOC to drop PTT',
+      remedy: 'ask the human to unplug the AIOC to drop PTT',
+      retry: 'no',
+    });
+    expect(radio.pttLog).toEqual([true, false]);
   });
 
   it('ignores a player rejection that follows the stop', async () => {

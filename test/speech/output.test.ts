@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
-vi.mock('node:child_process', () => ({ execFile }));
+const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
+vi.mock('node:child_process', () => ({ spawn }));
 
 import { listArgs, listOutputDevices, parseDeviceList, pickOutput, playArgs, playTo, resolveOutput } from '../../src/speech/output.ts';
+import { fakeChild, spawnThen } from './fakes.ts';
 
 /** One listing line in the libavdevice/audiotoolbox.m format `[%d] %30s, %s` behind the log prefix. */
 const line = (i: number, name: string, uid: string) => `[AudioToolbox @ 0x7fa1c8f04a00] [${i}] ${name.padStart(30)}, ${uid}`;
@@ -24,13 +25,10 @@ const LISTING = [
   'Output #0, audiotoolbox, to \'-\':',
 ].join('\n');
 
-/** A child process stand-in for execFile; kill records the signal. */
-function fakeChild() {
-  return { kill: vi.fn(() => true), exitCode: null, signalCode: null };
-}
+const ENOENT = Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' });
 
 beforeEach(() => {
-  execFile.mockReset();
+  spawn.mockReset();
 });
 
 describe('parseDeviceList', () => {
@@ -74,65 +72,68 @@ describe('pickOutput', () => {
 
 describe('listOutputDevices', () => {
   it('runs the listing through ffmpeg and resolves the AIOC output index', async () => {
-    execFile.mockImplementation((_f, _a, _o, cb) => cb(null, '', LISTING));
+    spawn.mockImplementation(spawnThen((c) => c.exit(0, { stderr: LISTING })));
     await expect(resolveOutput('AIOC Audio')).resolves.toBe(1);
-    expect(execFile.mock.calls[0]![0]).toBe('ffmpeg');
-    expect(execFile.mock.calls[0]![1]).toEqual(listArgs());
+    expect(spawn.mock.calls[0]![0]).toBe('ffmpeg');
+    expect(spawn.mock.calls[0]![1]).toEqual(listArgs());
+    expect(spawn.mock.calls[0]![2]).toMatchObject({ detached: true });
     expect(listArgs()).toContain('-list_devices');
   });
 
   it('keeps a listing printed before a later failure', async () => {
-    execFile.mockImplementation((_f, _a, _o, cb) => cb(Object.assign(new Error('failed'), { code: 1 }), '', LISTING));
+    spawn.mockImplementation(spawnThen((c) => c.exit(1, { stderr: LISTING })));
     await expect(listOutputDevices()).resolves.toHaveLength(6);
   });
 
   it('maps a missing ffmpeg to dependency-missing and a failure with no listing to audio-process-failed', async () => {
-    execFile.mockImplementationOnce((_f, _a, _o, cb) => cb(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }), '', ''));
+    spawn.mockImplementationOnce(spawnThen((c) => c.fail(ENOENT)));
     await expect(listOutputDevices()).rejects.toMatchObject({ reason: 'dependency-missing' });
-    execFile.mockImplementationOnce((_f, _a, _o, cb) => cb(Object.assign(new Error('failed'), { code: 1 }), '', 'Unknown output format'));
+    spawn.mockImplementationOnce(spawnThen((c) => c.exit(1, { stderr: 'Unknown output format' })));
     await expect(listOutputDevices()).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringContaining('Unknown output format') });
+  });
+  it('stops a listing that runs past its timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      spawn.mockReturnValue(child);
+      const pending = listOutputDevices().catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(child.kills).toEqual(['SIGTERM']);
+      child.exit(null, { signal: 'SIGTERM' });
+      expect(await pending).toMatchObject({ reason: 'audio-process-failed', message: expect.stringContaining('timed out after 10s') });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
 describe('playTo', () => {
-  it('plays the WAV to the audiotoolbox index and resolves on exit 0', async () => {
-    execFile.mockImplementation((_f, _a, cb) => {
-      setImmediate(() => cb(null, '', ''));
-      return fakeChild();
-    });
+  it('plays the WAV to the audiotoolbox index in its own process group and resolves on exit 0', async () => {
+    spawn.mockImplementation(spawnThen((c) => c.exit(0)));
     await expect(playTo(4, 'tx.wav', new Promise(() => {}))).resolves.toBeUndefined();
-    expect(execFile.mock.calls[0]![1]).toEqual(playArgs(4, 'tx.wav'));
+    expect(spawn.mock.calls[0]![1]).toEqual(playArgs(4, 'tx.wav'));
+    expect(spawn.mock.calls[0]![2]).toMatchObject({ detached: true });
     expect(playArgs(4, 'tx.wav')).toEqual(['-hide_banner', '-nostdin', '-i', 'tx.wav', '-f', 'audiotoolbox', '-audio_device_index', '4', '-']);
   });
 
   it('sends SIGTERM when stop resolves and rejects once ffmpeg exits', async () => {
     const child = fakeChild();
-    let exit: (err: Error | null) => void = () => {};
-    execFile.mockImplementation((_f, _a, cb) => {
-      exit = (err) => cb(err, '', '');
-      return child;
-    });
+    spawn.mockReturnValue(child);
     let stop = () => {};
     const pending = playTo(4, 'tx.wav', new Promise<void>((resolve) => (stop = resolve)));
     stop();
-    await vi.waitFor(() => expect(child.kill).toHaveBeenCalledWith('SIGTERM'));
-    exit(Object.assign(new Error('killed'), { signal: 'SIGTERM', killed: true }));
+    await vi.waitFor(() => expect(child.kills).toEqual(['SIGTERM']));
+    child.exit(null, { signal: 'SIGTERM' });
     await expect(pending).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringContaining('stopped when PTT dropped') });
   });
 
   it('rejects a non-zero exit with audio-process-failed and the stderr tail', async () => {
-    execFile.mockImplementation((_f, _a, cb) => {
-      setImmediate(() => cb(Object.assign(new Error('failed'), { code: 1 }), '', 'AudioQueueStart failed'));
-      return fakeChild();
-    });
-    await expect(playTo(4, 'tx.wav', new Promise(() => {}))).rejects.toMatchObject({ reason: 'audio-process-failed', detail: { output: 4, code: 1 }, message:expect.stringContaining('AudioQueueStart failed') });
+    spawn.mockImplementation(spawnThen((c) => c.exit(1, { stderr: 'AudioQueueStart failed' })));
+    await expect(playTo(4, 'tx.wav', new Promise(() => {}))).rejects.toMatchObject({ reason: 'audio-process-failed', detail: { output: 4, code: 1 }, message: expect.stringContaining('AudioQueueStart failed') });
   });
 
   it('maps a missing ffmpeg to dependency-missing', async () => {
-    execFile.mockImplementation((_f, _a, cb) => {
-      setImmediate(() => cb(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }), '', ''));
-      return fakeChild();
-    });
+    spawn.mockImplementation(spawnThen((c) => c.fail(ENOENT)));
     await expect(playTo(4, 'tx.wav', new Promise(() => {}))).rejects.toMatchObject({ reason: 'dependency-missing' });
   });
 });

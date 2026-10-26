@@ -100,13 +100,15 @@ the check result fields.
 
 On SIGINT, SIGTERM, SIGHUP or SIGTSTP (Ctrl-Z) once `key`, `say`, `id` or `sweep` has opened
 the port, the verb prints its result on stdout with `interrupted` and no error, and exits 128
-plus the signal number. SIGTSTP exits 146 on macOS and 148 on Linux. A `say` or `id` result
-after a signal adds `idOwed`; `true` means audio went out without the full ID, so identify by
-voice or run `uv5r id`. A failed PTT release after the signal exits 3 with `interrupted` in
+plus the signal number. SIGTSTP exits 146 on macOS and 148 on Linux. `say` and `id` without
+`--rehearse` do the same for a signal before the port opens, with `pttAsserted: false`. A
+`say` or `id` result after a signal adds `idOwed`; `true` means the player ran past `--lead`
+without finishing the ID, so identify by voice or run `uv5r id`. A failed PTT release after the signal exits 3 with `interrupted` in
 the error. On the same signals `hear` stops capture, lets the segment in inference finish and
 print, prints the summary with `interrupted` and exits 128 plus the signal number. Other verbs
 end on a signal with no output.
-An uncaught error lowers PTT on any open port and exits 1.
+An uncaught error lowers PTT on any open port and exits 1. When a release fails or takes over
+1 s, the error says to unplug the AIOC.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
@@ -207,8 +209,7 @@ port have one owner at a time.
 You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C. Each transmission ends with the callsign from uv5r.json. A stock UV-5R is not certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and control operator.
 
 `uv5r say "bench check, over"` speaks the text and ends with the ID sentence, as in "This is
-Kilo, Juliett, Seven, Alfa, Bravo, Charlie". `uv5r id` sends the ID sentence alone. Both run
-these steps:
+Kilo, Juliett, Seven, Alfa, Bravo, Charlie". `uv5r id` sends the ID sentence alone.
 
 1. Read the station config. No callsign exits 2 with `station-unconfigured`.
 2. Synthesize the text and the ID sentence with macOS `say -v Samantha` at 48 kHz.
@@ -241,8 +242,8 @@ lower it on a radio set to a shorter TOT.
 
 ## Station config
 
-`say` and `id` read the callsign from `uv5r.json` at the repo root. `uv5r.example.json`
-shows the shape:
+`say` and `id` read the callsign from `uv5r.json` at the repo root, laid out as in
+`uv5r.example.json`.
 
 ```json
 {

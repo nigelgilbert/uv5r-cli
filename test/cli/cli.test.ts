@@ -1036,6 +1036,39 @@ describe('key output', () => {
     await done;
   });
 
+  it.each([
+    ['rejects', () => Promise.reject(new Error('cannot lower DTR'))],
+    ['hangs', () => new Promise<void>(() => {})],
+  ] as const)('tells the human to unplug when the fatal-error release %s', async (_how, release) => {
+    const radio = new FakeRadio();
+    const done = cli(['key', '--seconds', '5', '--json'], opener(radio));
+    await vi.waitFor(() => expect(radio.ptt).toBe(true));
+    const setPtt = radio.setPtt.bind(radio);
+    let first = true;
+    radio.setPtt = (on: boolean) => {
+      if (on || !first) return setPtt(on);
+      first = false;
+      return release();
+    };
+    vi.useFakeTimers();
+    try {
+      const pending = expect(fatal(new Error('boom'))).rejects.toThrow('process.exit called');
+      await vi.advanceTimersByTimeAsync(1000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(JSON.parse(stderr.join('').trim())).toMatchObject({
+      reason: 'unexpected-error',
+      message: 'boom; PTT release unconfirmed; ask the human to unplug the AIOC',
+      remedy: 'ask the human to unplug the AIOC to drop PTT',
+      retry: 'no',
+    });
+    process.emit('SIGINT');
+    await done;
+  });
+
   it('describes the displayed channel and receive-only slots in help', async () => {
     await cli(['help', 'key']);
     const help = stdout.join('');

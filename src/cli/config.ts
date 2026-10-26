@@ -12,12 +12,12 @@ export interface ConfigPath {
   required: boolean;
 }
 
-/** Pick the config file: `--config FILE`, then `UV5R_CONFIG` when set and non-empty, then the repo default. */
-export function resolveConfigPath(flag: string | undefined, env: NodeJS.ProcessEnv = process.env): ConfigPath {
+/** Pick the config file: `--config FILE`, then `UV5R_CONFIG` when set and non-empty, then `fallback`, the repo default. */
+export function resolveConfigPath(flag: string | undefined, env: NodeJS.ProcessEnv = process.env, fallback: string = DEFAULT_CONFIG): ConfigPath {
   if (flag !== undefined) return { path: flag, required: true };
   const named = env.UV5R_CONFIG;
   if (named !== undefined && named !== '') return { path: named, required: true };
-  return { path: DEFAULT_CONFIG, required: false };
+  return { path: fallback, required: false };
 }
 
 /**

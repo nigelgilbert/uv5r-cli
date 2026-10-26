@@ -7,7 +7,7 @@ import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
 import { idSentence } from '../../src/speech/phonetic.ts';
 import { FakeRadio } from '../core/fake.ts';
-import { fakeMonitor, fakePlayTo, fakeResolveOutput, fakeSpeechDeps, fakeSynthesize, pcmFrame } from '../speech/fakes.ts';
+import { fakeClock, fakeMonitor, fakePlayTo, fakeResolveOutput, fakeSpeechDeps, fakeSynthesize, pcmFrame } from '../speech/fakes.ts';
 
 const ID = idSentence('KJ7ABC');
 
@@ -58,6 +58,18 @@ describe('say', () => {
     await cli(['say', 'hello', '--config', config({ outputDevice: 'AIOC Audio' }), '--json'], open, fakeSpeechDeps({ synthesize: synth }));
     expect(process.exitCode).toBe(2);
     expect(errJson()).toMatchObject({ reason: 'station-unconfigured', retry: 'no' });
+    expect(open.calls).toBe(0);
+    expect(synth.calls).toEqual([]);
+  });
+
+  it('exits 2 with station-unconfigured before open when the default config file is absent', async () => {
+    const open = opener();
+    const synth = fakeSynthesize();
+    const defaultConfig = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'uv5r.json');
+    vi.stubEnv('UV5R_CONFIG', '');
+    await cli(['say', 'hello', '--json'], open, fakeSpeechDeps({ synthesize: synth, defaultConfig }));
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'station-unconfigured', file: defaultConfig });
     expect(open.calls).toBe(0);
     expect(synth.calls).toEqual([]);
   });
@@ -153,17 +165,55 @@ describe('say', () => {
 
   it('releases PTT on SIGTSTP while keyed, reports idOwed and exits 128 plus the platform number', async () => {
     const radio = new FakeRadio();
-    const deps = fakeSpeechDeps();
-    deps.playTo = fakePlayTo({ ms: 5000, onStart: () => setTimeout(() => deps.signals.emit('SIGTSTP'), 30) });
+    const clock = fakeClock();
+    const deps = fakeSpeechDeps({ now: clock.now });
+    deps.playTo = fakePlayTo({
+      ms: 5000,
+      clock,
+      onStart: () => {
+        clock.advance(1000);
+        setTimeout(() => deps.signals.emit('SIGTSTP'), 30);
+      },
+    });
     await cli(['say', 'hello', '--config', STATION, '--json'], opener(radio), deps);
     expect(process.exitCode).toBe(signalExitCode('SIGTSTP'));
     expect(outJson()).toMatchObject({ interrupted: 'SIGTSTP', identified: false, idOwed: true, remedy: 'identify by voice or run uv5r id', released: true });
     expect(radio.pttLog).toEqual([true, false]);
   });
 
+  it.each(['SIGINT', 'SIGTSTP'] as const)('keys nothing on %s during synthesis and exits 128 plus the signal number', async (signal) => {
+    const radio = new FakeRadio();
+    const open = opener(radio);
+    const deps = fakeSpeechDeps();
+    const synth = fakeSynthesize();
+    deps.synthesize = async (text, voice, wav) => {
+      deps.signals.emit(signal);
+      await synth(text, voice, wav);
+    };
+    await cli(['say', 'hello', '--config', STATION, '--json'], open, deps);
+    expect(process.exitCode).toBe(signalExitCode(signal));
+    expect(outJson()).toMatchObject({ interrupted: signal, identified: false, idOwed: false, pttAsserted: false, released: true });
+    expect(open.calls).toBe(0);
+    expect(radio.pttLog).toEqual([]);
+  });
+
+  it.each(['SIGINT', 'SIGTSTP'] as const)('stops --clear and keys nothing on %s, exiting 128 plus the signal number', async (signal) => {
+    const radio = new FakeRadio();
+    const open = opener(radio);
+    const monitor = fakeMonitor([pcmFrame(-80)]);
+    const deps = fakeSpeechDeps({ monitor: () => monitor });
+    setTimeout(() => deps.signals.emit(signal), 30);
+    await cli(['say', 'hello', '--config', STATION, '--clear', '30', '--json'], open, deps);
+    expect(process.exitCode).toBe(signalExitCode(signal));
+    expect(outJson()).toMatchObject({ interrupted: signal, idOwed: false, pttAsserted: false });
+    expect(open.calls).toBe(0);
+    expect(radio.pttLog).toEqual([]);
+  });
+
   it('exits 3 with retry no and the PTT fields when the player fails while keyed', async () => {
     const fail = new TransportError('audio-process-failed', 'ffmpeg exited with code 1 playing tx.wav', { output: 3 });
-    await cli(['say', 'hello', '--config', STATION, '--json'], opener(), fakeSpeechDeps({ playTo: fakePlayTo({ fail }) }));
+    const clock = fakeClock();
+    await cli(['say', 'hello', '--config', STATION, '--json'], opener(), fakeSpeechDeps({ now: clock.now, playTo: fakePlayTo({ fail, clock, onStart: () => clock.advance(1000) }) }));
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     expect(errJson()).toMatchObject({ reason: 'audio-process-failed', retry: 'no', pttAsserted: true, released: true, playedSeconds: expect.any(Number), idOwed: true });

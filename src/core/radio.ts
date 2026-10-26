@@ -550,6 +550,8 @@ export const KEY_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIG
 export const STOP_GRACE_MS = 2000;
 /** Milliseconds holdPtt adds to its hold for the keyWhile watchdog. */
 const HOLD_WATCHDOG_SLACK_MS = 5000;
+/** Milliseconds keyWhile waits for the port to confirm each PTT change. */
+export const PTT_CONTROL_TIMEOUT_MS = 3000;
 const UNPLUG = 'ask the human to unplug the AIOC to drop PTT';
 
 export interface HoldResult {
@@ -582,6 +584,22 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Set PTT on `t` and reject when the port gives no confirmation within PTT_CONTROL_TIMEOUT_MS. */
+async function setPttWithin(t: Transport, on: boolean): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`the port did not confirm PTT ${on ? 'high' : 'low'} within ${PTT_CONTROL_TIMEOUT_MS / 1000} s`)), PTT_CONTROL_TIMEOUT_MS);
+  });
+  const set = t.setPtt(on);
+  // Attach a handler so a rejection after the timeout stays handled.
+  set.catch(() => {});
+  try {
+    await Promise.race([set, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Resolve after `ms`, or as soon as `stop` resolves, and leave no timer pending. */
 function wait(ms: number, stop: Promise<void>): Promise<void> {
   return new Promise((resolve) => {
@@ -601,7 +619,8 @@ function wait(ms: number, stop: Promise<void>): Promise<void> {
  * after a signal or maxMs counts as the stop and fails nothing.
  *
  * The first failure wins. A PTT failure throws ptt-control-failed with what the port
- * confirmed. A body failure keeps its own reason and gains `seconds` and any `interrupted`.
+ * confirmed. Each PTT change gets PTT_CONTROL_TIMEOUT_MS; a late assertion counts as a failed
+ * one and keyWhile still releases. A body failure keeps its own reason and gains `seconds` and any `interrupted`.
  * When the release fails, the message and remedy tell the human to unplug the AIOC.
  */
 export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Promise<unknown>, options: KeyOptions, signals: EventEmitter = process): Promise<HoldResult> {
@@ -629,7 +648,7 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
   let watchdog: NodeJS.Timeout | undefined;
   try {
     try {
-      await t.setPtt(true);
+      await setPttWithin(t, true);
       pttAsserted = true;
       const assertedAt = performance.now();
       if (!interrupted) {
@@ -661,7 +680,7 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
     }
     clearTimeout(watchdog);
     try {
-      await t.setPtt(false);
+      await setPttWithin(t, false);
       released = true;
     } catch (err) {
       releaseCause = messageOf(err);

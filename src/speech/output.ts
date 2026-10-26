@@ -1,4 +1,4 @@
-import { type ChildProcess, execFile } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { KILL_GRACE_MS, exitHow, ffmpegMissing, stderrTail, type ExecError } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
 
@@ -7,6 +7,49 @@ const LIST_TIMEOUT_MS = 10_000;
 
 /** UID suffix of the AIOC output device; its input ends in `:2`. */
 const OUTPUT_UID_SUFFIX = ':1';
+
+/** Bytes of stderr a detached run keeps. */
+const STDERR_KEEP = 1024 * 1024;
+
+/**
+ * Run `file` with `args` in its own process group and call `callback` once it exits, as
+ * execFile calls its callback: a null error on exit 0, else an ExecError with the exit code
+ * or signal, `killed` set after a timeout, or the spawn error itself. A terminal Ctrl-C or
+ * Ctrl-Z then reaches only uv5r. `timeoutMs` 0 sets no timeout. Return the child so the
+ * caller can kill it.
+ */
+export function execDetached(file: string, args: string[], timeoutMs: number, callback: (err: ExecError | null, stderr: string) => void): ChildProcess {
+  const child = spawn(file, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+  let stderr = '';
+  let timedOut = false;
+  let failed: ExecError | undefined;
+  let done = false;
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGTERM');
+        }, timeoutMs)
+      : undefined;
+  const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    if (failed) callback(failed, stderr);
+    else if (code === 0) callback(null, stderr);
+    else callback(Object.assign(new Error(`${file} exited`), { code: code as unknown as string, signal, killed: timedOut }), stderr);
+  };
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr = (stderr + chunk.toString()).slice(-STDERR_KEEP);
+  });
+  child.on('error', (e: ExecError) => {
+    failed = e;
+    // A child that never spawned emits no close.
+    if (child.pid === undefined) finish(null, null);
+  });
+  child.on('close', finish);
+  return child;
+}
 
 /** One CoreAudio device as the audiotoolbox listing prints it. */
 export interface OutputDevice {
@@ -54,16 +97,15 @@ export function pickOutput(devices: OutputDevice[], name: string): OutputDevice 
 /** Run the audiotoolbox listing and return the devices it prints. */
 export function listOutputDevices(): Promise<OutputDevice[]> {
   return new Promise((resolve, reject) => {
-    execFile('ffmpeg', listArgs(), { timeout: LIST_TIMEOUT_MS }, (err, _stdout, stderr) => {
-      const e = err as ExecError | null;
+    execDetached('ffmpeg', listArgs(), LIST_TIMEOUT_MS, (e, stderr) => {
       if (e?.code === 'ENOENT') {
         reject(ffmpegMissing());
         return;
       }
-      const devices = parseDeviceList(String(stderr ?? ''));
+      const devices = parseDeviceList(stderr);
       // Keep a list printed before a later failure, since the listing comes first.
       if (e && devices.length === 0) {
-        const tail = stderrTail(String(stderr ?? ''));
+        const tail = stderrTail(stderr);
         reject(new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, LIST_TIMEOUT_MS)} listing audiotoolbox devices${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null }));
         return;
       }
@@ -83,9 +125,10 @@ export function playArgs(index: number, wav: string): string[] {
 }
 
 /**
- * Play `wav` to the audiotoolbox device at `index` and resolve when ffmpeg exits 0. When
- * `stop` resolves first, send ffmpeg SIGTERM, then SIGKILL after KILL_GRACE_MS, and reject
- * with audio-process-failed once it exits.
+ * Play `wav` to the audiotoolbox device at `index` and resolve when ffmpeg exits 0. ffmpeg
+ * runs in its own process group, so a terminal signal reaches only uv5r. When `stop`
+ * resolves first, send ffmpeg SIGTERM, then SIGKILL after KILL_GRACE_MS, and reject with
+ * audio-process-failed once it exits.
  */
 export function playTo(index: number, wav: string, stop: Promise<void>): Promise<void> {
   let stopped = false;
@@ -93,17 +136,16 @@ export function playTo(index: number, wav: string, stop: Promise<void>): Promise
   let escalate: NodeJS.Timeout | undefined;
   let child: ChildProcess | undefined;
   return new Promise((resolve, reject) => {
-    child = execFile('ffmpeg', playArgs(index, wav), (err, _stdout, stderr) => {
+    child = execDetached('ffmpeg', playArgs(index, wav), 0, (e, stderr) => {
       clearTimeout(escalate);
       exited = true;
       child = undefined;
-      const e = err as ExecError | null;
       if (e?.code === 'ENOENT') {
         reject(ffmpegMissing());
         return;
       }
       if (e || stopped) {
-        const tail = stderrTail(String(stderr ?? ''));
+        const tail = stderrTail(stderr);
         const how = stopped || !e ? 'stopped when PTT dropped' : exitHow(e, 0);
         reject(new TransportError('audio-process-failed', `ffmpeg ${how} playing ${wav} to output ${index}${tail ? `: ${tail}` : ''}`, { output: index, code: e?.code ?? null, signal: e?.signal ?? null }));
         return;
