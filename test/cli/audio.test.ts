@@ -233,6 +233,7 @@ describe('listen', () => {
       await vi.advanceTimersByTimeAsync(5000);
       child.exit(null, { signal: 'SIGTERM', stderr: STDERR });
       const err = await pending;
+      await vi.advanceTimersByTimeAsync(30000);
       expect(child.kills).toEqual([]);
       expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { device: 'AIOC Audio', code: null, signal: 'SIGTERM' } });
       expect(err.message).toMatch(/^ffmpeg stopped on SIGTERM capturing from "AIOC Audio"/);
