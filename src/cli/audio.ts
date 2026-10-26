@@ -235,7 +235,7 @@ export async function listen(device: string, seconds: number, floorDbfs = DEFAUL
   return { ...result, out };
 }
 
-/** The error execFile passes to its callback. */
+/** The error execFile and execDetached pass to their callbacks. */
 export type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
 
 /** Describe how a child process run with a `timeoutMs` timeout failed. */
