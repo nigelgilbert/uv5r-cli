@@ -177,7 +177,8 @@ Findings from setting up MBP 2 and reference unit 2. Station A should check the 
 - Unit 1 takes channel name writes. `check 162.400 --channel 0` wrote slot 0 with no
   `verification-failed`.
 - Slot 1 on unit 1: 446.525, low power, wide, no tones, matching station B.
-- Levels: squelch 0 static read -3.5 dBFS and clipped at the starting knob position.
+- Levels: squelch 0 static read -3.5 dBFS and clipped at the starting knob position. After
+  one turn down it read about -10.4 dBFS with no clip warning.
 
 ## Results
 
