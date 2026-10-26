@@ -1200,6 +1200,7 @@ async function dumpVerb(args: Invocation): Promise<number> {
   const notWritable = (err: unknown) =>
     new UsageError(`cannot write ${out}: ${(err as NodeJS.ErrnoException).message}`, { out }, { remedy: 'pass --out with a writable path' });
   let created = false;
+  let imageWritten = false;
   // Create FILE, or open an existing one for append without creating it, so a missing directory, a read-only file, a directory path or a dangling symlink fails before the port opens.
   try {
     try {
@@ -1227,6 +1228,7 @@ async function dumpVerb(args: Invocation): Promise<number> {
             const e = err as NodeJS.ErrnoException;
             throw new TransportError('file-write-failed', `cannot write ${out}: ${e.message}`, { out, code: e.code }, { remedy: 'pass --out with a writable path that has free space' });
           }
+          imageWritten = true;
           const { firmware, family, magic: answered } = s.startedIdent;
           return { out, bytes: image.length, firmware, family, magic: answered };
         },
@@ -1234,8 +1236,8 @@ async function dumpVerb(args: Invocation): Promise<number> {
       ),
     );
   } catch (err) {
-    // Remove the file the probe created and keep the dump error when the removal fails.
-    if (created) {
+    // Remove the file the probe created unless it holds the image, and keep the dump error when the removal fails.
+    if (created && !imageWritten) {
       try {
         rmSync(out, { force: true });
       } catch {}

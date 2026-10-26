@@ -889,6 +889,16 @@ describe('dump output file', () => {
     expect(existsSync(out)).toBe(false);
   });
 
+  it('exits 3 with ptt-control-failed and keeps a new FILE that holds the image when the port close hangs', async () => {
+    const out = join(tempDir(), 'radio.img');
+    const radio = FakeRadio.fromImage(PRIMARY.image);
+    radio.close = () => new Promise<void>(() => {});
+    await run(['dump', '--out', out, '--json'], opener(radio));
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', message: 'the port did not close within 3 s; PTT may be high' });
+    expect([...readFileSync(out)]).toEqual([...PRIMARY.image]);
+  });
+
   it('leaves an existing FILE in place when the port does not open', async () => {
     const out = join(tempDir(), 'radio.img');
     writeFileSync(out, 'old bytes');
