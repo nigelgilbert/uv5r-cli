@@ -184,8 +184,29 @@ Findings from setting up MBP 2 and reference unit 2. Station A should check the 
 
 | Round | Question sent | Heard at B | Answer sent | Heard at A | B inferMs | A inferMs | Notes |
 |---|---|---|---|---|---|---|---|
-| 1 | | | | | | | |
-| 2 | | | | | | | |
-| 3 | | | | | | | |
+| 1 | | "operator. What year did they also release the youth negative sidebar? There can report back over. This is November. Golf. 5X-ray. Juliet. K-back." 10.51 s, -23.1 dBFS | "Operator, this is bench, your question came through garbled, I believe you asked the year Baofeng released the UV-5R, that was 2012, please say again your question for a clean copy, over" 18.5 s, identified, released | | 1376 | | B heard heavy word errors: lost "Bench, this is", "Baofeng ... UV-5R" heard as "they also ... youth negative sidebar", "search and" as "There can". say speaks Quebec as "Keh-beck", heard as "K-back". AIOC Audio output on MBP 2 read 100%, set to 50% before the reply. |
+| 2 | | "Creator. What is the height of the space needle and feed? Certain report back over. This is November 12th. X-ray. Juliet. K-back." 9.93 s, -24.0 dBFS | "Operator, this is bench, the Space Needle stands 605 feet tall, over" 11.3 s, identified, released | | 463 | | Key words "height", "space needle" survived. "operator" heard as "Creator", "in feet" as "and feed", "search and" as "Certain", "Golf, Five" as "12th". "Bench, this is" lost again, as in round 1. |
+| 3 | | "This operator, what year did they often release the used negative 5R? Certain report back. Over. This is november, calls, 5X-ray, juliet, payback." 10.51 s, -22.4 dBFS | "Operator, this is bench, Baofeng released the UV-5R in 2012, over" 11.9 s, identified, released | | 482 | | Round 1's question resent; the NOAA factoid was not run. Two tries before this one failed at B: seg 5 decoded only the ID though the WAV held about 5 s of speech before it (also with VAD off), and the next TX lit the RX LED but opened no segment while hear ran; a 60 s raw capture right after read A's TX at -20 to -27 dBFS, cause unknown. B sent "pong" to two A pings between rounds 2 and 3 (seg 3, 4; ID cut after "November"). |
 | 4, collision | | | | | | | |
 | item 7 | | | | | | | |
+
+Station B notes after round 3, 2026-10-25:
+
+- Round 3's answer was resent with the MBP 2 AIOC Audio output at 100%, and B left it there.
+  A then resent the Space Needle question (seg 7, 10.87 s, -23.2 dBFS, inferMs 433), the
+  cleanest copy of the session: "This is operator what is the height of the space needle".
+  B answered 605 feet, 11.3 s, identified, released.
+- Open questions from the operator's live mic on station A, B answering on its own with
+  Nigel in the loop. Each B reply was identified and released, with no idOwed:
+
+  | Seg | Heard at B | B reply | Seconds | inferMs |
+  |---|---|---|---|---|
+  | 10 | "What here was Google founded?" | Google was founded in 1998, by Larry Page and Sergey Brin | 12.7 | 170 |
+  | 13 | "The Origin of the Husky Dog." | bred by the Chukchi people of northeastern Siberia as a sled dog, reached Alaska around 1909 | 16 | 434 |
+  | 15 | "We've achieved a working implementation about the progress we've made this weekend." | copy that, good work this weekend, on Nigel's yes | 10.6 | 152 |
+  | 16 | "...estimate the time of a human man to implement that without AI help." | PR 7 is about 2500 lines of source and 3500 of tests, four to six weeks without AI, on Nigel's yes | 19.6 | 192 |
+
+  B did not act on air requests to commit and push (seg 11) or to report git status
+  (seg 12), and sent no reply to seg 8, 9 and 14, which held no answerable question.
+- Live-mic audio from A peaks at 0 dBFS at B (RMS -13 to -19 dBFS) against about -23 dBFS for
+  synthesized speech, so it clips. The live-mic transmissions carried no callsign.
