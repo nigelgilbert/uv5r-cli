@@ -208,6 +208,22 @@ describe('listen', () => {
       vi.useRealTimers();
     }
   });
+  it('reports a timeout when ffmpeg traps SIGTERM and exits 255', async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      spawn.mockReturnValue(child);
+      const pending = listen('AIOC Audio', 3).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(21000);
+      expect(child.kills).toEqual(['SIGTERM']);
+      child.exit(255, { stderr: STDERR });
+      const err = await pending;
+      expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { device: 'AIOC Audio', code: 255, signal: null } });
+      expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio"/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('rejects a non-zero exit with the stderr tail', async () => {
     captureReturns(1, `${frame(0, '-40', '-35')}\n[AVFoundation indev @ 0x2] Error opening input\n:AIOC Audio: Input/output error`);
     await expect(listen('AIOC Audio', 1)).rejects.toThrow(/^ffmpeg exited with code 1 capturing from "AIOC Audio": .*Error opening input \| :AIOC Audio: Input\/output error$/);

@@ -240,7 +240,7 @@ export type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: Nod
 
 /** Describe how a child process run with a `timeoutMs` timeout failed. */
 export function exitHow(e: ExecError, timeoutMs: number): string {
-  if (e.killed && e.signal) return `timed out after ${timeoutMs / 1000}s`;
+  if (e.killed) return `timed out after ${timeoutMs / 1000}s`;
   return e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
 }
 
