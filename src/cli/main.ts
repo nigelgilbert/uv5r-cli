@@ -824,6 +824,8 @@ const FATAL_RELEASE_MS = 1000;
 /** What the fatal-error message adds when a release failed or timed out. */
 const FATAL_UNCONFIRMED = 'PTT release unconfirmed; ask the human to unplug the AIOC';
 let fatalRun = false;
+/** Set when a port close in the running cli() call ran past PTT_CONTROL_TIMEOUT_MS, so the main block exits. */
+export let closeHung = false;
 /** Flags of the running cli() call, for the fatal-error output format. */
 let activeFlags = new Map<string, string | true>();
 
@@ -853,7 +855,7 @@ async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<
     result = await fn(transport);
   } catch (err) {
     try {
-      await closeWithin(transport);
+      if (!(await closeWithin(transport))) closeHung = true;
     } finally {
       openTransports.delete(transport);
     }
@@ -866,6 +868,7 @@ async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<
     openTransports.delete(transport);
   }
   if (!closed) {
+    closeHung = true;
     throw new TransportError('ptt-control-failed', `the port did not close within ${PTT_CONTROL_TIMEOUT_MS / 1000} s; PTT may be high`, {}, { remedy: REASONS['ptt-control-failed'].remedy, retry: 'no' });
   }
   return result;
@@ -1480,12 +1483,14 @@ async function main(args: Invocation): Promise<number> {
 /**
  * Run one command line and set process.exitCode; errors go to stderr as JSON or text.
  * The process exits on its own once stdout and stderr drain, so piped output arrives whole.
+ * A hung port close holds the event loop open, so the main block exits when closeHung is set.
  */
 export async function cli(argv: string[], open: OpenTransport = openSerial, deps: SpeechDeps = defaultSpeechDeps()): Promise<void> {
   // Read --json from argv so an error from parseArgs keeps the requested format.
   const end = argv.indexOf('--');
   let flags = new Map<string, string | true>((end < 0 ? argv : argv.slice(0, end)).includes('--json') ? [['json', true]] : []);
   activeFlags = flags;
+  closeHung = false;
   try {
     const args = parseArgs(argv, BOOLEAN_FLAGS);
     flags = args.flags;
@@ -1507,4 +1512,5 @@ if (import.meta.main) {
   process.on('uncaughtException', (err) => void fatal(err));
   process.on('unhandledRejection', (err) => void fatal(err));
   await cli(process.argv.slice(2));
+  if (closeHung) process.exit(process.exitCode);
 }

@@ -1,10 +1,11 @@
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { clearInterval as realClearInterval, setInterval as realSetInterval } from 'node:timers';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { signalExitCode } from '../../src/cli/exit.ts';
-import { cli, fatal, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
+import { cli, closeHung, fatal, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
 import { fakeSpeechDeps } from '../speech/fakes.ts';
 import { PRIMARY } from '../core/golden.ts';
@@ -1028,7 +1029,29 @@ describe('key output', () => {
         remedy: 'ask the human to unplug the AIOC to drop PTT',
         retry: 'no',
       });
+      expect(closeHung).toBe(true);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves closeHung unset when the port closes in time', async () => {
+    await cli(['key', '--seconds', '0.1', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(closeHung).toBe(false);
+  });
+
+  it('returns with closeHung set while a hung close holds a live handle', async () => {
+    vi.useFakeTimers();
+    let handle: NodeJS.Timeout | undefined;
+    try {
+      const radio = new FakeRadio();
+      radio.close = () => new Promise<void>(() => (handle = realSetInterval(() => {}, 1000)));
+      await run(['key', '--seconds', '0.1', '--json'], opener(radio));
+      expect(process.exitCode).toBe(3);
+      expect(closeHung).toBe(true);
+    } finally {
+      realClearInterval(handle);
       vi.useRealTimers();
     }
   });
@@ -1044,6 +1067,7 @@ describe('key output', () => {
       await run(['key', '--seconds', '0.1', '--json'], opener(radio));
       expect(process.exitCode).toBe(3);
       expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', message: 'PTT assertion and release unconfirmed: port gone; ask the human to unplug the AIOC to drop PTT', target: 'fake' });
+      expect(closeHung).toBe(true);
     } finally {
       vi.useRealTimers();
     }
