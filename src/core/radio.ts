@@ -691,7 +691,7 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
       heldMs = performance.now() - assertedAt;
     } catch (err) {
       failure = { err, fromBody: false };
-      lateAssert = !pttAsserted && err instanceof BaofengError && err.detail.timedOut === true;
+      lateAssert = err instanceof BaofengError && err.detail.timedOut === true;
     }
     clearTimeout(watchdog);
     try {
