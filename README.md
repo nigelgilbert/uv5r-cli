@@ -2,10 +2,12 @@
 
 [![ci](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml)
 
-uv5r drives a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable. Tell it a
+`uv5r` drives a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable. Tell it a
 frequency and it fills a memory slot. Tell it to listen and it records what comes back. It also
 backs up the radio, keys PTT (push-to-talk, the transmit key), reads text aloud ending with
 your callsign, and transcribes what it hears. Tested on firmware HN5RV011.
+
+Built so AI agents can operate a radio. You can send your agent commands over amateur radio. Follow your local regulations.
 
 ## What you need
 
