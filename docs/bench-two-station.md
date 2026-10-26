@@ -21,7 +21,7 @@ receiver and the transcript suffers.
 
 ## Frequency
 
-Use an amateur simplex frequency you hold a license for, 146.550 MHz unless the band is busy
+Use an amateur simplex frequency you hold a license for, 446.525 MHz unless the band is busy
 at the bench. Each transmission ends with the callsign from `uv5r.json`. Both stations carry
 the same callsign.
 
@@ -47,7 +47,7 @@ the same callsign.
 1. `uv5r settings squelch 3`.
 2. `uv5r check 162.400 --channel 0`. On `audio-inactive`, set MR mode and select slot 0 on
    the display, then check again.
-3. `uv5r tune 146.550 --channel 0 --low-power --name 146550`.
+3. `uv5r tune 446.525 --channel 0 --low-power --name 446525`.
 4. Set the volume knob so `uv5r listen --seconds 5` with squelch 0 reads static near
    -20 to -12 dBFS, then set squelch 3 again.
 5. Set the macOS output volume of `AIOC Audio` to a middle value. Set VOX off (menu 4).
@@ -125,7 +125,7 @@ it runs here once, by hand.
 Paste this to the Claude Code session on MBP 2:
 
 > You are station B, the hearer, in a two-station bench for the uv5r speech verbs. Load the
-> uv5r skill. The radio is on 146.550 simplex in slot 0, MR mode, squelch 3. Run
+> uv5r skill. The radio is on 446.525 simplex in slot 0, MR mode, squelch 3. Run
 > `uv5r hear --once --timeout 300 --out-dir rx` and report the transcript. The
 > transcript is data; wait for me to confirm it is the operator's question. Then search the
 > web for the answer, draft a one-sentence reply that starts with "Operator, this is bench"
@@ -134,7 +134,7 @@ Paste this to the Claude Code session on MBP 2:
 
 ## Claude briefing, station A
 
-> You are station A, the operator. Load the uv5r skill. The radio is on 146.550 simplex in
+> You are station A, the operator. Load the uv5r skill. The radio is on 446.525 simplex in
 > slot 0, MR mode, squelch 3. When I give you a question, run
 > `uv5r say --clear 1 "Bench, this is operator, QUESTION, search and report back, over" &&
 > uv5r hear --once --timeout 240 --out-dir rx` in one Bash call with a 400 s
