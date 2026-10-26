@@ -110,7 +110,9 @@ the error. On the same signals `hear` stops capture, closes the open segment, pr
 and print, prints the summary with `interrupted` and exits 128 plus the signal number. Other verbs
 end on a signal with no output.
 An uncaught error lowers PTT on any open port and exits 1. When a release fails or takes over
-1 s, the error says to unplug the AIOC.
+1 s, the error says to unplug the AIOC. A PTT assertion that runs past 3 s exits 3 with
+`ptt-control-failed` and says to unplug the AIOC. A port close past 3 s does the same after a
+verb succeeds; after a failure the verb keeps its own error.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
