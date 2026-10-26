@@ -551,7 +551,7 @@ const verbs: Record<string, Verb> = {
     args: [],
     flags: [{ name: 'out', value: 'FILE', default: 'uv5r-YYYY-MM-DDTHH-MM-SS.img', help: 'image path' }, ...COMMON_FLAGS],
     effects: [
-      'Open FILE before the port opens; a new FILE is removed when the dump fails before the image write, and stays empty after a signal before the write. When the port close hangs after the write, the dump exits 3 with ptt-control-failed and FILE keeps the full image.',
+      'Open FILE before the port opens; a new FILE is removed when the dump fails before the image write, and stays empty after a signal before the write.',
       'Read the full memory image in CHIRP layout in one clone session, about 14 s, and write it to FILE.',
     ],
     preconditions: [RADIO_READY],
@@ -560,6 +560,7 @@ const verbs: Record<string, Verb> = {
     exits: [
       { code: 2, when: 'FILE not writable, found before the port opens' },
       { code: 3, when: 'a write that fails after the read, such as a full disk; an existing FILE may be left partial' },
+      { code: 3, when: 'ptt-control-failed when the port close hangs after the write; FILE keeps the full image' },
     ],
     positionals: 0,
     run: dumpVerb,

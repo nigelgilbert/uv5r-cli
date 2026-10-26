@@ -930,12 +930,13 @@ describe('dump output file', () => {
     expect(Object.keys((JSON.parse(stdout.join('')) as { result: object }).result)).toEqual(Object.keys(result));
   });
 
-  it('names the probe exit and the post-read write exit in help dump', async () => {
+  it('names the probe exit, the post-read write exit and the hung close exit in help dump', async () => {
     await cli(['help', 'dump', '--json']);
     const help = JSON.parse(stdout.join('')) as { exits: Array<{ code: number; when: string }> };
     expect(help.exits).toEqual([
       { code: 2, when: 'FILE not writable, found before the port opens' },
       { code: 3, when: 'a write that fails after the read, such as a full disk; an existing FILE may be left partial' },
+      { code: 3, when: 'ptt-control-failed when the port close hangs after the write; FILE keeps the full image' },
     ]);
   });
 });
