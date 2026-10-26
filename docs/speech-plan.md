@@ -1,7 +1,8 @@
 # Plan: speech over the radio
 
-Status: draft on `feature/speech-plan` (PR #5), 2026-10-25. Research only. Nothing is
-implemented. Items marked "bench" were not verified and go on the "Bench list".
+Status: steps 1 to 4 of "Order of work" done on `feature/speech-plan` (PR #5), 2026-10-25:
+step 1 d5b62bd, step 2 0ce5cde, step 3 5e2f3c3, step 4 dde84d8 and efb2785. Step 5 and the
+"Bench list" are open. Items marked "bench" were not verified.
 
 ## Goal
 
