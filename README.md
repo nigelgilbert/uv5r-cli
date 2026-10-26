@@ -9,7 +9,7 @@ your callsign, and transcribes what it hears. Tested on firmware HN5RV011.
 
 ## What you need
 
-- A Baofeng UV-5R and an AIOC cable seated fully in its K1 jack.
+- A Baofeng UV-5R and an [NA6D AIOC](https://na6d.com/products/aioc-ham-radio-all-in-one-cable?_su_rec=Ge0zP1gLeHTXemaUkJiPyYw7fAjrPZ7alzWWfiv2lllYe16vSE00uoYZaQqplBlw_V4w3BfrwzvGzl4QzgXszX3wYATprmme-sT97GxwemQ8LGHOVLX5pShQTiTzD6KvGEAj7cy0MlCWe3ARXOp2LoneVVBEg1jF7Fo9ku7zHGP1jy5srtNJL_PSSiQFfR-sIlfdgFViw-BzJnjBfZdhBhUDYWgRebkkXuGYm7Br9ah__-raSmzWkvanOPle2cvCx2J5ObvIofiW2kigbXQfmsBQFCI7_teO3igA-pPYr0CIEvgwkgC3d2u2836VWYRhcAKYu06OUyWO3y-17w&_su_rec_id=bad9c452-0906-4377-b98e-b317b4c8ce85-1792990699) seated fully in its K1 jack.
 - Node 24, which runs the `.ts` sources directly.
 - macOS and ffmpeg on PATH for the audio verbs: `check`, `listen`, `sweep`, `hear`, `say` and
   `id`. They use avfoundation, audiotoolbox, `say` and `afplay`.
