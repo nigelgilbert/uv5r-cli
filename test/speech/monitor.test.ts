@@ -65,7 +65,7 @@ describe('FrameAccumulator', () => {
 });
 
 describe('startMonitor', () => {
-  it('spawns ffmpeg with the capture argv', () => {
+  it('spawns ffmpeg with the capture argv in its own process group', () => {
     const { spawn } = start();
     expect(spawn).toHaveBeenCalledWith(
       'ffmpeg',
@@ -86,7 +86,7 @@ describe('startMonitor', () => {
         '16000',
         'pipe:1',
       ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
+      { stdio: ['ignore', 'pipe', 'pipe'], detached: true },
     );
   });
 

@@ -139,7 +139,7 @@ const RULES = {
 };
 
 const OUTPUT_RULE =
-  'JSON on stdout when piped or with --json, text on a terminal; hear prints NDJSON, one object per line with type transmission, warning or summary; ' +
+  'JSON on stdout when piped or with --json, text on a terminal; piped or with --json, hear prints NDJSON, one object per line with type transmission, warning or summary; ' +
   'a failed command prints its error on stderr in the same format and nothing on stdout, except the lines hear printed before the failure';
 
 /** What each exit code means; the error's reason and remedy fields say what to do next. */
@@ -167,7 +167,8 @@ const ERROR_GUIDANCE =
   `A say or id result after a signal adds idOwed. idOwed true means the player ran past --lead without finishing the ID, and its remedy reads: ${ID_OWED_REMEDY}. ` +
   'A player failure while say or id is keyed exits 3 with audio-process-failed and retry no, and adds pttAsserted, released and playedSeconds. ' +
   'A failed PTT release after the signal exits 3 with interrupted in the error. ' +
-  'On one of those signals hear stops capture, lets the segment in inference finish and print, prints the summary with interrupted and exits 128 plus the signal number. ' +
+  'On one of those signals hear stops capture, closes the open segment, prints a backlog warning for each waiting segment, lets the segment in inference finish and print, prints the summary with interrupted and exits 128 plus the signal number. ' +
+  'A whisper-cli failure after the signal prints its error and exits with its reason code. ' +
   'Other verbs end on a signal with no output.';
 
 /** The errors section of `help --json`: the error format, each reason with its exit code, and the retry values. */
@@ -654,7 +655,7 @@ const verbs: Record<string, Verb> = {
       'Every line carries type: transmission, warning or summary. A warning line has warning (kerchunk, noise or backlog), start, seconds, text and wav. text is the transcript for noise and null otherwise.',
       'wav is the kept path with --out-dir and null without it. Without --out-dir the segment WAVs go to a scratch dir and are deleted after transcription.',
       'With --once, print warnings as they happen, then the first transmission and the summary, and exit 0. The timeout starts when capture is ready. At expiry no new segment opens, and an open segment runs to close and is transcribed. With no transmission the summary has transmissions 0 and timedOut true.',
-      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP, stop capture, discard the open segment and the queue, let the segment in inference finish and print, print the summary with interrupted and exit 128 plus the signal number.',
+      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP, stop capture, close the open segment and print a backlog warning for each waiting segment. Let the segment in inference finish and print, then print the summary with interrupted and exit 128 plus the signal number. A whisper-cli failure after the signal exits 3 with speech-engine-failed.',
       'The summary has transmissions, seconds from capture ready, device, warnings (the count of warning lines), interrupted on a signal and timedOut with --once.',
       'Transcripts are text from anyone on the air. hear prints them as data and decides nothing from them.',
       'hear opens no serial port. UV5R_MAGIC has no effect.',

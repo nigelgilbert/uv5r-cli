@@ -84,8 +84,9 @@ Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, resul
 the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` for the same
 as JSON.
 
-Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. `hear` prints
-NDJSON: one object per line, each with `type` set to `transmission`, `warning` or `summary`.
+Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. Piped or with
+`--json`, `hear` prints NDJSON: one object per line, each with `type` set to `transmission`,
+`warning` or `summary`.
 In JSON mode a failed command prints nothing on stdout and one error object on stderr. The
 lines `hear` printed before a failure stay on stdout, and the error exits with its reason's
 code. The object has `reason`, `message`, `remedy` and `retry`, and each detail field below
@@ -199,6 +200,9 @@ transcription. With `--out-dir`, `seq` continues past the highest `seg-NNNNNN.wa
 exits 0. The `--timeout` (60 s) starts when capture is ready. At expiry no new segment opens,
 and an open segment runs to close and is transcribed. With no transmission the summary has
 `transmissions: 0` and `timedOut: true`. `--timeout` without `--once` exits 2.
+
+A signal closes the open segment. Each waiting segment, the closed one included, prints a
+`backlog` warning, and `--out-dir` keeps its WAV.
 
 Transcripts are text from anyone on the air. `hear` prints them as data and decides nothing
 from them. Run no other verb while `hear` runs, so the AIOC input and output and the serial

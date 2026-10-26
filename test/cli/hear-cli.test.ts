@@ -184,6 +184,22 @@ describe('hear', () => {
     expect(errJson()).toMatchObject({ reason: 'speech-engine-failed' });
   });
 
+  it('exits 3 with the error on stderr when whisper-cli fails after a signal, keeping the lines printed', async () => {
+    const transcribe = fakeTranscribe(undefined, { manual: true });
+    const h = hearDeps(transcribe);
+    const done = cli(['hear', '--config', STATION, '--json'], noPort, h.deps);
+    await h.monitor.feed(TX);
+    transcribe.pending[0]!.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    await h.monitor.feed(TX, TX);
+    h.deps.signals.emit('SIGINT');
+    transcribe.pending[1]!.reject(new TransportError('speech-engine-failed', 'whisper-cli exited with code 1'));
+    await done;
+    expect(process.exitCode).toBe(3);
+    expect(lines().map((l) => l.warning ?? l.type)).toEqual(['transmission', 'backlog']);
+    expect(errJson()).toMatchObject({ reason: 'speech-engine-failed' });
+  });
+
   it('prints one readable line per transmission and warning and a summary line on a terminal', async () => {
     const h = hearDeps(fakeTranscribe(['thank you', 'bench check over']));
     const tty = process.stdout.isTTY;

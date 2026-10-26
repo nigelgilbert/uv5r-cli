@@ -138,12 +138,14 @@ function saveWav(path: string, pcm: Buffer): void {
  * prints a backlog warning. A kerchunk prints a warning and skips whisper-cli. A transcript
  * that isNoise flags prints a noise warning. With once, the first transmission line stops
  * capture and discards later segments. The deadline starts when capture is ready; past it no
- * new segment opens, an open one runs to close, and the queue drains.
+ * new segment opens, an open one runs to close, and the queue drains. Capture that is idle at
+ * the deadline stops then, whether or not frames arrive.
  *
- * One of KEY_SIGNALS on `signals` stops capture, discards the open segment and the queue,
- * lets the segment in inference finish and print, then prints the summary with interrupted.
+ * One of KEY_SIGNALS on `signals` stops capture and closes the open segment. Each waiting
+ * segment, the closed one included, prints a backlog warning and keeps its WAV with outDir.
+ * The segment in inference finishes and prints, then the summary prints with interrupted.
  * A capture or transcription failure stops capture, waits for the segment in inference and
- * throws; lines already printed stay printed.
+ * throws; lines already printed stay printed. A transcription failure after a signal throws too.
  */
 export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () => number, onLine: (line: HearLine) => void, signals: EventEmitter, opts: HearOptions): Promise<SummaryLine> {
   const scratch = mkdtempSync(join(tmpdir(), 'uv5r-hear-'));
@@ -158,6 +160,11 @@ export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () 
   let failure: unknown;
   let busy: Promise<void> | undefined;
   let guard: NodeJS.Timeout | undefined;
+  let deadlineTimer: NodeJS.Timeout | undefined;
+  // Map segment frames to wall time from the frame that opened the segment.
+  let anchor = { frame: 0, wall: 0 };
+  /** Set when capture ends at the deadline with no segment open. */
+  let deadlineStop = false;
 
   const halt = () => {
     stopping = true;
@@ -168,7 +175,15 @@ export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () 
     const handler = () => {
       if (interrupted) return;
       interrupted = signal;
-      halt();
+      stopping = true;
+      void monitor.stop();
+      try {
+        const last = segmenter.close();
+        if (last) handle(last, anchor);
+        for (const p of queue.splice(0)) warn('backlog', p, null, keep(p));
+      } catch (err) {
+        failure ??= err;
+      }
     };
     signals.on(signal, handler);
     return [signal, handler] as const;
@@ -222,13 +237,11 @@ export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () 
   };
 
   const kick = () => {
-    if (busy || failure) return;
+    if (busy || failure || stopping) return;
     const next = queue.shift();
     if (!next) return;
     busy = transcribeOne(next)
       .catch((err: unknown) => {
-        // A failure after a signal counts as the stop.
-        if (interrupted) return;
         failure ??= err;
         halt();
       })
@@ -259,32 +272,37 @@ export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () 
       await monitor.ready;
       readyAt = now();
       const deadline = opts.once ? readyAt + opts.timeoutSeconds * 1000 : Infinity;
-      if (opts.once) guard = setTimeout(() => void monitor.stop(), (opts.timeoutSeconds + MAX_SEGMENT_SECONDS + STALL_SLACK_SECONDS) * 1000);
+      if (opts.once) {
+        // Stop capture at the deadline when no segment is open, so a stalled capture ends on time.
+        deadlineTimer = setTimeout(() => {
+          if (segmenter.isOpen()) return;
+          deadlineStop = true;
+          void monitor.stop();
+        }, opts.timeoutSeconds * 1000);
+        guard = setTimeout(() => void monitor.stop(), (opts.timeoutSeconds + MAX_SEGMENT_SECONDS + STALL_SLACK_SECONDS) * 1000);
+      }
       let index = 0;
-      // Map segment frames to wall time from the frame that opened the segment.
-      let anchor = { frame: 0, wall: readyAt };
-      let expiredBreak = false;
+      anchor = { frame: 0, wall: readyAt };
       for await (const frame of monitor.frames) {
         if (stopping) break;
         const expired = now() >= deadline;
         if (expired && !segmenter.isOpen()) {
-          expiredBreak = true;
+          deadlineStop = true;
           break;
         }
         const wasOpen = segmenter.isOpen();
         const closed = segmenter.push(frame);
         if (!wasOpen && segmenter.isOpen()) anchor = { frame: index, wall: now() };
         index++;
-        if (closed) {
-          handle(closed, anchor);
-          if (expired) {
-            expiredBreak = true;
-            break;
-          }
+        if (closed) handle(closed, anchor);
+        // Run the remainder of a split to close before stopping at the deadline.
+        if (expired && !segmenter.isOpen()) {
+          deadlineStop = true;
+          break;
         }
       }
       // Transcribe a segment still open when the stall guard stopped capture.
-      if (!stopping && !expiredBreak) {
+      if (!stopping && !deadlineStop) {
         const last = segmenter.close();
         if (last) handle(last, anchor);
       }
@@ -295,6 +313,7 @@ export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () 
     while (busy) await busy;
   } finally {
     clearTimeout(guard);
+    clearTimeout(deadlineTimer);
     for (const [signal, handler] of handlers) signals.off(signal, handler);
     await monitor.stop();
     rmSync(scratch, { recursive: true, force: true });

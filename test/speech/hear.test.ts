@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { TransportError } from '../../src/core/index.ts';
 import { isNoise, nextSeq, normalizeText, QUEUE_LIMIT, runHear, segmentFileName, type HearLine, type HearOptions } from '../../src/speech/hear.ts';
 import { FakeMonitor, fakeClock, fakeTranscribe, silentFrames, toneFrames } from './fakes.ts';
@@ -11,6 +11,10 @@ const TMP = mkdtempSync(join(tmpdir(), 'uv5r-hear-test-'));
 
 afterAll(() => {
   rmSync(TMP, { recursive: true, force: true });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const BASE = Date.parse('2026-10-25T14:00:00.000Z');
@@ -111,27 +115,46 @@ describe('runHear', () => {
     expect(transcribe.calls).toHaveLength(2);
     // Segment 2 was dropped, so the second call transcribes segment 3.
     expect(transcribe.calls[1]!.wav).toMatch(/seg-000003\.wav$/);
+    // The signal prints the seven segments still waiting as backlog.
     h.signals.emit('SIGINT');
     transcribe.pending[1]!.resolve();
-    expect(await h.done).toMatchObject({ transmissions: 2, warnings: 1 });
+    expect(await h.done).toMatchObject({ transmissions: 2, warnings: QUEUE_LIMIT });
   });
 
-  it('finishes the segment in inference on a signal and discards the queue and the open segment', async () => {
+  it('closes the open segment on a signal, prints the queue as backlog with kept WAVs and finishes the segment in inference', async () => {
+    const outDir = mkdtempSync(join(TMP, 'rx-'));
     const transcribe = fakeTranscribe(undefined, { manual: true });
-    const h = start({}, transcribe);
+    const h = start({ outDir }, transcribe);
     await h.monitor.feed(TX, TX, TX, toneFrames(30));
     expect(transcribe.calls).toHaveLength(1);
     h.signals.emit('SIGHUP');
     h.signals.emit('SIGINT');
     await flush();
     expect(h.of('summary')).toEqual([]);
+    const backlog = [2, 3, 4].map((seq) => join(outDir, segmentFileName(seq)));
+    expect(h.of('warning')).toEqual(backlog.map((wav) => ({ type: 'warning', warning: 'backlog', start: expect.any(String), seconds: expect.any(Number), text: null, wav })));
+    for (const wav of backlog) expect(existsSync(wav), wav).toBe(true);
     transcribe.pending[0]!.resolve();
     const summary = await h.done;
     expect(transcribe.calls).toHaveLength(1);
-    expect(h.of('transmission')).toHaveLength(1);
-    expect(summary).toMatchObject({ transmissions: 1, interrupted: 'SIGHUP' });
+    expect(h.of('transmission')).toMatchObject([{ seq: 1, wav: join(outDir, 'seg-000001.wav') }]);
+    expect(summary).toMatchObject({ transmissions: 1, warnings: 3, interrupted: 'SIGHUP' });
+    expect(h.lines.at(-1)).toEqual(summary);
     expect(h.monitor.stops).toBeGreaterThan(0);
     expect(h.signals.listenerCount('SIGINT')).toBe(0);
+  });
+
+  it('throws a transcription failure after a signal and keeps the lines already printed', async () => {
+    const transcribe = fakeTranscribe(undefined, { manual: true });
+    const h = start({}, transcribe);
+    await h.monitor.feed(TX);
+    transcribe.pending[0]!.resolve();
+    await flush();
+    await h.monitor.feed(TX, TX);
+    h.signals.emit('SIGINT');
+    transcribe.pending[1]!.reject(new TransportError('speech-engine-failed', 'whisper-cli exited with code 1'));
+    await expect(h.done).rejects.toMatchObject({ reason: 'speech-engine-failed' });
+    expect(h.lines.map((l) => (l.type === 'warning' ? l.warning : l.type))).toEqual(['transmission', 'backlog']);
   });
 
   it('deletes segment WAVs without --out-dir', async () => {
@@ -201,6 +224,33 @@ describe('runHear --once', () => {
     const summary = await h.done;
     expect(h.transcribe.calls).toHaveLength(1);
     expect(summary).toMatchObject({ transmissions: 1, timedOut: false });
+  });
+
+  it('transcribes the remainder of a segment that splits at 30 s after the deadline', async () => {
+    const h = start({ once: true, timeoutSeconds: 1 }, fakeTranscribe(['you', 'bench check over']));
+    // The segment opens at frame 44, before the deadline, splits 25 s in and closes about 9 s later.
+    await h.monitor.feed(silentFrames(30), toneFrames(1700), silentFrames(45));
+    const summary = await h.done;
+    expect(h.transcribe.calls).toHaveLength(2);
+    expect(h.lines.map((l) => (l.type === 'warning' ? l.warning : l.type))).toEqual(['noise', 'transmission', 'summary']);
+    expect(h.of('transmission')).toMatchObject([{ seq: 2 }]);
+    expect(summary).toMatchObject({ transmissions: 1, warnings: 1, timedOut: false });
+  });
+
+  it('ends at the timeout when capture delivers no frames after ready', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(BASE);
+    const monitor = new FakeMonitor();
+    const lines: HearLine[] = [];
+    const opts: HearOptions = { device: 'AIOC Audio', floorDbfs: -50, hangSeconds: 0.8, once: true, timeoutSeconds: 60, model: 'ggml-base.en-q5_1' };
+    const done = runHear(monitor, fakeTranscribe(), Date.now, (line) => lines.push(line), new EventEmitter(), opts);
+    let ended = false;
+    void done.then(() => (ended = true));
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(ended).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await done).toEqual({ type: 'summary', transmissions: 0, seconds: 60, device: 'AIOC Audio', warnings: 0, timedOut: true });
+    expect(monitor.stops).toBeGreaterThan(0);
   });
 
   it('opens no segment past the deadline and prints timedOut true with nothing heard', async () => {

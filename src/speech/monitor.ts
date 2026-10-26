@@ -51,7 +51,7 @@ export function monitorArgs(device: string): string[] {
 }
 
 /** The spawn signature startMonitor calls; node:child_process spawn matches it. */
-export type Spawn = (command: string, args: string[], options: { stdio: ['ignore', 'pipe', 'pipe'] }) => ChildProcess;
+export type Spawn = (command: string, args: string[], options: { stdio: ['ignore', 'pipe', 'pipe']; detached: boolean }) => ChildProcess;
 
 export interface MonitorOptions {
   /** Spawn function; tests pass a fake child process. */
@@ -70,11 +70,12 @@ export interface Monitor {
 
 /**
  * Start one long-running ffmpeg capture from `device` and frame its stdout.
- * An ffmpeg exit before stop raises audio-process-failed through `ready` and `frames`.
+ * ffmpeg runs in its own process group so a Ctrl-C or Ctrl-Z reaches uv5r alone, and stop
+ * ends it. An ffmpeg exit before stop raises audio-process-failed through `ready` and `frames`.
  * frames has one consumer.
  */
 export function startMonitor(device: string, { spawn = nodeSpawn }: MonitorOptions = {}): Monitor {
-  const child = spawn('ffmpeg', monitorArgs(device), { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('ffmpeg', monitorArgs(device), { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   const accumulator = new FrameAccumulator();
   const queue: Buffer[] = [];
   let dropped = 0;
