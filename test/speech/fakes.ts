@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { TransportError } from '../../src/core/index.ts';
 import type { WavLevels } from '../../src/speech/levels.ts';
 import type { Monitor } from '../../src/speech/monitor.ts';
-import { FRAME_SAMPLES, SAMPLE_RATE } from '../../src/speech/segment.ts';
+import { FRAME_BYTES, FRAME_MS, FRAME_SAMPLES, SAMPLE_RATE } from '../../src/speech/segment.ts';
 import type { SpeechDeps } from '../../src/speech/speak.ts';
+import type { Transcript, WhisperOptions } from '../../src/speech/stt.ts';
 import { TRAILING_PAD_SECONDS } from '../../src/speech/tts.ts';
 
 /** Sample rate of the WAVs the fakes write. */
@@ -165,6 +166,107 @@ export function fakeMonitor(frames: Buffer[], { end = false }: { end?: boolean }
   return Object.assign(monitor, { stops: () => stopped });
 }
 
+/** `n` monitor frames of digital zero. */
+export function silentFrames(n: number): Buffer[] {
+  return Array.from({ length: n }, () => Buffer.alloc(FRAME_BYTES));
+}
+
+/** `n` monitor frames of 1 kHz sine with its peak at `dbfs`. */
+export function toneFrames(n: number, dbfs = -10): Buffer[] {
+  const frame = pcmFrame(dbfs);
+  return Array.from({ length: n }, () => frame);
+}
+
+/**
+ * A Monitor that yields the frames the test feeds it, on demand. With a clock, each frame
+ * advances it by FRAME_MS as it is yielded. feed resolves once the consumer has taken every
+ * fed frame and waits for more, or once the monitor stops.
+ */
+export class FakeMonitor implements Monitor {
+  readonly frames: AsyncIterable<Buffer>;
+  ready: Promise<void> = Promise.resolve();
+  stops = 0;
+  private queue: Buffer[] = [];
+  private failure: Error | undefined;
+  private stopped = false;
+  private wake = () => {};
+  private idle: (() => void)[] = [];
+
+  private readonly clock: { advance: (ms: number) => void } | undefined;
+
+  constructor(clock?: { advance: (ms: number) => void }) {
+    this.clock = clock;
+    this.frames = this.iterate();
+  }
+
+  /** Queue frames for the consumer. */
+  feed(...frames: Buffer[][]): Promise<void> {
+    this.queue.push(...frames.flat());
+    const drained = new Promise<void>((resolve) => this.idle.push(resolve));
+    this.wake();
+    return drained;
+  }
+
+  /** Make frames throw `err` once the queued frames are taken. */
+  fail(err: Error): void {
+    this.failure = err;
+    this.wake();
+  }
+
+  async stop(): Promise<void> {
+    this.stops++;
+    this.stopped = true;
+    this.settle();
+    this.wake();
+  }
+
+  private settle(): void {
+    for (const resolve of this.idle.splice(0)) resolve();
+  }
+
+  private async *iterate(): AsyncGenerator<Buffer> {
+    while (!this.stopped) {
+      const frame = this.queue.shift();
+      if (frame) {
+        this.clock?.advance(FRAME_MS);
+        yield frame;
+        continue;
+      }
+      if (this.failure) throw this.failure;
+      this.settle();
+      await new Promise<void>((resolve) => (this.wake = resolve));
+    }
+  }
+}
+
+/**
+ * A transcribe stand-in that replies with `replies[i]` on call i, or the last reply past the
+ * end, and records each WAV path with whether the file existed at the call. With manual, each
+ * call waits until the test settles it through `pending`.
+ */
+export function fakeTranscribe(replies: string[] = ['bench this is kilo juliett seven status over'], { manual = false }: { manual?: boolean } = {}) {
+  const calls: { wav: string; existed: boolean }[] = [];
+  const pending: { resolve: () => void; reject: (err: Error) => void }[] = [];
+  const fn = (wav: string): Promise<Transcript> => {
+    calls.push({ wav, existed: existsSync(wav) });
+    const text = replies[Math.min(calls.length - 1, replies.length - 1)] ?? '';
+    const result = { text, inferMs: 640 };
+    if (!manual) return Promise.resolve(result);
+    return new Promise((resolve, reject) => pending.push({ resolve: () => resolve(result), reject }));
+  };
+  return Object.assign(fn, { calls, pending });
+}
+
+/** A transcriber stand-in that records the options and returns `transcribe`. */
+export function fakeTranscriber(transcribe: (wav: string) => Promise<Transcript> = fakeTranscribe()) {
+  const calls: WhisperOptions[] = [];
+  const fn = (options: WhisperOptions) => {
+    calls.push(options);
+    return transcribe;
+  };
+  return Object.assign(fn, { calls });
+}
+
 /** SpeechDeps built from the fakes, with `overrides` in place; signals is a fresh EventEmitter. */
 export function fakeSpeechDeps(overrides: Partial<SpeechDeps> = {}): SpeechDeps & { signals: EventEmitter } {
   const clock = fakeClock();
@@ -176,6 +278,7 @@ export function fakeSpeechDeps(overrides: Partial<SpeechDeps> = {}): SpeechDeps 
     playTo: fakePlayTo({ clock }),
     play: async () => {},
     monitor: () => fakeMonitor([]),
+    transcriber: fakeTranscriber(),
     now: clock.now,
     signals: new EventEmitter(),
     ...overrides,

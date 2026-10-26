@@ -9,6 +9,7 @@ import { startMonitor, type Monitor } from './monitor.ts';
 import { playTo, resolveOutput } from './output.ts';
 import { idSentence } from './phonetic.ts';
 import { FRAMES_PER_SECOND, frameLevels } from './segment.ts';
+import { whisperTranscriber, type Transcribe, type WhisperOptions } from './stt.ts';
 import { condition, synthesize } from './tts.ts';
 
 /** Milliseconds keyWhile allows past the padded WAV and --tail for the player to start. */
@@ -25,7 +26,7 @@ export const REHEARSE_DEVICE = 'system default output';
 
 /**
  * The child processes and clocks the transmit and receive verbs use, injected so tests run
- * no say, ffmpeg or whisper-cli. `transcribe` is unused until `hear` lands.
+ * no say, ffmpeg or whisper-cli.
  */
 export interface SpeechDeps {
   /** Render text in a voice to a WAV with macOS `say`. */
@@ -42,8 +43,8 @@ export interface SpeechDeps {
   play: (wav: string, seconds: number) => Promise<void>;
   /** Start a continuous capture from an input device. */
   monitor: (device: string) => Monitor;
-  /** Transcribe one WAV; `hear` wires it. */
-  transcribe?: (wav: string) => Promise<unknown>;
+  /** Check the whisper-cli program and model files and return a Transcribe bound to `options`. */
+  transcriber: (options: WhisperOptions) => Transcribe;
   /** Milliseconds on a monotonic clock. */
   now: () => number;
   /** Source of the key signals. */
@@ -60,6 +61,7 @@ export function defaultSpeechDeps(): SpeechDeps {
     playTo,
     play,
     monitor: (device) => startMonitor(device),
+    transcriber: whisperTranscriber,
     now: () => performance.now(),
     signals: process,
   };

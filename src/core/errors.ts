@@ -76,7 +76,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'dependency-missing': {
     kind: 'transport',
-    means: 'ffmpeg, afplay or say is missing from PATH',
+    means: 'ffmpeg, afplay, say or whisper-cli is missing from PATH, or a whisper model file is missing',
     remedy: 'ask the human to install the missing program',
     retry: 'after-remedy',
   },
@@ -100,7 +100,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'speech-engine-failed': {
     kind: 'transport',
-    means: 'say failed, or say wrote digital zero',
+    means: 'say or whisper-cli failed, or say wrote digital zero',
     remedy: 'pass a --voice that say -v ? lists, then rerun the command',
     retry: 'after-remedy',
   },

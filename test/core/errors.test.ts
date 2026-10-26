@@ -70,6 +70,12 @@ describe('error reasons', () => {
     expect(err.toJSON()).toMatchObject({ reason: 'station-unconfigured', retry: 'no', remedy: REASONS['station-unconfigured'].remedy, file: 'uv5r.json' });
   });
 
+  it('names say and whisper-cli under dependency-missing and speech-engine-failed', () => {
+    expect(REASONS['dependency-missing'].means).toContain('whisper-cli');
+    expect(REASONS['dependency-missing'].means).toContain('model file');
+    expect(REASONS['speech-engine-failed'].means).toContain('whisper-cli');
+  });
+
   it.each([
     ['station-unconfigured', 'usage', 'no'],
     ['utterance-too-long', 'usage', 'after-remedy'],

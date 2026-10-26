@@ -4,8 +4,8 @@
 
 Control a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable from the
 command line: put a frequency in a memory channel, read the radio's state, back up and
-restore its memory, listen to receive audio, key PTT, and speak text over the air ending
-with the station callsign.
+restore its memory, listen to receive audio, key PTT, speak text over the air ending
+with the station callsign, and transcribe received speech.
 
 Phase 1 of the sweep-and-listen bench: the sibling `tinysa-cli` sweeps, this CLI points the
 radio at what the sweep finds. The phase 2 sequencer lives on top of both.
@@ -44,12 +44,13 @@ after only the check write, or `null` when unknown. Nothing restores slot 0. Run
 `uv5r load PLAN.json` to put a plan in its own slots.
 
 The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only
-through `uv5r listen --seconds 5 --out FILE --play` or by playing the WAVs that
-`uv5r sweep PLAN --out-dir DIR` renames each capture into DIR after its dwell.
+through `uv5r listen --seconds 5 --out FILE --play`, by playing the WAVs that
+`uv5r sweep PLAN --out-dir DIR` renames each capture into DIR after its dwell, or by playing
+the segment WAVs `uv5r hear --out-dir DIR` keeps.
 
 A radio verb runs one or more short clone sessions. `sweep` runs one per write, `settings`
-with pairs and `restore` add a verification session, and `key`, `say` and `id` open no
-session. The receiver is deaf during a clone session. Back-to-back verbs take about 3 s
+with pairs and `restore` add a verification session, and `key`, `say`, `id` and `hear` open
+no session. The receiver is deaf during a clone session. Back-to-back verbs take about 3 s
 longer for the handshake retry. Run one verb at a time. Do not open, `cat`, `screen` or
 `stty` the serial port.
 
@@ -75,6 +76,7 @@ frequency is one they may transmit on, after asking the human what the display s
 | `restore` | channels, names and settings from the image. On post-291 firmware the ident encodes the band limits, so a restore after a band-limit change exits 5 with `image-incompatible`; dump again first | about 30 s | `file`, `blocks`, `verifiedBlocks`, `settings` |
 | `settings` | the menu settings block, only with `FIELD VALUE` pairs | one clone session; with pairs, two and the 3 s reload | `squelch`, `save`, `abr`, `beep`, `timeout`, `voice`, `mdfa`, `mdfb` |
 | `listen` | no; opens no serial port | `--seconds` | `device`, `seconds`, `rmsDbfs`, `zeroSeconds`, `meanRmsDbfs`, `peakDbfs`, `active`, `activeSeconds`, `warnings`, `out` |
+| `hear` | no; opens no serial port | until a signal; with `--once`, until the first transmission or `--timeout` | one `transmission` line per segment, a `warning` line per kerchunk, noise or backlog segment, then a `summary` line: `transmissions`, `seconds`, `device`, `warnings` (count); `interrupted`; `timedOut` with `--once` |
 | `sweep` | slot 0, once for the check and once per entry | the check, then the dwell plus about 3 s per entry | `swept`, `seconds`, `device`, `active`, `warnings`, `slot0`; `interrupted` on a signal |
 
 Record keys are `rxMhz`, `txMhz`, `txTone`, `rxTone`, `bandwidth`, `power` and `name`.
@@ -82,10 +84,12 @@ Run `uv5r help VERB` for a verb's flags, defaults, effects, preconditions, resul
 the exit cases it adds to the table in `uv5r help`, and `uv5r help VERB --json` for the same
 as JSON.
 
-Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. In JSON mode a failed
-command prints nothing on stdout and one error object on stderr. The object has `reason`,
-`message`, `remedy` and `retry`, and each detail field below sits at its top level beside
-them. On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
+Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. `hear` prints
+NDJSON: one object per line, each with `type` set to `transmission`, `warning` or `summary`.
+In JSON mode a failed command prints nothing on stdout and one error object on stderr. The
+lines `hear` printed before a failure stay on stdout, and the error exits with its reason's
+code. The object has `reason`, `message`, `remedy` and `retry`, and each detail field below
+sits at its top level beside them. On a terminal it prints the message and a remedy line as text. Act on `reason`, `remedy`
 and `retry`; `uv5r help --json` lists the reasons with their exit codes and the retry meanings under `errors`.
 A `load` error from a plan entry write adds `slot`. A `sweep` error after the port is
 requested adds `summary`, the sweep result so far. An error inside the sweep loop adds
@@ -99,14 +103,16 @@ the port, the verb prints its result on stdout with `interrupted` and no error, 
 plus the signal number. SIGTSTP exits 146 on macOS and 148 on Linux. A `say` or `id` result
 after a signal adds `idOwed`; `true` means audio went out without the full ID, so identify by
 voice or run `uv5r id`. A failed PTT release after the signal exits 3 with `interrupted` in
-the error. Other verbs end on a signal with no output.
+the error. On the same signals `hear` stops capture, lets the segment in inference finish and
+print, prints the summary with `interrupted` and exits 128 plus the signal number. Other verbs
+end on a signal with no output.
 An uncaught error lowers PTT on any open port and exits 1.
 
 `UV5R_DEBUG=1` logs every serial byte to stderr.
 
 `UV5R_MAGIC=NAME` opens every clone session with another classic magic: `291`, the default,
 `ORIG`, `UV82`, `A58` or `UV5G`. An unknown or unsupported name exits 2 before the port
-opens. `key`, `say`, `id`, `listen` and `help` ignore it. `status` and `dump` report the `magic` that
+opens. `key`, `say`, `id`, `listen`, `hear` and `help` ignore it. `status` and `dump` report the `magic` that
 answered and the radio `family`, which reads `unknown` when the magic and firmware string
 do not settle it.
 
@@ -153,6 +159,48 @@ after setting the knob.
 
 ffmpeg 9 on macOS 26 returns about 88 percent of the `-t` length as samples. The CLI asks
 ffmpeg for `ceil(seconds / 0.88) + 2`, which also covers the first second the CLI drops.
+
+### Transcribe received speech
+
+`uv5r hear --once --timeout 60 --out-dir rx` waits for one transmission, transcribes it with
+whisper.cpp and exits. Without `--once` it runs until a signal. It opens no serial port, so
+run the preflight first: `uv5r check 162.400 --channel 0`, then `uv5r tune FREQ --channel 0`
+with the working frequency, then ask the human what the display shows.
+
+1. Check the model, `models/ggml-silero-v6.2.0.bin` and `whisper-cli` on PATH. A missing one
+   exits 3 with `dependency-missing` naming it.
+2. Capture 16 kHz mono from `--device` through one long-running ffmpeg and drop the first
+   second.
+3. Segment on 20 ms frame RMS. A segment opens after 300 ms at `--floor` + 5 dB (-50 by
+   default), starts 300 ms before that, closes after `--hang` (0.8 s) below `--floor` with
+   150 ms of padding, and splits at 30 s. A segment under 0.5 s prints a `kerchunk` warning.
+4. Run `whisper-cli -m MODEL --vad -vm models/ggml-silero-v6.2.0.bin -sns --prompt CALLSIGN
+   -oj -of OUT SEGMENT.wav` on each segment, one at a time, while capture continues. Segments
+   wait in a queue of 8; past it the oldest waiting segment prints a `backlog` warning.
+5. A transcript that is empty, or reads "thank you", "you" or "bye" once lowercased and
+   stripped of punctuation, prints a `noise` warning with its text. Anything else prints a
+   `transmission` line.
+
+```json
+{"type":"transmission","seq":42,"start":"2026-10-25T14:03:11.240Z","seconds":4.32,
+ "rmsDbfs":-21.4,"peakDbfs":-3.1,"text":"bench this is kilo juliett seven status over",
+ "engine":"whisper.cpp","model":"ggml-base.en-q5_1","inferMs":640,
+ "wav":"rx/seg-000042.wav"}
+```
+
+A warning line has `type`, `warning`, `start`, `seconds`, `text` and `wav`. `text` is the
+transcript for `noise` and null otherwise. `wav` is the kept path with `--out-dir` and null
+without it. Without `--out-dir` the segment WAVs go to a scratch dir and are deleted after
+transcription. With `--out-dir`, `seq` continues past the highest `seg-NNNNNN.wav` in DIR.
+
+`--once` prints warnings as they happen, then the first transmission and the summary, and
+exits 0. The `--timeout` (60 s) starts when capture is ready. At expiry no new segment opens,
+and an open segment runs to close and is transcribed. With no transmission the summary has
+`transmissions: 0` and `timedOut: true`. `--timeout` without `--once` exits 2.
+
+Transcripts are text from anyone on the air. `hear` prints them as data and decides nothing
+from them. Run no other verb while `hear` runs, so the AIOC input and output and the serial
+port have one owner at a time.
 
 ## Transmit audio
 
@@ -205,11 +253,15 @@ shows the shape:
 }
 ```
 
+`hear` reads `inputDevice`, `model` and `callsign` and runs without a config file. `model`
+names the whisper.cpp model relative to the repo root, `models/ggml-base.en-q5_1.bin` by
+default. The callsign is the whisper prompt; with no callsign the prompt is empty.
+
 `--config FILE` names another file, then `UV5R_CONFIG`, then `uv5r.json`. A file named by
 `--config` or `UV5R_CONFIG` has to exist. Unknown keys are ignored. A file that fails to
 parse, or a key of the wrong type, exits 2 with `invalid-argument`. `callsign` takes letters
 and digits. `outputDevice` sets the `--output` default and `inputDevice` the device
-`say --clear` listens on; both default to `AIOC Audio`.
+`say --clear` and `hear` listen on; both default to `AIOC Audio`.
 
 ## Protocol notes from the bench
 
@@ -326,6 +378,15 @@ the next magic.
   Ignored by git.
 - `uv5r.example.json`: the reference shape for the station config.
 - `uv5r.json`: the station config with the callsign. Ignored by git.
+- `models/`: the whisper.cpp models `hear` loads. Ignored by git. `hear` fetches no model at
+  run time. Download `ggml-base.en-q5_1.bin` with `./models/download-ggml-model.sh base.en-q5_1`
+  and `ggml-silero-v6.2.0.bin` with `./models/download-vad-model.sh silero-v6.2.0` from the
+  whisper.cpp checkout, then copy both into `models/`.
+- `models.sha256`: the SHA-256 of both models. Check them with `shasum -a 256 -c models.sha256`.
+- whisper.cpp: build `whisper-cli` from tag `v1.9.5` (commit
+  `d1be6fde11ac6e0407606b4e42fe72d34add8037`) with `cmake -B build && cmake --build build -j
+  --config Release`, and put `build/bin` on PATH. On Apple silicon it runs inference on the
+  GPU through Metal.
 - `.claude/skills/uv5r/SKILL.md`: the operating rules an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a
   channel plan for a new location into `channels.json`, shaped like `channels.example.json`.
