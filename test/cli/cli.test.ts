@@ -1013,6 +1013,41 @@ describe('key output', () => {
     expect(err).not.toHaveProperty('phase');
   });
 
+  it('exits 3 with the unplug remedy when the port close hangs after a key', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      radio.close = () => new Promise<void>(() => {});
+      await run(['key', '--seconds', '0.1', '--json'], opener(radio));
+      expect(process.exitCode).toBe(3);
+      expect(stdout).toEqual([]);
+      expect(errJson()).toMatchObject({
+        reason: 'ptt-control-failed',
+        message: 'the port did not close within 3 s; PTT may be high',
+        remedy: 'ask the human to unplug the AIOC to drop PTT',
+        retry: 'no',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the original error when the port close hangs after a failed key', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      radio.setPtt = async () => {
+        throw new TransportError('ptt-control-failed', 'port gone', { target: 'fake' });
+      };
+      radio.close = () => new Promise<void>(() => {});
+      await run(['key', '--seconds', '0.1', '--json'], opener(radio));
+      expect(process.exitCode).toBe(3);
+      expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', message: 'PTT assertion and release unconfirmed: port gone; ask the human to unplug the AIOC to drop PTT', target: 'fake' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('releases PTT on SIGTSTP and exits 128 plus the platform number', async () => {
     const radio = new FakeRadio();
     const done = cli(['key', '--seconds', '5', '--json'], opener(radio));

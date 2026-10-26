@@ -26,6 +26,7 @@ import {
   parseTone,
   PROGRAM_MAGICS,
   PROGRAM_PAUSE_MS,
+  PTT_CONTROL_TIMEOUT_MS,
   readChannel,
   readPlan,
   readSettings,
@@ -824,15 +825,48 @@ const FATAL_RELEASE_MS = 1000;
 const FATAL_UNCONFIRMED = 'PTT release unconfirmed; ask the human to unplug the AIOC';
 let fatalRun = false;
 
+/** Close `t` and resolve false when the close runs past PTT_CONTROL_TIMEOUT_MS. */
+async function closeWithin(t: Transport): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const closing = t.close();
+  // Attach a handler so a rejection after the timeout stays handled.
+  closing.catch(() => {});
+  try {
+    return await Promise.race([closing.then(() => true), new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), PTT_CONTROL_TIMEOUT_MS)))]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Open the port, run `fn` and close the port. A close that runs past PTT_CONTROL_TIMEOUT_MS
+ * throws ptt-control-failed with the unplug remedy after a success, and keeps the original
+ * error after a failure.
+ */
 async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<T>): Promise<T> {
   const transport = await args.open(stringFlag(args.flags, 'target') ?? process.env.UV5R_TARGET);
   openTransports.add(transport);
+  let result: T;
   try {
-    return await fn(transport);
+    result = await fn(transport);
+  } catch (err) {
+    try {
+      await closeWithin(transport);
+    } finally {
+      openTransports.delete(transport);
+    }
+    throw err;
+  }
+  let closed: boolean;
+  try {
+    closed = await closeWithin(transport);
   } finally {
-    await transport.close();
     openTransports.delete(transport);
   }
+  if (!closed) {
+    throw new TransportError('ptt-control-failed', `the port did not close within ${PTT_CONTROL_TIMEOUT_MS / 1000} s; PTT may be high`, {}, { remedy: REASONS['ptt-control-failed'].remedy, retry: 'no' });
+  }
+  return result;
 }
 
 /**
