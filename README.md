@@ -46,11 +46,12 @@ Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow
 
 ## What you can do with this
 
-Configuring your radio for a new place has never been easier.
+Arrive somewhere new and have the repeaters programmed before you unpack.
 
-Control your camp remotely.  Use HAM radio to control your lights, ask about weather conditions, report GPS coordinates, or test your handhelds.
+Run your camp over the air. Switch the lights, ask for the forecast,
+read back GPS coordinates, or record tests for your handhelds.
 
-Control robots with your voice. Setup ad-hoc emergency alert stations in 1 line.
+Stand up an emergency alert station in one line.  Command a robot by talking to it.
 
 ## First fifteen minutes
 
