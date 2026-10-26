@@ -30,6 +30,20 @@ echo "alias uv5r='node \"$PWD/src/cli/main.ts\"'" >> ~/.zshrc
 
 `npm run uv5r -- VERB` works too. The rest of this file writes `uv5r`.
 
+## Use it with LLMs
+
+Open your agent in this repo and tell it what to do:
+
+```text
+Set channel 1 to the local NOAA weather station.
+```
+
+```text
+Listen on the radio. Whenever you hear a transmission, reply "pong".
+```
+
+Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow the rules. 🙂
+
 ## First fifteen minutes
 
 Plug in the AIOC, turn the radio on and set the volume knob to about half.
@@ -58,20 +72,6 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
 7. Run `uv5r listen --seconds 5 --out rx.wav --play` to record 5 s and play it on your Mac.
 
 `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display.
-
-## Use it with LLMs
-
-Open your agent in this repo and tell it what to do:
-
-```text
-Set channel 1 to the local NOAA weather station.
-```
-
-```text
-Listen on the radio. Whenever you hear a transmission, reply "pong".
-```
-
-Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow the rules. 🙂
 
 ## Things that bite
 
