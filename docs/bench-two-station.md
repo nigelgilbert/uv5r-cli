@@ -140,6 +140,34 @@ Paste this to the Claude Code session on MBP 2:
 > uv5r hear --once --timeout 240 --out-dir rx` in one Bash call with a 400 s
 > timeout. Report the `say` result and the transcript. On `channel-busy`, wait for me.
 
+## Setup notes, station B, 2026-10-25
+
+Findings from setting up MBP 2 and reference unit 2. Station A should check the items marked
+"compare".
+
+- Homebrew was absent and needs an interactive sudo password, so Node 24.22.1, ffmpeg 9.0.2
+  and whisper.cpp v1.9.5 went under `~/.local` instead. ffmpeg built from the release tarball
+  with `--enable-avfoundation --enable-audiotoolbox`; the CLI needs both plus `lavfi` and
+  `astats`, all present.
+- `main` already contains PR 7 and everything on `feature/tts`, so stay on `main`.
+- `say --rehearse` crashed with `unexpected-error`, "timeout out of range", because `play` in
+  `src/cli/audio.ts` passed a fractional afplay timeout. Fixed in this commit with `Math.ceil`.
+  Compare: station A hits the same crash on any `say --rehearse` without the fix.
+- Microphone access: under VS Code the first avfoundation capture printed "Cannot use AIOC
+  Audio" and hung with no permission dialog; `hear` then looks stalled forever. Running
+  `tccutil reset Microphone com.microsoft.VSCode` made macOS prompt on the next capture. The
+  sandbox was not the cause; the refusal was the same with it off.
+- Unit 2 ignores channel name writes over non-blank bytes. Writing "162.4" over a slot named
+  "162.45" read back "162.45", a 7-byte name changed only the blank 7th byte, and `erase`
+  left the name intact. The frequency record writes fine, so `check`, `tune` and `erase` exit
+  5 with `verification-failed` on the name while the slot works. Compare on unit 1. The
+  display is set to `mdfa freq`, so the stale name does not show.
+- The bench channel on station B lives in slot 1, not slot 0. Only the frequency has to match
+  across stations. `read 1`: 446.525, low power, wide, no tones.
+- Levels: with the knob where it was, squelch 0 static read -3 dBFS and clipped. After one
+  turn down, NOAA on slot 1 read 5 of 5 seconds active at -15 dBFS mean, and squelch 0 static
+  read about -10 dBFS.
+
 ## Results
 
 | Round | Question sent | Heard at B | Answer sent | Heard at A | B inferMs | A inferMs | Notes |
