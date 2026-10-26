@@ -251,8 +251,8 @@ const STDERR_KEEP = 64 * 1024 * 1024;
  * Run `file` with `args` in its own process group and call `callback` once it exits, as
  * execFile calls its callback: a null error on exit 0, else an ExecError with the exit code
  * or signal, `killed` set after a timeout, or the spawn error itself. A terminal Ctrl-C or
- * Ctrl-Z then reaches only uv5r. `timeoutMs` 0 sets no timeout. Return the child so the
- * caller can kill it.
+ * Ctrl-Z then reaches only uv5r. A timeout sends SIGTERM, then SIGKILL after KILL_GRACE_MS.
+ * `timeoutMs` 0 sets no timeout. Return the child so the caller can kill it.
  */
 export function execDetached(file: string, args: string[], timeoutMs: number, callback: (err: ExecError | null, stderr: string) => void): ChildProcess {
   const child = spawn(file, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
@@ -260,17 +260,20 @@ export function execDetached(file: string, args: string[], timeoutMs: number, ca
   let timedOut = false;
   let failed: ExecError | undefined;
   let done = false;
+  let escalate: NodeJS.Timeout | undefined;
   const timer =
     timeoutMs > 0
       ? setTimeout(() => {
           timedOut = true;
           child.kill('SIGTERM');
+          escalate = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS).unref();
         }, timeoutMs)
       : undefined;
   const finish = (code: number | null, signal: NodeJS.Signals | null) => {
     if (done) return;
     done = true;
     clearTimeout(timer);
+    clearTimeout(escalate);
     if (failed) callback(failed, stderr);
     else if (code === 0) callback(null, stderr);
     else callback(Object.assign(new Error(`${file} exited`), { code: code as unknown as string, signal, killed: timedOut }), stderr);

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn }));
 
+import { KILL_GRACE_MS } from '../../src/cli/audio.ts';
 import { listArgs, listOutputDevices, parseDeviceList, pickOutput, playArgs, playTo, resolveOutput } from '../../src/speech/output.ts';
 import { fakeChild, spawnThen } from './fakes.ts';
 
@@ -91,7 +92,7 @@ describe('listOutputDevices', () => {
     spawn.mockImplementationOnce(spawnThen((c) => c.exit(1, { stderr: 'Unknown output format' })));
     await expect(listOutputDevices()).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringContaining('Unknown output format') });
   });
-  it('stops a listing that runs past its timeout', async () => {
+  it('stops a listing that runs past its timeout and sends SIGKILL after the grace period', async () => {
     vi.useFakeTimers();
     try {
       const child = fakeChild();
@@ -99,7 +100,9 @@ describe('listOutputDevices', () => {
       const pending = listOutputDevices().catch((e: unknown) => e);
       await vi.advanceTimersByTimeAsync(10_000);
       expect(child.kills).toEqual(['SIGTERM']);
-      child.exit(null, { signal: 'SIGTERM' });
+      await vi.advanceTimersByTimeAsync(KILL_GRACE_MS);
+      expect(child.kills).toEqual(['SIGTERM', 'SIGKILL']);
+      child.exit(null, { signal: 'SIGKILL' });
       expect(await pending).toMatchObject({ reason: 'audio-process-failed', message: expect.stringContaining('timed out after 10s') });
     } finally {
       vi.useRealTimers();
