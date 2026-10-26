@@ -10,8 +10,6 @@ The files on the bench, the code layering and the fake radio the tests run again
     showed.
   - `unit-<n>.json`: the decoded settings and all 128 slots, written by
     `test/core/golden.test.ts`.
-- `scenarios/big-sky-2026-10.json`: test data, channels and sweep windows from the Big Sky
-  SITREP. No code reads it.
 - `channels.example.json`: the reference shape for generated plans.
 - `channels.json`: the plan the `channel-plan` skill writes for the current location. Ignored by
   git.
