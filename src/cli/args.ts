@@ -10,8 +10,8 @@ export interface ParsedArgs {
 
 /**
  * Split argv into a verb, positionals and `--flag [value]` pairs. `-h` stands for `--help`.
- * Every argument after the first `--` is a positional, so text may start with a dash. Throw UsageError on a value given to a boolean flag and on a flag given twice. `--help` and `-h`
- * may repeat.
+ * Every argument after the first `--` is a positional, so text may start with a dash. Throw
+ * UsageError on a value given to a boolean flag and on a flag given twice, except `--help`.
  */
 export function parseArgs(argv: string[], booleanFlags: ReadonlySet<string>): ParsedArgs {
   const positionals: string[] = [];

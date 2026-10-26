@@ -14,7 +14,7 @@ export const QUEUE_LIMIT = 8;
 /** Normalized transcripts that print as noise warnings; whisper produces them on non-speech. */
 export const NOISE_PHRASES: readonly string[] = ['thank you', 'you', 'bye'];
 
-/** Seconds past --timeout plus the longest segment after which hear --once stops a capture that delivers no frames. */
+/** Seconds added to --timeout and the longest segment before hear --once stops capture, even while frames arrive. */
 const STALL_SLACK_SECONDS = 10;
 
 const MAX_SEGMENT_SECONDS = MAX_FRAMES / FRAMES_PER_SECOND;
@@ -138,8 +138,9 @@ function saveWav(path: string, pcm: Buffer): void {
  * prints a backlog warning. A kerchunk prints a warning and skips whisper-cli. A transcript
  * that isNoise flags prints a noise warning. With once, the first transmission line stops
  * capture and discards later segments. The deadline starts when capture is ready; past it no
- * new segment opens, an open one runs to close, and the queue drains. Capture that is idle at
- * the deadline stops then, whether or not frames arrive.
+ * new segment opens, an open one runs to close or until MAX_SEGMENT_SECONDS plus
+ * STALL_SLACK_SECONDS past the deadline, and the queue drains. Capture that is idle at the
+ * deadline stops then, whether or not frames arrive.
  *
  * One of KEY_SIGNALS on `signals` stops capture and closes the open segment. Each waiting
  * segment, the closed one included, prints a backlog warning and keeps its WAV with outDir.
@@ -163,7 +164,6 @@ export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () 
   let deadlineTimer: NodeJS.Timeout | undefined;
   // Map segment frames to wall time from the frame that opened the segment.
   let anchor = { frame: 0, wall: 0 };
-  /** Set when capture ends at the deadline with no segment open. */
   let deadlineStop = false;
 
   const halt = () => {

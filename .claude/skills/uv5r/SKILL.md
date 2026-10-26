@@ -40,7 +40,7 @@ Run commands from the repo root. `uv5r` means `node src/cli/main.ts`.
   2. Ask the human what to send, or propose a reply and wait for a yes.
   3. `uv5r say --clear 1 TEXT && uv5r hear --once --timeout 60 --out-dir rx` in one Bash call. Exit 5 with `channel-busy` returns to step 1.
   4. On `idOwed`, `released: false` or any error, stop the loop, report, and wait for the human before any recovery transmission. Otherwise return to step 2.
-- Set the Bash timeout to `--max-seconds` plus `--timeout` plus 90 s: 180 s with the defaults.
+- Set the Bash timeout to `--max-seconds` plus `--timeout` plus 90 s: 180 s with the defaults. `hear --once` stops capture at most 40 s past `--timeout`, inside that margin.
 
 ## On a failed command
 

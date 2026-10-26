@@ -199,8 +199,9 @@ transcription. With `--out-dir`, `seq` continues past the highest `seg-NNNNNN.wa
 
 `--once` prints warnings as they happen, then the first transmission and the summary, and
 exits 0. The `--timeout` (60 s) starts when capture is ready. At expiry no new segment opens,
-and an open segment runs to close and is transcribed. With no transmission the summary has
-`transmissions: 0` and `timedOut: true`. `--timeout` without `--once` exits 2.
+and an open segment runs to close and is transcribed, up to 40 s past the timeout. With no
+transmission the summary has `transmissions: 0` and `timedOut: true`. `--timeout` without
+`--once` exits 2.
 
 A signal closes the open segment. Each waiting segment, the closed one included, prints a
 `backlog` warning, and `--out-dir` keeps its WAV.
