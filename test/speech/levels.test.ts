@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
-vi.mock('node:child_process', () => ({ execFile }));
+const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
+vi.mock('node:child_process', () => ({ spawn }));
 
 import { measureArgs, measureWav, parseWavLevels } from '../../src/speech/levels.ts';
+import { spawnThen } from './fakes.ts';
+
+const ENOENT = Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' });
 
 /** ametadata lines for one frame of a reset=0 astats run, as ffmpeg prints them. */
 function frame(i: number, peak: string, rms: string, samples: number): string {
@@ -16,7 +19,7 @@ function frame(i: number, peak: string, rms: string, samples: number): string {
 }
 
 beforeEach(() => {
-  execFile.mockReset();
+  spawn.mockReset();
 });
 
 describe('measureArgs', () => {
@@ -47,17 +50,18 @@ describe('parseWavLevels', () => {
 });
 
 describe('measureWav', () => {
-  it('passes measureArgs to ffmpeg and parses its stderr', async () => {
-    execFile.mockImplementation((_f, _a, _o, cb) => cb(null, '', frame(0, '-3', '-20', 96000)));
+  it('passes measureArgs to a detached ffmpeg and parses its stderr', async () => {
+    spawn.mockImplementation(spawnThen((c) => c.exit(0, { stderr: frame(0, '-3', '-20', 96000) })));
     await expect(measureWav('tx.wav')).resolves.toEqual({ seconds: 2, peakDbfs: -3, rmsDbfs: -20 });
-    expect(execFile.mock.calls[0]![0]).toBe('ffmpeg');
-    expect(execFile.mock.calls[0]![1]).toEqual(measureArgs('tx.wav'));
+    expect(spawn.mock.calls[0]![0]).toBe('ffmpeg');
+    expect(spawn.mock.calls[0]![1]).toEqual(measureArgs('tx.wav'));
+    expect(spawn.mock.calls[0]![2]).toMatchObject({ detached: true });
   });
 
   it('maps a missing ffmpeg to dependency-missing and a failure to audio-process-failed naming the file', async () => {
-    execFile.mockImplementationOnce((_f, _a, _o, cb) => cb(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }), '', ''));
+    spawn.mockImplementationOnce(spawnThen((c) => c.fail(ENOENT)));
     await expect(measureWav('tx.wav')).rejects.toMatchObject({ reason: 'dependency-missing' });
-    execFile.mockImplementationOnce((_f, _a, _o, cb) => cb(Object.assign(new Error('failed'), { code: 1 }), '', 'tx.wav: Invalid data found when processing input'));
+    spawn.mockImplementationOnce(spawnThen((c) => c.exit(1, { stderr: 'tx.wav: Invalid data found when processing input' })));
     await expect(measureWav('tx.wav')).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringContaining('measuring tx.wav: tx.wav: Invalid data') });
   });
 });

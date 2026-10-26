@@ -1348,7 +1348,7 @@ async function hearVerb(args: Invocation): Promise<number> {
   const hangSeconds = numberFlag(args.flags, 'hang') ?? DEFAULT_HANG_SECONDS;
   if (hangSeconds <= 0 || hangSeconds > MAX_HANG_SECONDS) throw new UsageError(`--hang takes 0 < S <= ${MAX_HANG_SECONDS}; got ${hangSeconds}`, { flag: 'hang' });
   const outDir = stringFlag(args.flags, 'out-dir');
-  const { path, required } = resolveConfigPath(stringFlag(args.flags, 'config'));
+  const { path, required } = resolveConfigPath(stringFlag(args.flags, 'config'), process.env, args.deps.defaultConfig);
   const station = readStation(path, { required });
   const device = stringFlag(args.flags, 'device') ?? station.inputDevice ?? DEFAULT_AUDIO_DEVICE;
   const model = repoPath(station.model ?? DEFAULT_MODEL);

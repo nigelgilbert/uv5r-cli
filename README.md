@@ -105,8 +105,9 @@ plus the signal number. SIGTSTP exits 146 on macOS and 148 on Linux. `say` and `
 `--rehearse` do the same for a signal before the port opens, with `pttAsserted: false`. A
 `say` or `id` result after a signal adds `idOwed`; `true` means the player ran past `--lead`
 without finishing the ID, so identify by voice or run `uv5r id`. A failed PTT release after the signal exits 3 with `interrupted` in
-the error. On the same signals `hear` stops capture, lets the segment in inference finish and
-print, prints the summary with `interrupted` and exits 128 plus the signal number. Other verbs
+the error. On the same signals `hear` stops capture, closes the open segment, prints a
+`backlog` warning for each segment left untranscribed, lets the segment in inference finish
+and print, prints the summary with `interrupted` and exits 128 plus the signal number. Other verbs
 end on a signal with no output.
 An uncaught error lowers PTT on any open port and exits 1. When a release fails or takes over
 1 s, the error says to unplug the AIOC.
