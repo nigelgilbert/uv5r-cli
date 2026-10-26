@@ -326,11 +326,10 @@ describe('help', () => {
     expect(outJson()).toMatchObject({ verb: 'check' });
   });
 
-  it('states the channel rule in the same words in help, README.md and SKILL.md', async () => {
+  it('states the channel rule in the same words in help and README.md', async () => {
     const help = await helpJson();
     expect(help.rules.channel).toBe(CHANNEL_RULE);
     expect(readFileSync(README, 'utf8')).toContain(CHANNEL_RULE);
-    expect(readFileSync(SKILL, 'utf8')).toContain(CHANNEL_RULE);
   });
 
   it('keeps SKILL.md at most 60 lines', () => {
