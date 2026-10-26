@@ -572,11 +572,12 @@ export interface KeyOptions {
   maxMs: number;
 }
 
-/** Message for a failed key, from what the port confirmed. */
-function keyFailureMessage(pttAsserted: boolean, released: boolean, cause: string): string {
-  if (released) return `PTT assertion unconfirmed: ${cause}; PTT released`;
-  if (pttAsserted) return `PTT rose and the release is unconfirmed: ${cause}; ${UNPLUG}`;
-  return `PTT assertion and release unconfirmed: ${cause}; ${UNPLUG}`;
+/** Message for a failed key, from what the port confirmed and whether a timed-out assertion may still land. */
+function keyFailureMessage(pttAsserted: boolean, released: boolean, lateAssert: boolean, cause: string): string {
+  if (pttAsserted && !released) return `PTT rose and the release is unconfirmed: ${cause}; ${UNPLUG}`;
+  if (!released) return `PTT assertion and release unconfirmed: ${cause}; ${UNPLUG}`;
+  if (lateAssert) return `PTT assertion unconfirmed: ${cause}; ${UNPLUG}`;
+  return `PTT assertion unconfirmed: ${cause}; PTT released`;
 }
 
 /** Return the message of `err`, or `err` as a string. */
@@ -584,24 +585,35 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Set PTT on `t` and reject when the port gives no confirmation within PTT_CONTROL_TIMEOUT_MS. */
+/**
+ * Set PTT on `t` and reject when the port gives no confirmation within PTT_CONTROL_TIMEOUT_MS.
+ * The timeout error carries detail `timedOut: true`. After a timed-out assertion, a late
+ * completion drops PTT again.
+ */
 async function setPttWithin(t: Transport, on: boolean): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`the port did not confirm PTT ${on ? 'high' : 'low'} within ${PTT_CONTROL_TIMEOUT_MS / 1000} s`)), PTT_CONTROL_TIMEOUT_MS);
+    timer = setTimeout(
+      () => reject(new TransportError('ptt-control-failed', `the port did not confirm PTT ${on ? 'high' : 'low'} within ${PTT_CONTROL_TIMEOUT_MS / 1000} s`, { timedOut: true })),
+      PTT_CONTROL_TIMEOUT_MS,
+    );
   });
   const set = t.setPtt(on);
   // Attach a handler so a rejection after the timeout stays handled.
   set.catch(() => {});
   try {
     await Promise.race([set, late]);
+  } catch (err) {
+    // Lower PTT when a timed-out assertion completes late.
+    if (on && err instanceof BaofengError && err.detail.timedOut === true) void set.then(() => t.setPtt(false), () => {}).catch(() => {});
+    throw err;
   } finally {
     clearTimeout(timer);
   }
 }
 
 /** Resolve after `ms`, or as soon as `stop` resolves, and leave no timer pending. */
-function wait(ms: number, stop: Promise<void>): Promise<void> {
+export function wait(ms: number, stop: Promise<void>): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
     void stop.then(() => {
@@ -620,8 +632,9 @@ function wait(ms: number, stop: Promise<void>): Promise<void> {
  *
  * The first failure wins. A PTT failure throws ptt-control-failed with what the port
  * confirmed. Each PTT change gets PTT_CONTROL_TIMEOUT_MS; a late assertion counts as a failed
- * one and keyWhile still releases. A body failure keeps its own reason and gains `seconds` and any `interrupted`.
- * When the release fails, the message and remedy tell the human to unplug the AIOC.
+ * one and keyWhile still releases. A body failure keeps its own reason and gains `seconds`
+ * and any `interrupted`. When the release fails or the assertion timed out, the message and
+ * remedy tell the human to unplug the AIOC.
  */
 export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Promise<unknown>, options: KeyOptions, signals: EventEmitter = process): Promise<HoldResult> {
   let interrupted: NodeJS.Signals | undefined;
@@ -641,6 +654,7 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
   let released = false;
   let failure: { err: unknown; fromBody: boolean } | undefined;
   let releaseCause = '';
+  let lateAssert = false;
   let stopped = false;
   let timedOut = false;
   let running: Promise<void> | undefined;
@@ -677,6 +691,7 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
       heldMs = performance.now() - assertedAt;
     } catch (err) {
       failure = { err, fromBody: false };
+      lateAssert = !pttAsserted && err instanceof BaofengError && err.detail.timedOut === true;
     }
     clearTimeout(watchdog);
     try {
@@ -705,16 +720,16 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
     throw err;
   }
   if (failure) {
-    const base = failure.err instanceof BaofengError ? failure.err.detail : {};
+    const { timedOut: _, ...base } = failure.err instanceof BaofengError ? failure.err.detail : {};
     throw new TransportError(
       'ptt-control-failed',
-      keyFailureMessage(pttAsserted, released, messageOf(failure.err)),
+      keyFailureMessage(pttAsserted, released, lateAssert, messageOf(failure.err)),
       {
         ...base,
         ...(pttAsserted ? { seconds: held } : {}),
         ...(interrupted ? { interrupted } : {}),
       },
-      { remedy: released ? 'report the error and ask the human to check the AIOC cable before keying again' : UNPLUG, retry: 'no' },
+      { remedy: released && !lateAssert ? 'report the error and ask the human to check the AIOC cable before keying again' : UNPLUG, retry: 'no' },
     );
   }
   const result: HoldResult = { pttAsserted: true, seconds: held, released: true };

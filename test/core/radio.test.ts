@@ -1085,11 +1085,21 @@ describe('keyWhile', () => {
     expect(listeners(em)).toBe(0);
   });
 
-  it('fails a hung assertion after PTT_CONTROL_TIMEOUT_MS and still releases', async () => {
+  it('fails a hung assertion after PTT_CONTROL_TIMEOUT_MS, still releases and drops PTT after a late assertion', async () => {
     vi.useFakeTimers();
     const radio = new FakeRadio();
     const release = radio.setPtt.bind(radio);
-    radio.setPtt = (on: boolean) => (on ? new Promise<void>(() => radio.pttLog.push(on)) : release(on));
+    let finishAssert = () => {};
+    radio.setPtt = (on: boolean) =>
+      on
+        ? new Promise<void>((resolve) => {
+            radio.pttLog.push(on);
+            finishAssert = () => {
+              radio.ptt = true;
+              resolve();
+            };
+          })
+        : release(on);
     let ran = false;
     const pending = keyWhile(
       radio,
@@ -1104,11 +1114,17 @@ describe('keyWhile', () => {
     expect(err).toBeInstanceOf(TransportError);
     expect(err.toJSON()).toMatchObject({
       reason: 'ptt-control-failed',
-      message: 'PTT assertion unconfirmed: the port did not confirm PTT high within 3 s; PTT released',
+      message: 'PTT assertion unconfirmed: the port did not confirm PTT high within 3 s; ask the human to unplug the AIOC to drop PTT',
+      remedy: 'ask the human to unplug the AIOC to drop PTT',
       retry: 'no',
     });
+    expect(err.toJSON()).not.toHaveProperty('timedOut');
     expect(ran).toBe(false);
     expect(radio.pttLog).toEqual([true, false]);
+    finishAssert();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(radio.pttLog).toEqual([true, false, false]);
+    expect(radio.ptt).toBe(false);
   });
 
   it('reports a hung release as unconfirmed with the unplug remedy', async () => {
