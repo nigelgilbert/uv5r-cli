@@ -31,7 +31,7 @@ Set channel 1 to the local NOAA weather station.
 Listen on the radio. Whenever you hear a transmission, reply "pong".
 ```
 
-Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow the rules. 🙂
+Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow [the rules.](https://github.com/nigelgilbert/uv5r-cli/blob/main/README.md#transmit) 🙂
 
 ## What you can do with this
 
