@@ -1,8 +1,8 @@
 import { UsageError } from './errors.ts';
 
 /**
- * Magic tables and radio classification for the clone handshake, from docs/clone-protocol.md
- * sections 4 and 9. Nothing here touches the port.
+ * Magic tables and radio classification for the clone handshake, from the Classic magics and
+ * Foreign radios sections of docs/protocol.md. Nothing here touches the port.
  */
 
 /** Radio families the classification can report; `unknown` keeps every verb working. */
