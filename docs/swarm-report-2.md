@@ -9,7 +9,7 @@ Final state: 850 tests in 34 files pass (848 at the base). Typecheck is clean.
 ## Items
 
 All 5 items landed as written. Four agents ran: `audio.ts` (items 1 and 3), `dumpVerb`
-(item 2), `speak.ts` (item 4) and `radio.ts` (item 5). No item was dropped.
+(item 2), `speak.ts` (item 4) and `radio.ts` (item 5).
 
 ### Items 1 and 3
 

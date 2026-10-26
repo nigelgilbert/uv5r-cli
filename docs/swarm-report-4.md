@@ -57,11 +57,6 @@ Verified on the bench by the orchestrator on 2026-10-25, closed in swarm report 
 - `models.sha256`, the audiotoolbox and avfoundation listings, the whisper-cli pin, the
   `whisperArgs` argv and JSON shape, and model load time.
 
-Outside this diff:
-
-- `docs/swarm-report-2.md:11-12` carries the same repeat as item 2 ("All 5 items landed as
-  written." and "No item was dropped."). The reviewers raised it as optional.
-
 Still open, all bench work:
 
 - The phase 1 bench session over the air, then bench item 7.

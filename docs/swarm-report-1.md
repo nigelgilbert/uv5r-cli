@@ -10,7 +10,7 @@ Final state: 848 tests in 34 files pass (830 at the base). Typecheck is clean.
 
 All 18 items landed. Shared files merged them into three agents: core, speak and main
 (items 1, 2, 4 to 7, 9 to 12, 16, 18), the detached runner (items 3, 8, 14, 15, 17) and the
-station tests (item 13). No item was dropped.
+station tests (item 13).
 
 ### Items 1, 2, 4 to 7, 9 to 12, 16, 18
 
