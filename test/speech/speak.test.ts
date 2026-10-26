@@ -270,6 +270,29 @@ describe('speakUtterance', () => {
     }
   });
 
+  it('sets no identified when the player exits 0 after the watchdog drops PTT and before stop resolves', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      const setPtt = radio.setPtt.bind(radio);
+      let exit = () => {};
+      radio.setPtt = async (on: boolean) => {
+        if (!on) exit();
+        await setPtt(on);
+      };
+      const deps = fakeSpeechDeps({ now: () => Date.now() });
+      deps.playTo = () => new Promise<void>((resolve) => (exit = resolve));
+      const pending = failure(speakUtterance(OPTIONS, deps, port(radio)));
+      // The 2.6 s WAV plus 0 ms tail plus 5 s gives a 7.6 s watchdog.
+      await vi.advanceTimersByTimeAsync(7600);
+      const err = await pending;
+      expect(err.toJSON()).toMatchObject({ reason: 'audio-process-failed', remedy: ID_OWED_REMEDY, released: true, idOwed: true });
+      expect(radio.pttLog).toEqual([true, false]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sets no identified when the player exits 0 after a signal and before it settles', async () => {
     const radio = new FakeRadio();
     const deps = fakeSpeechDeps();
