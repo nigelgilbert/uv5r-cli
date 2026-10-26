@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
-import { idSentence } from '../../src/speech/phonetic.ts';
+import { idSentence } from '../../src/tts/phonetic.ts';
 import { FakeRadio } from '../core/fake.ts';
-import { fakeClock, fakeMonitor, fakePlayTo, fakeResolveOutput, fakeSpeechDeps, fakeSynthesize, pcmFrame } from '../speech/fakes.ts';
+import { fakeClock, fakeMonitor, fakePlayTo, fakeResolveOutput, fakeSpeechDeps, fakeSynthesize, pcmFrame } from '../tts/fakes.ts';
 
 const ID = idSentence('KJ7ABC');
 

@@ -7,9 +7,9 @@ const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn }));
 
 import { BaofengError, TransportError, type Transport } from '../../src/core/index.ts';
-import { idSentence } from '../../src/speech/phonetic.ts';
-import { checkClear, ID_OWED_REMEDY, speakUtterance, withId, type SpeakOptions, type WithPort } from '../../src/speech/speak.ts';
-import { condition, conditionArgs, sayArgs, synthesize } from '../../src/speech/tts.ts';
+import { idSentence } from '../../src/tts/phonetic.ts';
+import { checkClear, ID_OWED_REMEDY, speakUtterance, withId, type SpeakOptions, type WithPort } from '../../src/tts/speak.ts';
+import { condition, conditionArgs, sayArgs, synthesize } from '../../src/tts/tts.ts';
 import { FakeRadio } from '../core/fake.ts';
 import { fakeClock, fakeMonitor, fakePlayTo, fakeResolveOutput, fakeSpeechDeps, fakeSynthesize, pcmFrame, spawnThen, wavBytes } from './fakes.ts';
 

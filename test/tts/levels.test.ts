@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn }));
 
-import { measureArgs, measureWav, parseWavLevels } from '../../src/speech/levels.ts';
+import { measureArgs, measureWav, parseWavLevels } from '../../src/tts/levels.ts';
 import { spawnThen } from './fakes.ts';
 
 const ENOENT = Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' });

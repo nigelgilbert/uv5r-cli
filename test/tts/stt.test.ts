@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_MODEL, modelName, parseWhisperJson, REPO_ROOT, repoPath, transcribeWav, VAD_MODEL, whisperArgs, whisperTranscriber } from '../../src/speech/stt.ts';
+import { DEFAULT_MODEL, modelName, parseWhisperJson, REPO_ROOT, repoPath, transcribeWav, VAD_MODEL, whisperArgs, whisperTranscriber } from '../../src/tts/stt.ts';
 
 const TMP = mkdtempSync(join(tmpdir(), 'uv5r-stt-'));
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { TransportError } from '../../src/core/index.ts';
-import { isNoise, nextSeq, normalizeText, QUEUE_LIMIT, runHear, segmentFileName, type HearLine, type HearOptions } from '../../src/speech/hear.ts';
+import { isNoise, nextSeq, normalizeText, QUEUE_LIMIT, runHear, segmentFileName, type HearLine, type HearOptions } from '../../src/tts/hear.ts';
 import { FakeMonitor, fakeClock, fakeTranscribe, silentFrames, toneFrames } from './fakes.ts';
 
 const TMP = mkdtempSync(join(tmpdir(), 'uv5r-hear-test-'));

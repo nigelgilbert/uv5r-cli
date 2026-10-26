@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { WAV_HEADER_BYTES, wavFile, writeWav } from '../../src/speech/wav.ts';
+import { WAV_HEADER_BYTES, wavFile, writeWav } from '../../src/tts/wav.ts';
 
 describe('wavFile', () => {
   it('writes a 44-byte 16 kHz s16 mono RIFF header before the PCM', () => {

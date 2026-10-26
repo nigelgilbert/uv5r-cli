@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UsageError } from '../../src/core/index.ts';
-import { PHONETIC, idSentence, phonetic } from '../../src/speech/phonetic.ts';
+import { PHONETIC, idSentence, phonetic } from '../../src/tts/phonetic.ts';
 
 describe('phonetic', () => {
   it('spells KJ7ABC with commas between the words', () => {

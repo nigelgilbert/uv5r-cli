@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UsageError } from '../../src/core/index.ts';
-import { parseStation } from '../../src/speech/station.ts';
+import { parseStation } from '../../src/tts/station.ts';
 
 describe('parseStation', () => {
   it('reads every field', () => {

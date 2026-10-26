@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
-import { fakeSpeechDeps, fakeSynthesize } from '../speech/fakes.ts';
+import { fakeSpeechDeps, fakeSynthesize } from '../tts/fakes.ts';
 
 const ID = 'This is Kilo, Juliett, Seven, Alfa, Bravo, Charlie';
 

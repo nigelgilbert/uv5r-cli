@@ -2,8 +2,8 @@ import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KILL_GRACE_MS } from '../../src/cli/audio.ts';
-import { DROP_FRAMES, FrameAccumulator, startMonitor } from '../../src/speech/monitor.ts';
-import { FRAME_BYTES } from '../../src/speech/segment.ts';
+import { DROP_FRAMES, FrameAccumulator, startMonitor } from '../../src/tts/monitor.ts';
+import { FRAME_BYTES } from '../../src/tts/segment.ts';
 
 /** A child process stand-in; kill emits close unless the signal is in `ignore`. */
 class FakeChild extends EventEmitter {

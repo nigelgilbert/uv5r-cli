@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { UsageError, withDetail } from '../core/index.ts';
-import { parseStation, type Station } from '../speech/station.ts';
+import { parseStation, type Station } from '../tts/station.ts';
 
 /** Path of `uv5r.json` at the repo root, found the way `packageVersion()` finds `package.json`. */
 export const DEFAULT_CONFIG = fileURLToPath(new URL('../../uv5r.json', import.meta.url));

@@ -4,7 +4,7 @@ const { execFile, spawn } = vi.hoisted(() => ({ execFile: vi.fn(), spawn: vi.fn(
 vi.mock('node:child_process', () => ({ execFile, spawn }));
 
 import { CLIP_WARNING, KILL_GRACE_MS, astatsFilter, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, runFfmpeg, summarize, wholeSeconds } from '../../src/cli/audio.ts';
-import { fakeChild, spawnThen } from '../speech/fakes.ts';
+import { fakeChild, spawnThen } from '../tts/fakes.ts';
 
 const ENOENT = Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' });
 

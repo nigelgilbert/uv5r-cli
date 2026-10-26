@@ -4,7 +4,7 @@ const { execFile, spawn } = vi.hoisted(() => ({ execFile: vi.fn(), spawn: vi.fn(
 vi.mock('node:child_process', () => ({ execFile, spawn }));
 
 import { cli } from '../../src/cli/main.ts';
-import { spawnThen } from '../speech/fakes.ts';
+import { spawnThen } from '../tts/fakes.ts';
 
 /** Build astats stderr for `n` whole-second frames at -30 dBFS. */
 function stderrFrames(n: number): string {

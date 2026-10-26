@@ -437,9 +437,9 @@ GitHub Actions runs both commands on every push to `main` and every pull request
 any import path under `src/core/` that contains `cli/`, and on any `core/` import from
 `src/cli/` or `test/cli/` other than `src/core/index.ts` and `test/core/fake.ts`.
 
-`src/speech/` holds the speech code. It imports `core` through `src/core/index.ts` and
+`src/tts/` holds the speech code. It imports `core` through `src/core/index.ts` and
 nothing from `cli` but `src/cli/audio.ts`, and `test/core/imports.test.ts` checks
-`src/speech/` and `test/speech/` for both rules.
+`src/tts/` and `test/tts/` for both rules.
 
 `test/core/fake.ts` is an in-memory radio with the bench behaviour: aligned reads, acked writes,
 VFO writes ignored, settings reload on session drop, the 16-byte read alias in

@@ -7,7 +7,7 @@ import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Tr
 import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, closeHung, fatal, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
-import { fakeSpeechDeps } from '../speech/fakes.ts';
+import { fakeSpeechDeps } from '../tts/fakes.ts';
 import { PRIMARY } from '../core/golden.ts';
 
 /** Temp root for every file these tests write, removed in afterAll. */

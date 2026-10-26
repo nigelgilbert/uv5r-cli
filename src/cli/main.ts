@@ -66,10 +66,10 @@ import {
 import { EXIT, exitCodeFor, signalExitCode } from './exit.ts';
 import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type Slot0, type SweepSummary } from './sweep.ts';
-import { nextSeq, NOISE_PHRASES, QUEUE_LIMIT, runHear, type HearLine } from '../speech/hear.ts';
-import { idSentence } from '../speech/phonetic.ts';
-import { defaultSpeechDeps, ID_OWED_REMEDY, speakUtterance, type SpeakOptions, type SpeakResult, type SpeechDeps } from '../speech/speak.ts';
-import { DEFAULT_MODEL, modelName, repoPath, VAD_MODEL } from '../speech/stt.ts';
+import { nextSeq, NOISE_PHRASES, QUEUE_LIMIT, runHear, type HearLine } from '../tts/hear.ts';
+import { idSentence } from '../tts/phonetic.ts';
+import { defaultSpeechDeps, ID_OWED_REMEDY, speakUtterance, type SpeakOptions, type SpeakResult, type SpeechDeps } from '../tts/speak.ts';
+import { DEFAULT_MODEL, modelName, repoPath, VAD_MODEL } from '../tts/stt.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
 export type OpenTransport = (target: string | undefined) => Promise<Transport>;

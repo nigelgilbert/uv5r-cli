@@ -5,8 +5,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { TransportError } from '../../src/core/index.ts';
 import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
-import { REPO_ROOT, whisperTranscriber } from '../../src/speech/stt.ts';
-import { FakeMonitor, fakeClock, fakeSpeechDeps, fakeTranscribe, fakeTranscriber, silentFrames, toneFrames } from '../speech/fakes.ts';
+import { REPO_ROOT, whisperTranscriber } from '../../src/tts/stt.ts';
+import { FakeMonitor, fakeClock, fakeSpeechDeps, fakeTranscribe, fakeTranscriber, silentFrames, toneFrames } from '../tts/fakes.ts';
 
 const TMP = mkdtempSync(join(tmpdir(), 'uv5r-hear-cli-'));
 

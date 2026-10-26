@@ -1,12 +1,12 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { TransportError } from '../../src/core/index.ts';
-import type { WavLevels } from '../../src/speech/levels.ts';
-import type { Monitor } from '../../src/speech/monitor.ts';
-import { FRAME_BYTES, FRAME_MS, FRAME_SAMPLES, SAMPLE_RATE } from '../../src/speech/segment.ts';
-import type { SpeechDeps } from '../../src/speech/speak.ts';
-import type { Transcript, WhisperOptions } from '../../src/speech/stt.ts';
-import { TRAILING_PAD_SECONDS } from '../../src/speech/tts.ts';
+import type { WavLevels } from '../../src/tts/levels.ts';
+import type { Monitor } from '../../src/tts/monitor.ts';
+import { FRAME_BYTES, FRAME_MS, FRAME_SAMPLES, SAMPLE_RATE } from '../../src/tts/segment.ts';
+import type { SpeechDeps } from '../../src/tts/speak.ts';
+import type { Transcript, WhisperOptions } from '../../src/tts/stt.ts';
+import { TRAILING_PAD_SECONDS } from '../../src/tts/tts.ts';
 
 /** Sample rate of the WAVs the fakes write. */
 const RATE = 48000;

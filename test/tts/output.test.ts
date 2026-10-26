@@ -4,7 +4,7 @@ const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn }));
 
 import { KILL_GRACE_MS } from '../../src/cli/audio.ts';
-import { listArgs, listOutputDevices, parseDeviceList, pickOutput, playArgs, playTo, resolveOutput } from '../../src/speech/output.ts';
+import { listArgs, listOutputDevices, parseDeviceList, pickOutput, playArgs, playTo, resolveOutput } from '../../src/tts/output.ts';
 import { fakeChild, spawnThen } from './fakes.ts';
 
 /** One listing line in the libavdevice/audiotoolbox.m format `[%d] %30s, %s` behind the log prefix. */

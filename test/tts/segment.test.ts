@@ -11,7 +11,7 @@ import {
   Segmenter,
   frameLevels,
   type Segment,
-} from '../../src/speech/segment.ts';
+} from '../../src/tts/segment.ts';
 
 const FLOOR = -50;
 const OPEN = FLOOR + 5;
