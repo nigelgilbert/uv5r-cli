@@ -45,4 +45,12 @@ describe('parseStation', () => {
   it.each([[[]], [null], ['KJ7ABC']])('rejects %j as the top level', (json) => {
     expect(() => parseStation(json)).toThrow(UsageError);
   });
+
+  it('says a station config is an object for an array', () => {
+    expect(() => parseStation([])).toThrow('a station config is an object');
+  });
+
+  it('says the callsign needs letters and digits for a hyphen', () => {
+    expect(() => parseStation({ callsign: 'KJ7-ABC' })).toThrow('station callsign: needs letters and digits; got "KJ7-ABC"');
+  });
 });
