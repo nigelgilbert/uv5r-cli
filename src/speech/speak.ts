@@ -313,7 +313,9 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     } catch (err) {
       if (startedAt !== undefined && err instanceof BaofengError) {
         const idOwed = owed();
-        err.attach({ pttAsserted: true, released: released(), playedSeconds: round(playedMs() / 1000), idOwed }, idOwed && released() ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' });
+        // Keep the unplug remedy when the port close hung after the release.
+        const idRemedy = idOwed && released() && err.reason !== 'ptt-control-failed';
+        err.attach({ pttAsserted: true, released: released(), playedSeconds: round(playedMs() / 1000), idOwed }, idRemedy ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' });
       }
       throw err;
     }

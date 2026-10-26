@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TransportError, type Transport } from '../../src/core/index.ts';
+import { REASONS, TransportError, type Transport } from '../../src/core/index.ts';
 import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
 import { idSentence } from '../../src/speech/phonetic.ts';
@@ -179,6 +179,40 @@ describe('say', () => {
     expect(process.exitCode).toBe(signalExitCode('SIGTSTP'));
     expect(outJson()).toMatchObject({ interrupted: 'SIGTSTP', identified: false, idOwed: true, remedy: 'identify by voice or run uv5r id', released: true });
     expect(radio.pttLog).toEqual([true, false]);
+  });
+
+  it('keeps the unplug remedy when the port close hangs after a signal past the lead', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      radio.close = () => new Promise<void>(() => {});
+      const clock = fakeClock();
+      const deps = fakeSpeechDeps({ now: clock.now });
+      deps.playTo = fakePlayTo({
+        ms: 5000,
+        clock,
+        onStart: () => {
+          clock.advance(1000);
+          setTimeout(() => deps.signals.emit('SIGINT'), 30);
+        },
+      });
+      const done = cli(['say', 'hello', '--config', STATION, '--json'], opener(radio), deps);
+      await vi.runAllTimersAsync();
+      await done;
+      expect(process.exitCode).toBe(3);
+      expect(stdout).toEqual([]);
+      expect(errJson()).toMatchObject({
+        reason: 'ptt-control-failed',
+        remedy: REASONS['ptt-control-failed'].remedy,
+        retry: 'no',
+        pttAsserted: true,
+        released: true,
+        idOwed: true,
+      });
+      expect(radio.pttLog).toEqual([true, false]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each(['SIGINT', 'SIGTSTP'] as const)('keys nothing on %s during synthesis and exits 128 plus the signal number', async (signal) => {
