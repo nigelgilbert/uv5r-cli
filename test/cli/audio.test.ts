@@ -224,6 +224,22 @@ describe('listen', () => {
       vi.useRealTimers();
     }
   });
+  it('reports a signal stop when the timer did not kill the child', async () => {
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      spawn.mockReturnValue(child);
+      const pending = listen('AIOC Audio', 3).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(5000);
+      child.exit(null, { signal: 'SIGTERM', stderr: STDERR });
+      const err = await pending;
+      expect(child.kills).toEqual([]);
+      expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { device: 'AIOC Audio', code: null, signal: 'SIGTERM' } });
+      expect(err.message).toMatch(/^ffmpeg stopped on SIGTERM capturing from "AIOC Audio"/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('rejects a non-zero exit with the stderr tail', async () => {
     captureReturns(1, `${frame(0, '-40', '-35')}\n[AVFoundation indev @ 0x2] Error opening input\n:AIOC Audio: Input/output error`);
     await expect(listen('AIOC Audio', 1)).rejects.toThrow(/^ffmpeg exited with code 1 capturing from "AIOC Audio": .*Error opening input \| :AIOC Audio: Input\/output error$/);
