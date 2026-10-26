@@ -2,23 +2,12 @@
 
 [![ci](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nigelgilbert/uv5r-cli/actions/workflows/ci.yml)
 
+Built so AI agents can operate a radio.  Follow your local regulations.
+
 `uv5r` drives a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable. Tell it a
 frequency and it fills a memory slot. Tell it to listen and it records what comes back. It also
 backs up the radio, keys PTT (push-to-talk, the transmit key), reads text aloud ending with
 your callsign, and transcribes what it hears. Tested on firmware HN5RV011.
-
-Built so AI agents can operate a radio.  Follow your local regulations.
-
-## What you need
-
-- A Baofeng UV-5R and an [NA6D AIOC](https://na6d.com/products/aioc-ham-radio-all-in-one-cable?_su_rec=Ge0zP1gLeHTXemaUkJiPyYw7fAjrPZ7alzWWfiv2lllYe16vSE00uoYZaQqplBlw_V4w3BfrwzvGzl4QzgXszX3wYATprmme-sT97GxwemQ8LGHOVLX5pShQTiTzD6KvGEAj7cy0MlCWe3ARXOp2LoneVVBEg1jF7Fo9ku7zHGP1jy5srtNJL_PSSiQFfR-sIlfdgFViw-BzJnjBfZdhBhUDYWgRebkkXuGYm7Br9ah__-raSmzWkvanOPle2cvCx2J5ObvIofiW2kigbXQfmsBQFCI7_teO3igA-pPYr0CIEvgwkgC3d2u2836VWYRhcAKYu06OUyWO3y-17w&_su_rec_id=bad9c452-0906-4377-b98e-b317b4c8ce85-1792990699) seated fully in its K1 jack.
-- Node 24, which runs the `.ts` sources directly.
-- macOS and ffmpeg on PATH for the audio verbs: `check`, `listen`, `sweep`, `hear`, `say` and
-  `id`. They use avfoundation, audiotoolbox, `say` and `afplay`.
-- Microphone access for your terminal in System Settings, Privacy & Security, Microphone.
-- `hear`: `whisper-cli` on PATH and two models in `models/`. See [Transcribe](#transcribe).
-- `say` and `id`: a `uv5r.json` with your callsign, and an amateur license.
-- `load` and `sweep`: a plan file. See [Plans and sweep](#plans-and-sweep).
 
 ## Install
 
@@ -52,6 +41,18 @@ Run your camp over the air. Switch the lights, ask for the forecast,
 read back GPS coordinates, or record tests for your handhelds.
 
 Stand up an emergency alert station in one line.  Command a robot by talking to it.
+
+## What you need
+
+- A Baofeng UV-5R and an [NA6D AIOC](https://na6d.com/products/aioc-ham-radio-all-in-one-cable?_su_rec=Ge0zP1gLeHTXemaUkJiPyYw7fAjrPZ7alzWWfiv2lllYe16vSE00uoYZaQqplBlw_V4w3BfrwzvGzl4QzgXszX3wYATprmme-sT97GxwemQ8LGHOVLX5pShQTiTzD6KvGEAj7cy0MlCWe3ARXOp2LoneVVBEg1jF7Fo9ku7zHGP1jy5srtNJL_PSSiQFfR-sIlfdgFViw-BzJnjBfZdhBhUDYWgRebkkXuGYm7Br9ah__-raSmzWkvanOPle2cvCx2J5ObvIofiW2kigbXQfmsBQFCI7_teO3igA-pPYr0CIEvgwkgC3d2u2836VWYRhcAKYu06OUyWO3y-17w&_su_rec_id=bad9c452-0906-4377-b98e-b317b4c8ce85-1792990699) seated fully in its K1 jack.
+- Node 24, which runs the `.ts` sources directly.
+- macOS and ffmpeg on PATH for the audio verbs: `check`, `listen`, `sweep`, `hear`, `say` and
+  `id`. They use avfoundation, audiotoolbox, `say` and `afplay`.
+- Microphone access for your terminal in System Settings, Privacy & Security, Microphone.
+- `hear`: `whisper-cli` on PATH and two models in `models/`. See [Transcribe](#transcribe).
+- `say` and `id`: a `uv5r.json` with your callsign, and an amateur license.
+- `load` and `sweep`: a plan file. See [Plans and sweep](#plans-and-sweep).
+
 
 ## First fifteen minutes
 
