@@ -110,7 +110,7 @@ const MIN_IMAGE_BYTES = IMAGE_HEADER + Math.max(...RESTORE_RANGES.map(([, end]) 
 /** The one statement of how `--channel` relates to what the radio receives; help, README.md and SKILL.md carry it word for word. */
 export const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. ' +
-  'The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.';
+  'The display may show a name or a frequency. The CLI cannot read the display.';
 
 /** The control-operator rule for the transmit verbs; help and README.md carry it word for word. */
 export const TRANSMIT_RULE =

@@ -21,7 +21,7 @@ const SKILL = new URL('../../.claude/skills/uv5r/SKILL.md', import.meta.url).pat
 const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. ' +
-  'The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.';
+  'The display may show a name or a frequency. The CLI cannot read the display.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 const REASON_ENUM = [
   'device-unavailable',

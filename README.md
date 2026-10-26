@@ -55,7 +55,7 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
    name and reads both back. The radio applies the write about 3 s after the command ends.
 7. Run `uv5r listen --seconds 5 --out rx.wav --play` to record 5 s and play it on your Mac.
 
-`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.
+`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display.
 
 ## Things that bite
 
