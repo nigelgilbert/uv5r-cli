@@ -230,9 +230,14 @@ describe('listen', () => {
     expect(file).toBe('ffmpeg');
     expect(args).toEqual(ffmpegArgs('AIOC Audio', 3));
   });
-  it('runs the capture ffmpeg in its own process group', async () => {
+  it('runs the capture ffmpeg in uv5r\'s process group without stop', async () => {
     captureReturns(0, STDERR);
     await listen('AIOC Audio', 3);
+    expect(spawn.mock.calls[0]![2]).toMatchObject({ detached: false });
+  });
+  it('runs the capture ffmpeg in its own process group with stop', async () => {
+    captureReturns(0, STDERR);
+    await listen('AIOC Audio', 3, -50, { stop: new Promise(() => {}) });
     expect(spawn.mock.calls[0]![2]).toMatchObject({ detached: true });
   });
   it('accepts exactly the requested whole seconds plus one and drops a trailing partial frame', async () => {

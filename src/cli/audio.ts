@@ -252,10 +252,11 @@ const STDERR_KEEP = 64 * 1024 * 1024;
  * execFile calls its callback: a null error on exit 0, else an ExecError with the exit code
  * or signal, `killed` set after a timeout, or the spawn error itself. A terminal Ctrl-C or
  * Ctrl-Z then reaches only uv5r. A timeout sends SIGTERM, then SIGKILL after KILL_GRACE_MS.
- * `timeoutMs` 0 sets no timeout. Return the child so the caller can kill it.
+ * `timeoutMs` 0 sets no timeout. `detached` false keeps the child in uv5r's process group.
+ * Return the child so the caller can kill it.
  */
-export function execDetached(file: string, args: string[], timeoutMs: number, callback: (err: ExecError | null, stderr: string) => void): ChildProcess {
-  const child = spawn(file, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+export function execDetached(file: string, args: string[], timeoutMs: number, callback: (err: ExecError | null, stderr: string) => void, detached = true): ChildProcess {
+  const child = spawn(file, args, { stdio: ['ignore', 'ignore', 'pipe'], detached });
   let stderr = '';
   let timedOut = false;
   let failed: ExecError | undefined;
@@ -377,7 +378,8 @@ export function checkFfmpeg(): Promise<void> {
 }
 
 /**
- * Run ffmpeg once in its own process group and summarize its astats output; with `out`, ffmpeg also writes the WAV.
+ * Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV.
+ * With `stop`, ffmpeg runs in its own process group; without it, a terminal Ctrl-C reaches ffmpeg too.
  * When `stop` resolves, send ffmpeg SIGTERM, then SIGKILL after KILL_GRACE_MS, and reject once it exits.
  * The stop handler outlives the capture in a sweep with no signal, so the callback drops the
  * child to keep it and its buffered stderr from staying reachable through `stop`.
@@ -413,7 +415,7 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
         return;
       }
       resolve(summarize(device, seconds, levels, floorDbfs));
-    });
+    }, stop !== undefined);
     void stop?.then(() => {
       if (exited || !child || child.exitCode != null || child.signalCode != null) return;
       stopped = true;
