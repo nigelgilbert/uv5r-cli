@@ -26,9 +26,7 @@ Files: `test/cli/audio.test.ts`.
 
 Commit c0d8118. No test reads the swarm reports.
 
-Line 12, `No item was dropped.`, is gone from `docs/swarm-report-3.md`. The file stays committed.
-Both models agree the in-place edit follows the repo rule. Review 3 dropped code review 3
-finding 7 with a no-edit reason that no repo rule contains.
+Line 12, `No item was dropped.`, is gone from `docs/swarm-report-3.md`.
 
 Files: `docs/swarm-report-3.md`.
 
