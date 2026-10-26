@@ -48,7 +48,7 @@ Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow
 
 Configuring your radio for a new place has never been easier.
 
-Control your camp remotely.  Use HAM radio to control your lights, report weather conditions and GPS coordinates.
+Control your camp remotely.  Use HAM radio to control your lights, report weather conditions and GPS coordinates, or get motion alerts.
 
 Control robots, test your handhelds, setup ad-hoc emergency stations in 1 line.
 
