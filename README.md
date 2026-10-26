@@ -64,6 +64,10 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
 Open your agent in this repo and tell it what to do:
 
 ```text
+Set channel 1 to the local NOAA weather station.
+```
+
+```text
 Listen on the radio. Whenever you hear a transmission, reply "pong".
 ```
 
