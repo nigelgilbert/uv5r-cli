@@ -18,6 +18,8 @@ The files on the bench, the code layering and the fake radio the tests run again
 - `models/`: the whisper.cpp models `hear` loads. Ignored by git. [receive.md](receive.md) has
   the download steps.
 - `models.sha256`: the SHA-256 of both models. Check them with `shasum -a 256 -c models.sha256`.
+- `docs/bench-two-station.md`: the two-station over-the-air test plan for `say`, `id` and
+  `hear`. In progress.
 - `.claude/skills/uv5r/SKILL.md`: the operating rules an agent loads to drive the radio.
 - `.claude/skills/channel-plan/SKILL.md`: the research recipe an agent loads to build a channel
   plan for a new location into `channels.json`, shaped like `channels.example.json`.
