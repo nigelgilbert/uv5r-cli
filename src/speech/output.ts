@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { KILL_GRACE_MS, execDetached, exitHow, ffmpegMissing, stderrTail } from '../cli/audio.ts';
+import { KILL_GRACE_MS, execDetached, exitHow, ffmpegFailure, ffmpegMissing, stderrTail } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
 
 /** Milliseconds the device listing gets. */
@@ -55,15 +55,10 @@ export function pickOutput(devices: OutputDevice[], name: string): OutputDevice 
 export function listOutputDevices(): Promise<OutputDevice[]> {
   return new Promise((resolve, reject) => {
     execDetached('ffmpeg', listArgs(), LIST_TIMEOUT_MS, (e, stderr) => {
-      if (e?.code === 'ENOENT') {
-        reject(ffmpegMissing());
-        return;
-      }
       const devices = parseDeviceList(stderr);
       // Keep a list printed before a later failure, since the listing comes first.
       if (e && devices.length === 0) {
-        const tail = stderrTail(stderr);
-        reject(new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, LIST_TIMEOUT_MS)} listing audiotoolbox devices${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null }));
+        reject(ffmpegFailure(e, stderr, 'listing audiotoolbox devices', LIST_TIMEOUT_MS));
         return;
       }
       resolve(devices);

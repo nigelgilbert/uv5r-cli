@@ -1,5 +1,4 @@
-import { astatsFilter, execDetached, exitHow, ffmpegMissing, parseAstats, stderrTail } from '../cli/audio.ts';
-import { TransportError } from '../core/index.ts';
+import { astatsFilter, parseAstats, runFfmpeg } from '../cli/audio.ts';
 
 /** Sample rate measureWav counts samples at; the transmit WAV is 48 kHz. */
 export const WAV_RATE = 48000;
@@ -51,19 +50,6 @@ export function parseWavLevels(stderr: string): WavLevels {
  * own process group. A missing ffmpeg rejects with dependency-missing and any other failure
  * with audio-process-failed and the stderr tail.
  */
-export function measureWav(file: string): Promise<WavLevels> {
-  return new Promise((resolve, reject) => {
-    execDetached('ffmpeg', measureArgs(file), MEASURE_TIMEOUT_MS, (e, stderr) => {
-      if (!e) {
-        resolve(parseWavLevels(stderr));
-        return;
-      }
-      if (e.code === 'ENOENT') {
-        reject(ffmpegMissing());
-        return;
-      }
-      const tail = stderrTail(stderr);
-      reject(new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, MEASURE_TIMEOUT_MS)} measuring ${file}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null }));
-    });
-  });
+export async function measureWav(file: string): Promise<WavLevels> {
+  return parseWavLevels(await runFfmpeg(measureArgs(file), `measuring ${file}`, MEASURE_TIMEOUT_MS));
 }

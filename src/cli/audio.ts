@@ -326,25 +326,23 @@ export function ffmpegMissing(): TransportError {
 }
 
 /**
- * Run ffmpeg with `args` and resolve its stderr on exit 0. Reject with dependency-missing
- * when ffmpeg is absent from PATH and with audio-process-failed naming `what` on any other
- * failure, a run past `timeoutMs` included.
+ * Map a failed ffmpeg run, given its error, stderr, the step `what` and its timeout, to
+ * dependency-missing when ffmpeg is absent from PATH and to audio-process-failed naming
+ * `what` with the stderr tail on any other failure.
+ */
+export function ffmpegFailure(e: ExecError, stderr: string, what: string, timeoutMs: number): TransportError {
+  if (e.code === 'ENOENT') return ffmpegMissing();
+  const tail = stderrTail(stderr);
+  return new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, timeoutMs)} ${what}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null });
+}
+
+/**
+ * Run ffmpeg with `args` in its own process group and resolve its stderr on exit 0. Reject
+ * with ffmpegFailure naming `what` on any failure, a run past `timeoutMs` included.
  */
 export function runFfmpeg(args: string[], what: string, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('ffmpeg', args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
-      const e = err as ExecError | null;
-      if (!e) {
-        resolve(String(stderr ?? ''));
-        return;
-      }
-      if (e.code === 'ENOENT') {
-        reject(ffmpegMissing());
-        return;
-      }
-      const tail = stderrTail(String(stderr ?? ''));
-      reject(new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, timeoutMs)} ${what}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null }));
-    });
+    execDetached('ffmpeg', args, timeoutMs, (e, stderr) => (e ? reject(ffmpegFailure(e, stderr, what, timeoutMs)) : resolve(stderr)));
   });
 }
 

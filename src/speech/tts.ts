@@ -1,4 +1,4 @@
-import { execDetached, exitHow, ffmpegMissing, stderrTail } from '../cli/audio.ts';
+import { execDetached, exitHow, runFfmpeg, stderrTail } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
 import { WAV_RATE } from './levels.ts';
 
@@ -75,19 +75,6 @@ export function conditionArgs(input: string, output: string, leadMs: number): st
  * A missing ffmpeg rejects with dependency-missing and any other failure with
  * audio-process-failed and the stderr tail.
  */
-export function condition(input: string, output: string, leadMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execDetached('ffmpeg', conditionArgs(input, output, leadMs), CONDITION_TIMEOUT_MS, (e, stderr) => {
-      if (!e) {
-        resolve();
-        return;
-      }
-      if (e.code === 'ENOENT') {
-        reject(ffmpegMissing());
-        return;
-      }
-      const tail = stderrTail(stderr);
-      reject(new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, CONDITION_TIMEOUT_MS)} conditioning ${input}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null }));
-    });
-  });
+export async function condition(input: string, output: string, leadMs: number): Promise<void> {
+  await runFfmpeg(conditionArgs(input, output, leadMs), `conditioning ${input}`, CONDITION_TIMEOUT_MS);
 }

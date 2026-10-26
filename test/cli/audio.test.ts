@@ -367,19 +367,20 @@ describe('astatsFilter', () => {
 
 describe('runFfmpeg', () => {
   beforeEach(() => {
-    execFile.mockReset();
+    spawn.mockReset();
   });
 
-  it('resolves the stderr on exit 0', async () => {
-    ffmpegReturns(null, 'lavfi.astats.Overall.RMS_level=-20');
+  it('resolves the stderr on exit 0 from a detached ffmpeg', async () => {
+    captureReturns(0, 'lavfi.astats.Overall.RMS_level=-20');
     await expect(runFfmpeg(['-i', 'a.wav'], 'measuring a.wav', 1000)).resolves.toBe('lavfi.astats.Overall.RMS_level=-20');
-    expect(execFile.mock.calls[0]!.slice(0, 2)).toEqual(['ffmpeg', ['-i', 'a.wav']]);
+    expect(spawn.mock.calls[0]!.slice(0, 2)).toEqual(['ffmpeg', ['-i', 'a.wav']]);
+    expect(spawn.mock.calls[0]![2]).toMatchObject({ detached: true });
   });
 
   it('maps a missing ffmpeg to dependency-missing and a failure to audio-process-failed naming the step', async () => {
-    ffmpegReturns({ code: 'ENOENT' }, '');
+    spawn.mockImplementation(spawnThen((c) => c.fail(ENOENT)));
     await expect(runFfmpeg([], 'measuring a.wav', 1000)).rejects.toMatchObject({ reason: 'dependency-missing' });
-    ffmpegReturns({ code: 1 as unknown as string }, 'a.wav: No such file or directory');
+    captureReturns(1, 'a.wav: No such file or directory');
     const err = await runFfmpeg([], 'measuring a.wav', 1000).catch((e) => e);
     expect(err).toMatchObject({ reason: 'audio-process-failed', detail: { code: 1 } });
     expect(err.message).toBe('ffmpeg exited with code 1 measuring a.wav: a.wav: No such file or directory');
