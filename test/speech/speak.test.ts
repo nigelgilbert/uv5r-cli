@@ -270,6 +270,83 @@ describe('speakUtterance', () => {
     }
   });
 
+  it('sets no identified when the player exits 0 after a signal and before it settles', async () => {
+    const radio = new FakeRadio();
+    const deps = fakeSpeechDeps();
+    deps.playTo = async () => {
+      deps.signals.emit('SIGINT');
+    };
+    const result = await speakUtterance(OPTIONS, deps, port(radio));
+    expect(result).toMatchObject({ interrupted: 'SIGINT', identified: false, pttAsserted: true, released: true });
+    expect(radio.pttLog).toEqual([true, false]);
+  });
+
+  it('attaches the result fields to a failed release after a signal mid-play', async () => {
+    const radio = new FakeRadio();
+    radio.setPtt = async (on: boolean) => {
+      radio.pttLog.push(on);
+      if (!on) throw new Error('release failed');
+      radio.ptt = on;
+    };
+    const clock = fakeClock();
+    const deps = fakeSpeechDeps({ now: clock.now });
+    deps.playTo = fakePlayTo({
+      ms: 5000,
+      clock,
+      onStart: () => {
+        clock.advance(1000);
+        setTimeout(() => deps.signals.emit('SIGINT'), 30);
+      },
+    });
+    const err = await failure(speakUtterance(OPTIONS, deps, port(radio)));
+    expect(err.toJSON()).toMatchObject({
+      reason: 'ptt-control-failed',
+      interrupted: 'SIGINT',
+      remedy: 'ask the human to unplug the AIOC to drop PTT',
+      retry: 'no',
+      pttAsserted: true,
+      released: false,
+      idOwed: true,
+    });
+    expect(err.detail.playedSeconds).toBeGreaterThanOrEqual(1);
+  });
+
+  it('returns the interrupted result on a signal during conditioning of a WAV past --max-seconds', async () => {
+    const withPort = port();
+    const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'tx.wav');
+    const deps = fakeSpeechDeps();
+    const condition = deps.condition;
+    deps.condition = async (input, output, leadMs) => {
+      deps.signals.emit('SIGINT');
+      await condition(input, output, leadMs);
+    };
+    const result = await speakUtterance({ ...OPTIONS, maxSeconds: 1, out }, deps, withPort);
+    expect(result).toMatchObject({ interrupted: 'SIGINT', identified: false, idOwed: false, pttAsserted: false, released: true, seconds: 0 });
+    expect(result).not.toHaveProperty('out');
+    expect(existsSync(out)).toBe(false);
+    expect(withPort.opens).toBe(0);
+  });
+
+  it('returns the interrupted result when a signal lands in the grace after the watchdog', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      const deps = fakeSpeechDeps({ now: () => Date.now() });
+      deps.playTo = () => new Promise<void>(() => {});
+      const pending = speakUtterance(OPTIONS, deps, port(radio));
+      // The 2.6 s WAV plus 0 ms tail plus 5 s gives a 7.6 s watchdog.
+      await vi.advanceTimersByTimeAsync(7600);
+      expect(radio.ptt).toBe(false);
+      deps.signals.emit('SIGINT');
+      await vi.advanceTimersByTimeAsync(2000);
+      const result = await pending;
+      expect(result).toMatchObject({ interrupted: 'SIGINT', identified: false, idOwed: true, pttAsserted: true, released: true });
+      expect(radio.pttLog).toEqual([true, false]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('plays through the system output with the port closed on --rehearse', async () => {
     const withPort = port();
     const played: { wav: string; seconds: number }[] = [];

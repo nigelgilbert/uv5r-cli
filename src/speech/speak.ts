@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_FLOOR_DBFS, play } from '../cli/audio.ts';
-import { BaofengError, DeviceStateError, KEY_SIGNALS, keyWhile, TransportError, UsageError, type HoldResult, type Transport } from '../core/index.ts';
+import { BaofengError, DeviceStateError, KEY_SIGNALS, keyWhile, TransportError, UsageError, wait, type HoldResult, type Transport } from '../core/index.ts';
 import { measureWav, type WavLevels } from './levels.ts';
 import { startMonitor, type Monitor } from './monitor.ts';
 import { playTo, resolveOutput } from './output.ts';
@@ -123,19 +123,9 @@ export function withId(text: string, callsign: string): string {
 
 const round = (x: number) => Math.round(x * 10) / 10;
 
-/** Resolve after `ms`, or as soon as `stop` resolves. */
-function wait(ms: number, stop: Promise<void>): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    void stop.then(() => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
-}
-
-/** Wrap `t` so the caller can read whether a PTT release was confirmed. */
-function trackRelease(t: Transport): { transport: Transport; released: () => boolean } {
+/** Wrap `t` so the caller can read whether a PTT release started and whether it was confirmed. */
+function trackRelease(t: Transport): { transport: Transport; dropping: () => boolean; released: () => boolean } {
+  let dropping = false;
   let released = false;
   const transport: Transport = {
     get target() {
@@ -145,13 +135,14 @@ function trackRelease(t: Transport): { transport: Transport; released: () => boo
     read: (n, ms) => t.read(n, ms),
     discard: () => t.discard(),
     setPtt: async (on) => {
+      if (!on) dropping = true;
       await t.setPtt(on);
       if (!on) released = true;
     },
     setBaud: (rate) => t.setBaud(rate),
     close: () => t.close(),
   };
-  return { transport, released: () => released };
+  return { transport, dropping: () => dropping, released: () => released };
 }
 
 /**
@@ -193,16 +184,19 @@ export async function checkClear(monitor: Monitor, device: string, seconds: numb
  * system default output with the port closed.
  *
  * Without --rehearse, the key signal handlers cover the whole run. A signal before PTT rises
- * stops the clear check, skips keying and returns the result with `interrupted`,
- * `pttAsserted` false and `idOwed` false.
+ * skips the WAV checks and the --out copy, stops the clear check, skips keying and returns
+ * the result with `interrupted`, `pttAsserted` false and `idOwed` false.
  *
- * `identified` is true when the player exits 0 before keyWhile stops it. The ID ends the
- * WAV and only the trailing pad follows it, so a clean player exit means the ID went out.
+ * `identified` is true when the player exits 0 before a signal and before keyWhile drops PTT.
+ * The ID ends the WAV and only the trailing pad follows it, so a clean player exit means the
+ * ID went out.
  * `idOwed` is true when the player ran longer than `leadMs` and the ID did not finish. The
  * played time includes player start-up, so the rule is approximate. A signal while keyed
- * returns the result with `interrupted` and `idOwed`. A player failure while keyed throws its
- * audio-process-failed error with retry no, `pttAsserted`, `released`, `playedSeconds` and
- * `idOwed`. A player that runs past the watchdog throws the same reason.
+ * returns the result with `interrupted` and `idOwed`. A failure after the player starts, such
+ * as a player's audio-process-failed or a release's ptt-control-failed, gains retry no,
+ * `pttAsserted`, `released`, `playedSeconds` and `idOwed`. A player that runs past the
+ * watchdog throws audio-process-failed unless a signal also arrived, which returns the
+ * interrupted result.
  */
 export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, withPort: WithPort): Promise<SpeakResult> {
   const spoken = options.idOnly ? idSentence(options.callsign) : withId(options.text, options.callsign);
@@ -224,37 +218,9 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     const wav = join(scratch, 'tx.wav');
     await deps.synthesize(spoken, options.voice, raw);
     await deps.condition(raw, wav, options.leadMs);
-    if (options.out !== undefined) {
-      try {
-        copyFileSync(wav, options.out);
-      } catch (err) {
-        throw new UsageError(`cannot write ${options.out}: ${(err as NodeJS.ErrnoException).message}`, { out: options.out }, { remedy: 'pass --out with a writable path' });
-      }
-    }
     const levels = await deps.measureWav(wav);
-    if (levels.peakDbfs === -Infinity) {
-      throw new TransportError('speech-engine-failed', `say wrote digital zero with voice ${JSON.stringify(options.voice)}`, { voice: options.voice });
-    }
-    const keyedSeconds = levels.seconds + options.tailMs / 1000;
-    if (keyedSeconds > options.maxSeconds) {
-      throw new UsageError(
-        `the utterance runs ${round(keyedSeconds)} s with --tail, past --max-seconds ${options.maxSeconds}`,
-        { seconds: round(keyedSeconds), maxSeconds: options.maxSeconds },
-        {},
-        'utterance-too-long',
-      );
-    }
     const measured = { peakDbfs: round(levels.peakDbfs), rmsDbfs: round(levels.rmsDbfs) };
-    const kept = options.out === undefined ? {} : { out: options.out };
-    if (options.rehearse) {
-      try {
-        await deps.play(wav, levels.seconds);
-      } catch (err) {
-        if (err instanceof BaofengError) err.attach({}, { remedy: 'check the system output, then rerun say --rehearse', retry: 'after-remedy' });
-        throw err;
-      }
-      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, device: REHEARSE_DEVICE, pttAsserted: false, released: true, rehearsed: true, ...kept };
-    }
+    let kept: { out?: string } = {};
     const unkeyed = (signal: NodeJS.Signals): SpeakResult => ({
       text: options.text,
       spoken,
@@ -269,6 +235,35 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
       ...kept,
     });
     if (signalled) return unkeyed(signalled);
+    if (levels.peakDbfs === -Infinity) {
+      throw new TransportError('speech-engine-failed', `say wrote digital zero with voice ${JSON.stringify(options.voice)}`, { voice: options.voice });
+    }
+    const keyedSeconds = levels.seconds + options.tailMs / 1000;
+    if (keyedSeconds > options.maxSeconds) {
+      throw new UsageError(
+        `the utterance runs ${round(keyedSeconds)} s with --tail, past --max-seconds ${options.maxSeconds}`,
+        { seconds: round(keyedSeconds), maxSeconds: options.maxSeconds },
+        {},
+        'utterance-too-long',
+      );
+    }
+    if (options.out !== undefined) {
+      try {
+        copyFileSync(wav, options.out);
+      } catch (err) {
+        throw new UsageError(`cannot write ${options.out}: ${(err as NodeJS.ErrnoException).message}`, { out: options.out }, { remedy: 'pass --out with a writable path' });
+      }
+      kept = { out: options.out };
+    }
+    if (options.rehearse) {
+      try {
+        await deps.play(wav, levels.seconds);
+      } catch (err) {
+        if (err instanceof BaofengError) err.attach({}, { remedy: 'check the system output, then rerun say --rehearse', retry: 'after-remedy' });
+        throw err;
+      }
+      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, device: REHEARSE_DEVICE, pttAsserted: false, released: true, rehearsed: true, ...kept };
+    }
     const index = await deps.resolveOutput(options.output);
     if (options.clearSeconds > 0 && !signalled) {
       const monitor = deps.monitor(options.input);
@@ -287,7 +282,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     let startedAt: number | undefined;
     let endedAt: number | undefined;
     let identified = false;
-    let playFailed = false;
+    let dropping = () => false;
     const playedMs = () => (startedAt === undefined ? 0 : (endedAt ?? deps.now()) - startedAt);
     const owed = () => !identified && playedMs() > options.leadMs;
     const body = async (stop: Promise<void>) => {
@@ -298,11 +293,10 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         await deps.playTo(index, wav, stop);
       } catch (err) {
         endedAt = deps.now();
-        if (!stopped) playFailed = true;
         throw err;
       }
       endedAt = deps.now();
-      if (!stopped) identified = true;
+      if (!stopped && !signalled && !dropping()) identified = true;
       await wait(options.tailMs, stop);
     };
     let held: HoldResult | undefined;
@@ -312,18 +306,19 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         // Skip keying when a signal arrived while the port opened.
         if (signalled) return undefined;
         const tracked = trackRelease(t);
+        dropping = tracked.dropping;
         released = tracked.released;
         return keyWhile(tracked.transport, body, { maxMs }, deps.signals);
       });
     } catch (err) {
-      if (playFailed && err instanceof BaofengError) {
+      if (startedAt !== undefined && err instanceof BaofengError) {
         const idOwed = owed();
         err.attach({ pttAsserted: true, released: released(), playedSeconds: round(playedMs() / 1000), idOwed }, idOwed && released() ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' });
       }
       throw err;
     }
     if (held === undefined) return unkeyed(signalled!);
-    if (held.timedOut) {
+    if (held.timedOut && !held.interrupted) {
       const idOwed = owed();
       throw new TransportError(
         'audio-process-failed',
