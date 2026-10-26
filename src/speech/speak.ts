@@ -286,8 +286,6 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     const playedMs = () => (startedAt === undefined ? 0 : (endedAt ?? deps.now()) - startedAt);
     const owed = () => !identified && playedMs() > options.leadMs;
     const body = async (stop: Promise<void>) => {
-      let stopped = false;
-      void stop.then(() => (stopped = true));
       startedAt = deps.now();
       try {
         await deps.playTo(index, wav, stop);
@@ -296,7 +294,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         throw err;
       }
       endedAt = deps.now();
-      if (!stopped && !signalled && !dropping()) identified = true;
+      if (!signalled && !dropping()) identified = true;
       await wait(options.tailMs, stop);
     };
     let held: HoldResult | undefined;
