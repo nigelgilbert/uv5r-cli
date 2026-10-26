@@ -99,7 +99,7 @@ const DEFAULT_MAX_SECONDS = 30;
 /** Cap on --max-seconds, under the UV-5R default TOT of 60 s. */
 const MAX_UTTERANCE_SECONDS = 55;
 const MAX_CLEAR_SECONDS = 30;
-const DEFAULT_HANG_SECONDS = 0.8;
+const DEFAULT_HANG_SECONDS = 1.5;
 const MAX_HANG_SECONDS = 10;
 const DEFAULT_HEAR_TIMEOUT = 60;
 /** Seconds after the command ends until the radio reloads and applies a write. */
