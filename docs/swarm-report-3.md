@@ -51,11 +51,6 @@ None.
 
 ## Open items
 
-Verified on the bench by the orchestrator on 2026-10-25, closed in swarm report 1:
-
-- `models.sha256`, the audiotoolbox and avfoundation listings, the whisper-cli pin, the
-  `whisperArgs` argv and JSON shape, and model load time.
-
 Still open, all bench work:
 
 - The phase 1 bench session over the air, then bench item 7.
