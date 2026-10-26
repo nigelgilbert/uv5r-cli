@@ -24,12 +24,9 @@ ffmpeg for `ceil(seconds / 0.88) + 2`, which also covers the first second the CL
 
 ## Hearing it
 
-The radio speaker is silent while the AIOC is plugged in. Hear receive audio in one of three
-ways:
-
-- `uv5r listen --seconds 5 --out FILE --play`.
-- Play the WAVs that `uv5r sweep PLAN --out-dir DIR` renames into DIR after each dwell.
-- Play the segment WAVs that `uv5r hear --out-dir DIR` keeps.
+The radio speaker is silent while the AIOC is plugged in. Run
+`uv5r listen --seconds 5 --out FILE --play`, play the WAVs that `uv5r sweep PLAN --out-dir DIR`
+renames into DIR after each dwell, or play the segment WAVs that `uv5r hear --out-dir DIR` keeps.
 
 ## whisper.cpp setup
 
@@ -58,10 +55,7 @@ thresholds, the `whisper-cli` command line, the queue of 8 and the noise filter.
 Each transcribed segment prints a `transmission` line:
 
 ```json
-{"type":"transmission","seq":42,"start":"2026-10-25T14:03:11.240Z","seconds":4.32,
- "rmsDbfs":-21.4,"peakDbfs":-3.1,"text":"bench this is kilo juliett seven status over",
- "engine":"whisper.cpp","model":"ggml-base.en-q5_1","inferMs":640,
- "wav":"rx/seg-000042.wav"}
+{"type":"transmission","seq":42,"start":"2026-10-25T14:03:11.240Z","seconds":4.32,"rmsDbfs":-21.4,"peakDbfs":-3.1,"text":"bench this is kilo juliett seven status over","engine":"whisper.cpp","model":"ggml-base.en-q5_1","inferMs":640,"wav":"rx/seg-000042.wav"}
 ```
 
 A warning line has `type`, `warning`, `start`, `seconds`, `text` and `wav`. `warning` is
@@ -81,8 +75,9 @@ transmission the summary has `transmissions: 0` and `timedOut: true`. `--timeout
 
 ## Signals
 
-A signal closes the open segment. Each waiting segment, the closed one included, prints a
-`backlog` warning, and `--out-dir` keeps its WAV. [errors.md](errors.md) covers the exit code.
+A signal closes the open segment. A segment already in inference finishes and prints. Each
+waiting segment, the closed one included, prints a `backlog` warning, and `--out-dir` keeps its
+WAV. [errors.md](errors.md) covers the exit code.
 
 ## One owner at a time
 

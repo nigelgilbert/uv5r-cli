@@ -5,9 +5,9 @@ How `say` and `id` turn text into a transmission that ends with the station call
 ## Control operator
 
 You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C.
-Each transmission ends with the callsign from uv5r.json. A stock UV-5R is not certified for
-GMRS or FRS. Use this feature on amateur frequencies with the required license and control
-operator.
+Completed `say` and `id` transmissions end with the callsign from uv5r.json. A stock UV-5R is not
+certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and
+control operator.
 
 `key`, `say` and `id` raise PTT on the channel the radio display shows. The CLI cannot read
 that channel, and a receive-only slot radiates nothing. Key when you mean to and the frequency

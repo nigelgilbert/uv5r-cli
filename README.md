@@ -4,8 +4,8 @@
 
 uv5r drives a Baofeng UV-5R through an [AIOC](https://skuep.github.io/AIOC/) cable. Tell it a
 frequency and it fills a memory slot. Tell it to listen and it records what comes back. It also
-backs up the radio, keys PTT, reads text aloud ending with your callsign, and transcribes what it
-hears. Tested on firmware HN5RV011.
+backs up the radio, keys PTT (push-to-talk, the transmit key), reads text aloud ending with
+your callsign, and transcribes what it hears. Tested on firmware HN5RV011.
 
 ## What you need
 
@@ -15,14 +15,15 @@ hears. Tested on firmware HN5RV011.
   `id`. They use avfoundation, audiotoolbox, `say` and `afplay`.
 - Microphone access for your terminal in System Settings, Privacy & Security, Microphone.
 - `hear`: `whisper-cli` on PATH and two models in `models/`. See [Transcribe](#transcribe).
-- `say` and `id`: a `uv5r.json` with your callsign, and an amateur licence.
+- `say` and `id`: a `uv5r.json` with your callsign, and an amateur license.
 - `load` and `sweep`: a plan file. See [Plans and sweep](#plans-and-sweep).
 
 ## Install
 
 ```sh
 npm install
-alias uv5r="node $PWD/src/cli/main.ts"   # set from the repo root; add it to your shell profile
+# run from the repo root
+echo "alias uv5r='node \"$PWD/src/cli/main.ts\"'" >> ~/.zshrc
 ```
 
 `npm run uv5r -- VERB` works too. The rest of this file writes `uv5r`.
@@ -32,12 +33,14 @@ alias uv5r="node $PWD/src/cli/main.ts"   # set from the repo root; add it to you
 Plug in the AIOC, turn the radio on and set the volume knob to about half.
 
 1. Run `uv5r status`. It reads the radio in one clone session, a short serial conversation.
-   Success prints the firmware, `family`, work mode and squelch. Exit 5 with
-   `session-unavailable` means the radio did not answer; see [Troubleshooting](#troubleshooting).
+   Success prints the firmware, `family`, work mode and squelch (the signal level that opens the
+   audio). Exit 5 with `session-unavailable` means the radio did not answer; see
+   [Troubleshooting](#troubleshooting).
 2. Run `uv5r dump --out backup.img`. It saves the full memory image in about 14 s. Keep it.
    `uv5r restore backup.img --force` writes it back.
 3. Run `uv5r settings squelch 3`. At squelch 0, static reads as audio.
-4. Press VFO/MR until the radio shows memory channels (MR mode), slots 0 to 127. Select slot 0.
+4. Press VFO/MR until the radio shows memory channels (MR mode), slots 0 to 127. VFO mode
+   tunes a keyed-in frequency instead. Select slot 0.
 5. Run `uv5r check 162.400 --channel 0` with a NOAA weather frequency that carries audio where
    you are. Try 162.400 to 162.550. It writes a receive-only record into slot 0, waits 3 s for
    the radio to reload and listens 5 s. Exit 0 means audio in at least 4 of the 5 seconds.
@@ -58,12 +61,8 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
 
 - The radio speaker is silent while the AIOC is plugged in. Listen through `listen --play` or WAVs.
 - The receiver is deaf during a clone session. Run one verb at a time.
-- Slot 0 is scratch. `check` and `sweep` overwrite it, and nothing restores it.
+- The `check` examples and `sweep` overwrite slot 0. Nothing restores it.
 - Leave the serial port alone. No `cat`, `screen` or `stty` on it.
-- A write goes live about 3 s after the command ends.
-- Squelch 0 makes static read as audio on every frequency.
-- Without microphone permission the capture is digital zero.
-- The CLI cannot read the display. Check the mode and slot yourself.
 - `key`, `say` and `id` transmit on whatever channel the display shows.
 
 ## Transmit
@@ -73,23 +72,15 @@ You are the control operator. Stay at the radio for every transmission and stop 
 Run `cp uv5r.example.json uv5r.json` and put your callsign in it. The CLI reads `--config FILE`
 first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root.
 
-```json
-{
-  "callsign": "KJ7ABC",
-  "outputDevice": "AIOC Audio",
-  "inputDevice": "AIOC Audio",
-  "model": "models/ggml-base.en-q5_1.bin"
-}
-```
-
-Turn VOX off and run `uv5r say --rehearse "bench check, over"`. It plays the WAV through your
-Mac's speakers with the port closed and radiates nothing. Then check what the display shows
-and run `uv5r say "bench check, over"` or `uv5r id`. Each ends with the phonetic callsign.
+Turn off VOX (voice-operated transmit) and run `uv5r say --rehearse "bench check, over"`. It
+plays the WAV through your Mac's speakers with the port closed and radiates nothing. Then check
+what the display shows and run `uv5r say "bench check, over"` or `uv5r id`. Each ends with the
+phonetic callsign.
 `key --seconds S` raises PTT alone and sends no ID. Details in [docs/transmit.md](docs/transmit.md).
 
 ## Transcribe
 
-`hear` transcribes received speech with whisper.cpp. Set it up once:
+`hear` transcribes received speech with whisper.cpp.
 
 1. Build `whisper-cli` from whisper.cpp tag `v1.9.5` and put `build/bin` on PATH.
 2. From the whisper.cpp checkout, download `ggml-base.en-q5_1.bin` and
@@ -103,9 +94,9 @@ steps and output fields are in [docs/receive.md](docs/receive.md).
 
 ## Plans and sweep
 
-A plan is a JSON list of channels, with fields listed in [Plan fields](#plan-fields). Copy
-`channels.example.json` to `channels.json` and edit it, or ask an agent to run the channel-plan
-skill for your location. `channels.json` is gitignored.
+A plan is a JSON object with a `channels` array. [Plan fields](#plan-fields) lists the fields.
+Copy `channels.example.json` to `channels.json` and edit it, or ask an agent to run the
+channel-plan skill for your location. `channels.json` is gitignored.
 
 - `uv5r load channels.json` writes every plan entry into its own slot.
 - `uv5r sweep channels.json --seconds 30 --out-dir rx` checks slot 0 with the plan's
@@ -138,8 +129,9 @@ Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` 
 ## Output and errors
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. Piped, `hear`
-prints NDJSON, one object per line. A failed command prints nothing on stdout and one error
-object on stderr with `reason`, `message`, `remedy` and `retry`.
+prints NDJSON, one object per line. A failed command prints nothing on stdout. In JSON mode
+it prints one error object on stderr with `reason`, `message`, `remedy` and `retry`. On a
+terminal it prints the message and remedy as text.
 
 Exit 0 is ok, 1 an unexpected error, 2 bad usage, 3 a transport or dependency failure, 4 a
 serial timeout, 5 a radio state problem and 6 a busy serial port. A signal exits 128 plus its
@@ -151,7 +143,7 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 |---|---|---|
 | exit 5 `squelch-open` | squelch is 0 | `uv5r settings squelch 3` |
 | exit 5 `audio-inactive` | VFO mode, wrong slot, knob down, plug short or quiet frequency | MR mode, slot 0, knob up, reseat the plug, another NOAA frequency |
-| exit 5 `session-unavailable` | the radio did not answer the magic | `uv5r identify`, then put its `pin` line before every command |
+| exit 5 `session-unavailable` | the radio did not answer the magic | `uv5r identify`; when it prints a `pin` line, put it before every command |
 | levels read digital zero | the terminal lacks microphone access | grant it in Privacy & Security, Microphone |
 | levels sit near -66 dBFS | the knob is down or the plug is short of its contact | knob up, push the plug home |
 | warning `input clips` | the knob is too high | turn the knob down and listen again |
@@ -172,10 +164,12 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 ## Plan fields
 
 A plan has a top-level `name`, `notes`, `checkMhz` and a `channels` array. Any other
-top-level key exits 2. `name` and `notes` take strings. Each entry is
-one `tune` call, and each entry field maps onto one `tune` flag. `uv5r load PLAN.json` writes
-the whole plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
-tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
+top-level key exits 2. `name` and `notes` take strings. Each entry is one `tune` call, and each
+entry field except `notes` maps onto one `tune` flag. `uv5r load PLAN.json` writes the whole
+plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
+tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`. `checkMhz` is the frequency
+`sweep` checks slot 0 with. It takes the band and 10 Hz rules of `rxMhz`. `load` validates it
+and writes nothing for it.
 
 | Field | `tune` flag |
 |---|---|
@@ -189,7 +183,6 @@ tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`.
 | `rxOnly` | `--rx-only` when true |
 | `name` | `--name TEXT` |
 | `notes` | none |
-| `checkMhz` | none; top level. `sweep` runs `check` on slot 0 with it. It takes the band and 10 Hz rules of `rxMhz`. `load` validates it and writes nothing for it |
 
 ## For agents
 
