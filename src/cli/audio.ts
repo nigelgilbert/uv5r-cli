@@ -298,7 +298,7 @@ export function play(file: string, seconds: number): Promise<void> {
   const timeoutMs = (seconds + 15) * 1000;
   return new Promise((resolve, reject) => {
     execFile('afplay', [file], { timeout: timeoutMs }, (err, _stdout, stderr) => {
-      const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null }) | null;
+      const e = err as ExecError | null;
       if (!e) {
         resolve();
         return;
