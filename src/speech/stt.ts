@@ -1,8 +1,7 @@
-import { spawn } from 'node:child_process';
 import { accessSync, constants, existsSync, readFileSync, rmSync } from 'node:fs';
 import { basename, delimiter, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stderrTail } from '../cli/audio.ts';
+import { execDetached, exitHow, stderrTail } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
 
 /** The repo root, found from this file the way packageVersion() finds package.json. */
@@ -22,9 +21,6 @@ const WHISPER_TIMEOUT_MS = 120_000;
 
 /** Guidance for a failed whisper-cli run. */
 const WHISPER_FAILED = { remedy: 'ask the human to check the whisper-cli build and run shasum -a 256 -c models.sha256, then rerun the command' } as const;
-
-/** Characters of whisper-cli stderr kept for the error message. */
-const STDERR_KEEP = 8192;
 
 /** What `hear` passes whisper-cli besides the segment. */
 export interface WhisperOptions {
@@ -101,43 +97,22 @@ function onPath(name: string, path = process.env.PATH ?? ''): boolean {
 
 /**
  * Run whisper-cli on `wav` and resolve its transcript. whisper-cli runs in its own process
- * group so a Ctrl-C to uv5r lets the segment in inference finish. A missing whisper-cli
- * rejects with dependency-missing; a failed run or unreadable output rejects with
- * speech-engine-failed.
+ * group so a Ctrl-C to uv5r lets the segment in inference finish, and gets `timeoutMs`. A
+ * missing whisper-cli rejects with dependency-missing; a failed run or unreadable output
+ * rejects with speech-engine-failed.
  */
-export function transcribeWav(wav: string, options: WhisperOptions): Promise<Transcript> {
+export function transcribeWav(wav: string, options: WhisperOptions, timeoutMs = WHISPER_TIMEOUT_MS): Promise<Transcript> {
   const out = wav.replace(/\.wav$/, '');
   const json = `${out}.json`;
   const started = performance.now();
   return new Promise((resolve, reject) => {
-    const child = spawn('whisper-cli', whisperArgs(wav, out, options), { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
-    let stderr = '';
-    let timedOut = false;
-    let failed: Error | undefined;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGKILL');
-    }, WHISPER_TIMEOUT_MS);
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString()).slice(-STDERR_KEEP);
-    });
-    child.on('error', (e: NodeJS.ErrnoException) => {
-      failed = e.code === 'ENOENT' ? whisperMissing() : new TransportError('speech-engine-failed', `whisper-cli failed on ${wav}: ${e.message}`, { code: e.code ?? null, signal: null });
-      // A child that never spawned emits no close.
-      if (child.pid === undefined) finish(null, null);
-    });
-    child.on('close', (code: number | null, signal: NodeJS.Signals | null) => finish(code, signal));
-    let done = false;
-    function finish(code: number | null, signal: NodeJS.Signals | null) {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
+    execDetached('whisper-cli', whisperArgs(wav, out, options), timeoutMs, (e, stderr) => {
       try {
-        if (failed) throw failed;
-        if (code !== 0) {
+        if (e?.code === 'ENOENT') throw whisperMissing();
+        if (e) {
           const tail = stderrTail(stderr);
-          const how = timedOut ? `timed out after ${WHISPER_TIMEOUT_MS / 1000}s` : signal ? `stopped on ${signal}` : `exited with code ${code}`;
-          throw new TransportError('speech-engine-failed', `whisper-cli ${how} on ${wav}${tail ? `: ${tail}` : ''}`, { code, signal });
+          const how = typeof e.code === 'string' ? e.message : exitHow(e, timeoutMs);
+          throw new TransportError('speech-engine-failed', `whisper-cli ${how} on ${wav}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null });
         }
         let text: string;
         try {
@@ -152,7 +127,7 @@ export function transcribeWav(wav: string, options: WhisperOptions): Promise<Tra
       } finally {
         rmSync(json, { force: true });
       }
-    }
+    });
   });
 }
 

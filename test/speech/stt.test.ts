@@ -36,7 +36,7 @@ const SAMPLE_JSON = JSON.stringify({
 
 const OPTIONS = { model: '/m/ggml-base.en-q5_1.bin', vadModel: '/m/ggml-silero-v6.2.0.bin', prompt: 'KJ7ABC' };
 
-/** Write a whisper-cli stand-in into a new directory: it writes $FAKE_WHISPER_JSON to the -of path plus .json, or fails with $FAKE_WHISPER_FAIL. */
+/** Write a whisper-cli stand-in into a new directory: it writes $FAKE_WHISPER_JSON to the -of path plus .json, fails with $FAKE_WHISPER_FAIL, or sleeps $FAKE_WHISPER_SLEEP seconds. */
 function fakeWhisperDir(): string {
   const dir = mkdtempSync(join(TMP, 'bin-'));
   const script = join(dir, 'whisper-cli');
@@ -46,6 +46,7 @@ function fakeWhisperDir(): string {
       '#!/bin/sh',
       'while [ $# -gt 0 ]; do case "$1" in -of) out="$2"; shift;; esac; shift; done',
       'if [ -n "$FAKE_WHISPER_FAIL" ]; then echo "$FAKE_WHISPER_FAIL" >&2; exit 2; fi',
+      'if [ -n "$FAKE_WHISPER_SLEEP" ]; then exec /bin/sleep "$FAKE_WHISPER_SLEEP"; fi',
       'printf "%s" "$FAKE_WHISPER_JSON" > "$out.json"',
       '',
     ].join('\n'),
@@ -151,6 +152,16 @@ describe('transcribeWav', () => {
       detail: expect.objectContaining({ code: 2, wav: join(TMP, 'b.wav') }),
     });
     await expect(transcribeWav(join(TMP, 'b.wav'), OPTIONS)).rejects.toThrow('failed to open model');
+  });
+
+  it('rejects with speech-engine-failed when whisper-cli runs past its timeout', async () => {
+    vi.stubEnv('PATH', fakeWhisperDir());
+    vi.stubEnv('FAKE_WHISPER_SLEEP', '30');
+    await expect(transcribeWav(join(TMP, 'd.wav'), OPTIONS, 200)).rejects.toMatchObject({
+      reason: 'speech-engine-failed',
+      message: expect.stringContaining('timed out after 0.2s'),
+      detail: expect.objectContaining({ signal: 'SIGTERM', wav: join(TMP, 'd.wav') }),
+    });
   });
 
   it('rejects with speech-engine-failed when whisper-cli writes JSON without a transcription', async () => {
