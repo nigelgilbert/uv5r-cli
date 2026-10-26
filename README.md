@@ -40,7 +40,7 @@ Arrive somewhere new and have the repeaters programmed before you unpack.
 Run your camp over the air. Switch the lights, ask for the forecast,
 read back GPS coordinates, or record tests for your handhelds.
 
-Stand up an emergency alert station in one line.  Command a robot by talking to it.
+Stand up an emergency alert station in one line.  Command robots by talking to them.
 
 ## What you need
 
