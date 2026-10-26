@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { TransportError } from '../../src/core/index.ts';
 import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
+import { FRAMES_PER_SECOND } from '../../src/tts/segment.ts';
 import { REPO_ROOT, whisperTranscriber } from '../../src/tts/stt.ts';
 import { FakeMonitor, fakeClock, fakeSpeechDeps, fakeTranscribe, fakeTranscriber, silentFrames, toneFrames } from '../tts/fakes.ts';
 
@@ -18,7 +19,9 @@ function config(json: object): string {
 }
 
 const STATION = config({ callsign: 'kj7abc', inputDevice: 'USB Input', model: 'models/ggml-small.en.bin' });
-const TX = [...toneFrames(50), ...silentFrames(45)];
+/** Frames of silence that close a segment under the default --hang of 1.5 s. */
+const HANG_FRAMES = 1.5 * FRAMES_PER_SECOND;
+const TX = [...toneFrames(50), ...silentFrames(HANG_FRAMES)];
 
 /** An opener that fails the test when hear opens a port. */
 const noPort: OpenTransport = async () => {
@@ -103,7 +106,7 @@ describe('hear', () => {
     const out = lines();
     expect(out.map((l) => l.type)).toEqual(['transmission', 'summary']);
     expect(out[0]).toMatchObject({ seq: 1, model: 'ggml-small.en', engine: 'whisper.cpp', wav: null });
-    expect(out[1]).toEqual({ type: 'summary', transmissions: 1, seconds: 1.8, device: 'USB Input', warnings: 0, timedOut: false });
+    expect(out[1]).toEqual({ type: 'summary', transmissions: 1, seconds: 2.5, device: 'USB Input', warnings: 0, timedOut: false });
   });
 
   it('defaults the device to AIOC Audio, the model to base.en-q5_1 and the prompt to empty with no callsign', async () => {
@@ -229,7 +232,7 @@ describe('hear', () => {
     expect(text).toHaveLength(3);
     expect(text[0]).toMatch(/^warning \S+Z \d+\.\d+ s noise: thank you$/);
     expect(text[1]).toMatch(/^rx +\S+Z \d+\.\d+ s -?\d+(\.\d)? dBFS: bench check over$/);
-    expect(text[2]).toBe('heard   1 transmission in 3.7 s on USB Input, 1 warning');
+    expect(text[2]).toBe('heard   1 transmission in 5 s on USB Input, 1 warning');
   });
 
   it('documents the lines array in help hear --json with schema version 2', async () => {
