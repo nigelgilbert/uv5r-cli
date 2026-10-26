@@ -9,7 +9,6 @@ Final state: 851 tests in 34 files pass (850 at the base). Typecheck is clean.
 ## Items
 
 Both items landed as written. Two agents ran: `main.ts` (item 1) and `audio.test.ts` (item 2).
-No item was dropped.
 
 ### Item 1
 
