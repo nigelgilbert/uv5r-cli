@@ -97,9 +97,9 @@ function onPath(name: string, path = process.env.PATH ?? ''): boolean {
 
 /**
  * Run whisper-cli on `wav` and resolve its transcript. whisper-cli runs in its own process
- * group so a Ctrl-C to uv5r lets the segment in inference finish, and gets `timeoutMs`. A
- * missing whisper-cli rejects with dependency-missing; a failed run or unreadable output
- * rejects with speech-engine-failed.
+ * group, so a Ctrl-C to uv5r lets the segment in inference finish. A run past `timeoutMs`
+ * gets SIGTERM, then SIGKILL. A missing whisper-cli rejects with dependency-missing; a
+ * failed run or unreadable output rejects with speech-engine-failed.
  */
 export function transcribeWav(wav: string, options: WhisperOptions, timeoutMs = WHISPER_TIMEOUT_MS): Promise<Transcript> {
   const out = wav.replace(/\.wav$/, '');
