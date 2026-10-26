@@ -6,6 +6,7 @@ import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Tr
 import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, fatal, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
+import { fakeSpeechDeps } from '../speech/fakes.ts';
 import { PRIMARY } from '../core/golden.ts';
 
 /** Temp root for every file these tests write, removed in afterAll. */
@@ -1069,6 +1070,22 @@ describe('key output', () => {
     expect(JSON.parse(stderr.join('').trim())).toMatchObject({ reason: 'unexpected-error', message: 'boom' });
     process.emit('SIGINT');
     await done;
+  });
+
+  it('prints a fatal error as text on a terminal when --json follows --', async () => {
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), 'say', '--', '--json'];
+    vi.stubEnv('UV5R_CONFIG', '');
+    try {
+      await onTerminal(async () => {
+        await cli(['say', '--', '--json'], opener(new FakeRadio()), fakeSpeechDeps({ defaultConfig: join(tempDir(), 'uv5r.json') }));
+        stderr.length = 0;
+        await expect(fatal(new Error('boom'))).rejects.toThrow('process.exit called');
+      });
+    } finally {
+      process.argv = argv;
+    }
+    expect(stderr.join('').startsWith('uv5r: boom')).toBe(true);
   });
 
   it.each([

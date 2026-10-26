@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -158,6 +158,20 @@ describe('hear', () => {
     await second;
     expect(lines()[0]).toMatchObject({ seq: 42, wav: join(outDir, 'seg-000042.wav') });
     expect(existsSync(join(outDir, 'seg-000042.wav'))).toBe(true);
+  });
+
+  it('exits 2 on an --out-dir it cannot list, before capture', async () => {
+    const dir = mkdtempSync(join(TMP, 'out-'));
+    chmodSync(dir, 0o300);
+    try {
+      const h = hearDeps();
+      await cli(['hear', '--once', '--out-dir', dir, '--config', STATION, '--json'], noPort, h.deps);
+      expect(process.exitCode).toBe(2);
+      expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining(`cannot write to ${dir}`), outDir: dir });
+      expect(h.devices).toEqual([]);
+    } finally {
+      chmodSync(dir, 0o755);
+    }
   });
 
   it('exits 128 plus the signal number on SIGTSTP with the summary on stdout', async () => {

@@ -264,6 +264,25 @@ describe('say', () => {
     expect(text).toContain('identified yes');
   });
 
+  it('prints PTT not asserted on a terminal after a signal during synthesis', async () => {
+    const deps = fakeSpeechDeps();
+    const synth = fakeSynthesize();
+    deps.synthesize = async (text, voice, wav) => {
+      deps.signals.emit('SIGINT');
+      await synth(text, voice, wav);
+    };
+    const tty = process.stdout.isTTY;
+    process.stdout.isTTY = true;
+    try {
+      await cli(['say', 'hello', '--config', STATION], opener(), deps);
+    } finally {
+      process.stdout.isTTY = tty;
+    }
+    const text = stdout.join('');
+    expect(text).toContain('PTT        not asserted\n');
+    expect(text).not.toContain('asserted for');
+  });
+
   it('carries the control-operator rule in help say and help --json', async () => {
     await cli(['help', 'say', '--json']);
     const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; default: unknown }[] };

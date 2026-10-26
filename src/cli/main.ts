@@ -824,6 +824,8 @@ const FATAL_RELEASE_MS = 1000;
 /** What the fatal-error message adds when a release failed or timed out. */
 const FATAL_UNCONFIRMED = 'PTT release unconfirmed; ask the human to unplug the AIOC';
 let fatalRun = false;
+/** Flags of the running cli() call, for the fatal-error output format. */
+let activeFlags = new Map<string, string | true>();
 
 /** Close `t` and resolve false when the close runs past PTT_CONTROL_TIMEOUT_MS. */
 async function closeWithin(t: Transport): Promise<boolean> {
@@ -898,7 +900,7 @@ export async function fatal(err: unknown): Promise<void> {
       error.message = `${error.message}; ${FATAL_UNCONFIRMED}`;
       error.attach({}, { remedy: REASONS['ptt-control-failed'].remedy, retry: 'no' });
     }
-    if (wantsJson(new Map(process.argv.includes('--json') ? [['json', true]] : []))) process.stderr.write(`${JSON.stringify(error)}\n`);
+    if (wantsJson(activeFlags)) process.stderr.write(`${JSON.stringify(error)}\n`);
     else process.stderr.write(`uv5r: ${error.message}\nremedy: ${error.remedy} (retry: ${error.retry})\n`);
   } finally {
     fatalRun = false;
@@ -1139,7 +1141,7 @@ function transmitOptions(args: Invocation): Omit<SpeakOptions, 'text' | 'maxSeco
 }
 
 function speakText(r: SpeakResult): string {
-  const ptt = r.rehearsed ? `not asserted; rehearsed ${r.seconds} s with the port closed` : `asserted for ${r.seconds} s; released`;
+  const ptt = r.rehearsed ? `not asserted; rehearsed ${r.seconds} s with the port closed` : r.pttAsserted ? `asserted for ${r.seconds} s; released` : 'not asserted';
   return [
     `spoken     ${r.spoken}`,
     `device     ${r.device}`,
@@ -1341,7 +1343,7 @@ function sweepText(s: SweepSummary): string {
   ].join('\n');
 }
 
-/** Create `outDir` and throw UsageError when it cannot be created or written. */
+/** Create `outDir` and throw UsageError when it cannot be created, read or written. */
 function prepareOutDir(outDir: string): void {
   try {
     mkdirSync(outDir, { recursive: true });
@@ -1349,7 +1351,7 @@ function prepareOutDir(outDir: string): void {
     throw new UsageError(`cannot create ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir });
   }
   try {
-    accessSync(outDir, fsConstants.W_OK | fsConstants.X_OK);
+    accessSync(outDir, fsConstants.W_OK | fsConstants.X_OK | fsConstants.R_OK);
   } catch (err) {
     throw new UsageError(`cannot write to ${outDir}: ${(err as NodeJS.ErrnoException).message}`, { outDir }, { remedy: 'pass --out-dir with a writable directory' });
   }
@@ -1483,9 +1485,11 @@ export async function cli(argv: string[], open: OpenTransport = openSerial, deps
   // Read --json from argv so an error from parseArgs keeps the requested format.
   const end = argv.indexOf('--');
   let flags = new Map<string, string | true>((end < 0 ? argv : argv.slice(0, end)).includes('--json') ? [['json', true]] : []);
+  activeFlags = flags;
   try {
     const args = parseArgs(argv, BOOLEAN_FLAGS);
     flags = args.flags;
+    activeFlags = flags;
     process.exitCode = await main({ ...args, open, deps });
   } catch (err) {
     const error = err instanceof BaofengError ? err : new UnexpectedError(err instanceof Error ? err.message : String(err));
