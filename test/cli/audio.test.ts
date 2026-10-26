@@ -218,6 +218,8 @@ describe('listen', () => {
       expect(child.kills).toEqual(['SIGTERM']);
       child.exit(255, { stderr: STDERR });
       const err = await pending;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(child.kills).toEqual(['SIGTERM']);
       expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { device: 'AIOC Audio', code: 255, signal: null } });
       expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio"/);
     } finally {
