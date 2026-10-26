@@ -113,6 +113,6 @@ describe('CLI number and file errors', () => {
   it('exits 0 with the whole help JSON on a pipe', () => {
     const r = spawnSync(process.execPath, ['src/cli/main.ts', 'help'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout).exitCodes['128+signal']).toBe('interrupted by SIGINT, SIGTERM or SIGHUP: key releases PTT and sweep prints its summary');
+    expect(JSON.parse(r.stdout).exitCodes['128+signal']).toBe('interrupted by SIGINT, SIGTERM, SIGHUP or SIGTSTP: key, say and id release PTT, and sweep and hear print their summary');
   });
 });

@@ -1,4 +1,4 @@
-import { type ChildProcess, execFile } from 'node:child_process';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import { TransportError, UsageError } from '../core/index.ts';
 
 export interface ListenResult {
@@ -75,6 +75,17 @@ const CLIP_FRACTION = 0.01;
 
 export const CLIP_WARNING = 'input clips: turn the volume knob down';
 
+/** An astats measure that parseAstats reads. */
+export type AstatsMeasure = keyof typeof SERIES;
+
+/**
+ * astats filter that sets the overall `measures` as frame metadata for ametadata=print.
+ * reset 1 starts each frame afresh; reset 0 accumulates, so the last frame covers the whole input.
+ */
+export function astatsFilter(measures: readonly AstatsMeasure[], reset: 0 | 1 = 1): string {
+  return `astats=metadata=1:reset=${reset}:measure_perchannel=none:measure_overall=${measures.join('+')}`;
+}
+
 /** Duration to pass to `-t` so that at least `seconds` whole frames come back. */
 export function captureSeconds(seconds: number): number {
   return Math.ceil(seconds / RATIO) + PAD_SECONDS;
@@ -100,9 +111,9 @@ export function ffmpegArgs(device: string, seconds: number, out?: string): strin
     [
       `aformat=sample_fmts=flt:sample_rates=${RATE}:channel_layouts=mono`,
       `asetnsamples=n=${RATE}:p=0`,
-      'astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=Min_level+Max_level+Peak_count',
+      astatsFilter(['Min_level', 'Max_level', 'Peak_count']),
       `highpass=f=${HIGHPASS_HZ}`,
-      'astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=Peak_level+RMS_level+Number_of_samples',
+      astatsFilter(['Peak_level', 'RMS_level', 'Number_of_samples']),
       'ametadata=print',
     ].join(','),
     '-f',
@@ -201,7 +212,7 @@ export function summarize(device: string, seconds: number, levels: Levels, floor
 }
 
 /** Join the last three non-empty stderr lines for an error message. */
-function stderrTail(stderr: string): string {
+export function stderrTail(stderr: string): string {
   return stderr
     .split('\n')
     .map((line) => line.trim())
@@ -224,12 +235,60 @@ export async function listen(device: string, seconds: number, floorDbfs = DEFAUL
   return { ...result, out };
 }
 
-type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
+/** The error execFile and execDetached pass to their callbacks. */
+export type ExecError = NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null };
 
 /** Describe how a child process run with a `timeoutMs` timeout failed. */
-function exitHow(e: ExecError, timeoutMs: number): string {
-  if (e.killed && e.signal) return `timed out after ${timeoutMs / 1000}s`;
+export function exitHow(e: ExecError, timeoutMs: number): string {
+  if (e.killed) return `timed out after ${timeoutMs / 1000}s`;
   return e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
+}
+
+/** Bytes of stderr a detached run keeps. */
+const STDERR_KEEP = 64 * 1024 * 1024;
+
+/**
+ * Run `file` with `args` in its own process group and call `callback` once it exits, as
+ * execFile calls its callback: a null error on exit 0, else an ExecError with the exit code
+ * or signal, `killed` set after a timeout, or the spawn error itself. A terminal Ctrl-C or
+ * Ctrl-Z then reaches only uv5r. A timeout sends SIGTERM, then SIGKILL after KILL_GRACE_MS.
+ * `timeoutMs` 0 sets no timeout. `detached` false keeps the child in uv5r's process group.
+ * Return the child so the caller can kill it.
+ */
+export function execDetached(file: string, args: string[], timeoutMs: number, callback: (err: ExecError | null, stderr: string) => void, detached = true): ChildProcess {
+  const child = spawn(file, args, { stdio: ['ignore', 'ignore', 'pipe'], detached });
+  let stderr = '';
+  let timedOut = false;
+  let failed: ExecError | undefined;
+  let done = false;
+  let escalate: NodeJS.Timeout | undefined;
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGTERM');
+          escalate = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS).unref();
+        }, timeoutMs)
+      : undefined;
+  const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    clearTimeout(escalate);
+    if (failed) callback(failed, stderr);
+    else if (code === 0) callback(null, stderr);
+    else callback(Object.assign(new Error(`${file} exited`), { code: code as unknown as string, signal, killed: timedOut }), stderr);
+  };
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr = (stderr + chunk.toString()).slice(-STDERR_KEEP);
+  });
+  child.on('error', (e: ExecError) => {
+    failed = e;
+    // A child that never spawned emits no close.
+    if (child.pid === undefined) finish(null, null);
+  });
+  child.on('close', finish);
+  return child;
 }
 
 /** Guidance for a failed afplay, since a rerun with the same --out records over the saved capture. */
@@ -240,7 +299,7 @@ export function play(file: string, seconds: number): Promise<void> {
   const timeoutMs = (seconds + 15) * 1000;
   return new Promise((resolve, reject) => {
     execFile('afplay', [file], { timeout: timeoutMs }, (err, _stdout, stderr) => {
-      const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null }) | null;
+      const e = err as ExecError | null;
       if (!e) {
         resolve();
         return;
@@ -263,8 +322,29 @@ export function play(file: string, seconds: number): Promise<void> {
 }
 
 /** The dependency-missing error for an ffmpeg absent from PATH. */
-function ffmpegMissing(): TransportError {
+export function ffmpegMissing(): TransportError {
   return new TransportError('dependency-missing', 'ffmpeg not found on PATH; install it with brew install ffmpeg', {}, { remedy: 'run brew install ffmpeg' });
+}
+
+/**
+ * Map a failed ffmpeg run, given its error, stderr, the step `what` and its timeout, to
+ * dependency-missing when ffmpeg is absent from PATH and to audio-process-failed naming
+ * `what` with the stderr tail on any other failure.
+ */
+export function ffmpegFailure(e: ExecError, stderr: string, what: string, timeoutMs: number): TransportError {
+  if (e.code === 'ENOENT') return ffmpegMissing();
+  const tail = stderrTail(stderr);
+  return new TransportError('audio-process-failed', `ffmpeg ${exitHow(e, timeoutMs)} ${what}${tail ? `: ${tail}` : ''}`, { code: e.code ?? null, signal: e.signal ?? null });
+}
+
+/**
+ * Run ffmpeg with `args` in its own process group and resolve its stderr on exit 0. Reject
+ * with ffmpegFailure naming `what` on any failure, a run past `timeoutMs` included.
+ */
+export function runFfmpeg(args: string[], what: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execDetached('ffmpeg', args, timeoutMs, (e, stderr) => (e ? reject(ffmpegFailure(e, stderr, what, timeoutMs)) : resolve(stderr)));
+  });
 }
 
 /**
@@ -299,6 +379,7 @@ export function checkFfmpeg(): Promise<void> {
 
 /**
  * Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV.
+ * With `stop`, ffmpeg runs in its own process group; without it, a terminal Ctrl-C reaches ffmpeg too.
  * When `stop` resolves, send ffmpeg SIGTERM, then SIGKILL after KILL_GRACE_MS, and reject once it exits.
  * The stop handler outlives the capture in a sweep with no signal, so the callback drops the
  * child to keep it and its buffered stderr from staying reachable through `stop`.
@@ -310,11 +391,10 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
   let escalate: NodeJS.Timeout | undefined;
   let child: ChildProcess | undefined;
   return new Promise((resolve, reject) => {
-    child = execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
+    child = execDetached('ffmpeg', ffmpegArgs(device, seconds, out), timeoutMs, (e, stderr) => {
       clearTimeout(escalate);
       exited = true;
       child = undefined;
-      const e = err as ExecError | null;
       if (e?.code === 'ENOENT') {
         reject(ffmpegMissing());
         return;
@@ -335,7 +415,7 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
         return;
       }
       resolve(summarize(device, seconds, levels, floorDbfs));
-    });
+    }, stop !== undefined);
     void stop?.then(() => {
       if (exited || !child || child.exitCode != null || child.signalCode != null) return;
       stopped = true;

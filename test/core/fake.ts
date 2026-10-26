@@ -74,6 +74,8 @@ export class FakeRadio implements Transport {
   private staged = new Uint8Array(0x20);
   private lastByteAt = 0;
   ptt = false;
+  /** Value of each setPtt call, in order. */
+  readonly pttLog: boolean[] = [];
   /** Baud rate the host set last. */
   rate = CLASSIC_RATE;
   /** Addresses of every write command the radio received, in order. */
@@ -264,6 +266,7 @@ export class FakeRadio implements Transport {
   }
 
   async setPtt(on: boolean): Promise<void> {
+    this.pttLog.push(on);
     this.ptt = on;
   }
 

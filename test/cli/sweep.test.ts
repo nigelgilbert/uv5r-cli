@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIP_WARNING, listen, type ListenResult } from '../../src/cli/audio.ts';
 import { BusyError, KEY_SIGNALS, magicByName, readPlan, TransportError } from '../../src/core/index.ts';
+import { signalExitCode } from '../../src/cli/exit.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { captureName, dwell, newProgress, runSweep, slotZero, type SweepSteps } from '../../src/cli/sweep.ts';
 import { FakeRadio } from '../core/fake.ts';
@@ -336,6 +337,22 @@ describe('sweep', () => {
     expect(stdout).toHaveLength(1);
     expect(outJson()).toMatchObject({ swept: 2, interrupted: 'SIGINT', active: [{ channel: 1 }, { channel: 2 }], slot0: { channel: 3, name: 'NOAA 3' } });
     expect(process.listenerCount('SIGINT')).toBe(before);
+  });
+
+  it('prints the summary and exits 128 plus the platform number on SIGTSTP', async () => {
+    let call = 0;
+    listenMock.mockImplementation(async (_device, seconds) => {
+      if (call++ === 3) {
+        process.emit('SIGTSTP');
+        throw new TransportError('audio-process-failed', 'ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"');
+      }
+      return heard(seconds, seconds);
+    });
+    const before = process.listenerCount('SIGTSTP');
+    await run([...SWEEP, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(signalExitCode('SIGTSTP'));
+    expect(outJson()).toMatchObject({ swept: 2, interrupted: 'SIGTSTP', slot0: { channel: 3, name: 'NOAA 3' } });
+    expect(process.listenerCount('SIGTSTP')).toBe(before);
   });
 
   it('prints slot0 for the check record on a SIGINT during the check', async () => {

@@ -1,0 +1,6 @@
+{
+  "callsign": "KJ7ABC",
+  "outputDevice": "AIOC Audio",
+  "inputDevice": "AIOC Audio",
+  "model": "models/ggml-base.en-q5_1.bin"
+}

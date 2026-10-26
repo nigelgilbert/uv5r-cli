@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
-vi.mock('node:child_process', () => ({ execFile }));
+const { execFile, spawn } = vi.hoisted(() => ({ execFile: vi.fn(), spawn: vi.fn() }));
+vi.mock('node:child_process', () => ({ execFile, spawn }));
 
 import { cli } from '../../src/cli/main.ts';
+import { spawnThen } from '../tts/fakes.ts';
 
 /** Build astats stderr for `n` whole-second frames at -30 dBFS. */
 function stderrFrames(n: number): string {
@@ -26,7 +27,9 @@ beforeEach(() => {
   stdout = [];
   stderr = [];
   execFile.mockReset();
-  execFile.mockImplementation((_file, _args, _opts, cb) => cb(null, '', stderrFrames(4)));
+  execFile.mockImplementation((_file, _args, _opts, cb) => cb(null, '', ''));
+  spawn.mockReset();
+  spawn.mockImplementation(spawnThen((c) => c.exit(0, { stderr: stderrFrames(4) })));
   vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => stdout.push(String(chunk)) > 0);
   vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => stderr.push(String(chunk)) > 0);
 });
@@ -44,25 +47,24 @@ describe('listen --out and --play', () => {
     await cli(['listen', '--seconds', '3', '--play', '--json']);
     expect(process.exitCode).toBe(2);
     expect(errJson()).toMatchObject({ reason: 'invalid-argument', message: expect.stringContaining('--out') });
-    expect(execFile).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it('carries out in the JSON result and passes the path to ffmpeg', async () => {
     await cli(['listen', '--seconds', '3', '--out', 'rx.wav', '--json']);
     expect(process.exitCode).toBe(0);
     expect(outJson()).toMatchObject({ seconds: 3, activeSeconds: 3, out: 'rx.wav' });
-    expect(execFile.mock.calls.map((c) => c[0])).toEqual(['ffmpeg']);
-    expect(execFile.mock.calls[0]![1]).toContain('rx.wav');
+    expect(spawn.mock.calls.map((c) => c[0])).toEqual(['ffmpeg']);
+    expect(spawn.mock.calls[0]![1]).toContain('rx.wav');
+    expect(execFile).not.toHaveBeenCalled();
   });
 
   it('plays the file through afplay after the capture with --play', async () => {
     await cli(['listen', '--seconds', '3', '--out', 'rx.wav', '--play', '--json']);
     expect(process.exitCode).toBe(0);
     expect(outJson()).toMatchObject({ out: 'rx.wav' });
-    expect(execFile.mock.calls.map((c) => [c[0], c[0] === 'afplay' ? c[1] : undefined])).toEqual([
-      ['ffmpeg', undefined],
-      ['afplay', ['rx.wav']],
-    ]);
+    expect(spawn.mock.calls.map((c) => c[0])).toEqual(['ffmpeg']);
+    expect(execFile.mock.calls.map((c) => [c[0], c[1]])).toEqual([['afplay', ['rx.wav']]]);
   });
 
   it('accepts --floor at both ends of -100..0', async () => {
@@ -83,13 +85,11 @@ describe('listen --out and --play', () => {
     await cli(['listen', '--seconds', '3', '--out', '-', '--json']);
     expect(process.exitCode).toBe(2);
     expect(errJson()).toMatchObject({ reason: 'invalid-argument', flag: 'out', message: expect.stringContaining('--out takes a file path') });
-    expect(execFile).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it('exits 3 with retry no and a remedy that keeps the capture when afplay fails', async () => {
-    execFile.mockImplementation((file, _args, _opts, cb) =>
-      file === 'afplay' ? cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', '') : cb(null, '', stderrFrames(4)),
-    );
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(Object.assign(new Error('afplay failed'), { code: 1 }), '', ''));
     await cli(['listen', '--seconds', '3', '--out', 'rx.wav', '--play', '--json']);
     expect(process.exitCode).toBe(3);
     expect(errJson()).toMatchObject({

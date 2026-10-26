@@ -80,6 +80,11 @@ describe('SerialTransport', () => {
     });
   });
 
+  it('opens the port with HUPCL so the kernel drops DTR when the fd closes', async () => {
+    const { port } = await openFake();
+    expect(port.options).toMatchObject({ baudRate: 9600, hupcl: true });
+  });
+
   it('buffers data events and returns them from read', async () => {
     const { t, port } = await openFake();
     port.emit('data', Buffer.from([1, 2, 3]));

@@ -2,7 +2,16 @@
 export type ErrorKind = 'usage' | 'transport' | 'timeout' | 'device-state' | 'busy' | 'unexpected';
 
 /** Reasons a TransportError carries; each exits 3. */
-export type TransportReason = 'device-unavailable' | 'serial-io-failed' | 'ptt-control-failed' | 'dependency-missing' | 'audio-process-failed' | 'capture-incomplete' | 'file-write-failed';
+export type TransportReason =
+  | 'device-unavailable'
+  | 'serial-io-failed'
+  | 'ptt-control-failed'
+  | 'dependency-missing'
+  | 'audio-process-failed'
+  | 'capture-incomplete'
+  | 'file-write-failed'
+  | 'speech-engine-failed'
+  | 'audio-device-unavailable';
 
 /** Reasons a DeviceStateError carries; each exits 5. */
 export type DeviceStateReason =
@@ -13,10 +22,14 @@ export type DeviceStateReason =
   | 'verification-failed'
   | 'image-incompatible'
   | 'audio-inactive'
-  | 'squelch-open';
+  | 'squelch-open'
+  | 'channel-busy';
+
+/** Reasons a UsageError carries; each exits 2. */
+export type UsageReason = 'invalid-argument' | 'station-unconfigured' | 'utterance-too-long';
 
 /** Why a command failed; every error carries one, and each maps to one kind. */
-export type ErrorReason = TransportReason | DeviceStateReason | 'invalid-argument' | 'device-busy' | 'serial-timeout' | 'unexpected-error';
+export type ErrorReason = TransportReason | DeviceStateReason | UsageReason | 'device-busy' | 'serial-timeout' | 'unexpected-error';
 
 /** Whether to rerun the command: never, once as it stands, or after doing the remedy. */
 export type Retry = 'no' | 'once' | 'after-remedy';
@@ -63,7 +76,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'dependency-missing': {
     kind: 'transport',
-    means: 'ffmpeg or afplay is missing from PATH',
+    means: 'ffmpeg, afplay, say or whisper-cli is missing from PATH, or a whisper model file is missing',
     remedy: 'ask the human to install the missing program',
     retry: 'after-remedy',
   },
@@ -83,6 +96,18 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
     kind: 'transport',
     means: 'a WAV rename or image write failed after the port opened, such as a full disk or a directory changed mid-run',
     remedy: 'free disk space or pass a writable path, then rerun the command',
+    retry: 'after-remedy',
+  },
+  'speech-engine-failed': {
+    kind: 'transport',
+    means: 'say or whisper-cli failed, or say wrote digital zero',
+    remedy: 'pass a --voice that say -v ? lists, then rerun the command',
+    retry: 'after-remedy',
+  },
+  'audio-device-unavailable': {
+    kind: 'transport',
+    means: 'the output device is absent from the audiotoolbox device list',
+    remedy: 'ask the human to reseat the AIOC cable, or pass --output NAME',
     retry: 'after-remedy',
   },
   'session-unavailable': {
@@ -133,10 +158,28 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
     remedy: 'run uv5r settings squelch 3',
     retry: 'after-remedy',
   },
+  'channel-busy': {
+    kind: 'device-state',
+    means: 'say --clear heard activity above -50 dBFS before keying',
+    remedy: 'wait for the other station to finish, then rerun the command',
+    retry: 'after-remedy',
+  },
   'invalid-argument': {
     kind: 'usage',
     means: 'bad input: a flag, argument, plan entry or file',
     remedy: 'fix the command and rerun',
+    retry: 'after-remedy',
+  },
+  'station-unconfigured': {
+    kind: 'usage',
+    means: 'no station config, or a config with no callsign',
+    remedy: 'ask the human for their callsign and write it into uv5r.json',
+    retry: 'no',
+  },
+  'utterance-too-long': {
+    kind: 'usage',
+    means: 'the padded WAV plus --tail runs past --max-seconds',
+    remedy: 'shorten the text, then rerun the command',
     retry: 'after-remedy',
   },
   'device-busy': {
@@ -194,9 +237,10 @@ export class BaofengError extends Error {
   }
 }
 
+/** A usage error; the reason defaults to invalid-argument. */
 export class UsageError extends BaofengError {
-  constructor(message: string, detail: Record<string, unknown> = {}, guidance: Partial<Guidance> = {}) {
-    super('invalid-argument', message, detail, guidance);
+  constructor(message: string, detail: Record<string, unknown> = {}, guidance: Partial<Guidance> = {}, reason: UsageReason = 'invalid-argument') {
+    super(reason, message, detail, guidance);
   }
 }
 

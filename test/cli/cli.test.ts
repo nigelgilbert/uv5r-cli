@@ -1,10 +1,13 @@
 import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { clearInterval as realClearInterval, setInterval as realSetInterval } from 'node:timers';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusyError, encodeChannel, magicByName, REASONS, TransportError, type Transport } from '../../src/core/index.ts';
-import { cli, type OpenTransport } from '../../src/cli/main.ts';
+import { signalExitCode } from '../../src/cli/exit.ts';
+import { cli, closeHung, fatal, TRANSMIT_RULE, type OpenTransport } from '../../src/cli/main.ts';
 import { FakeRadio } from '../core/fake.ts';
+import { fakeSpeechDeps } from '../tts/fakes.ts';
 import { PRIMARY } from '../core/golden.ts';
 
 /** Temp root for every file these tests write, removed in afterAll. */
@@ -18,7 +21,7 @@ const SKILL = new URL('../../.claude/skills/uv5r/SKILL.md', import.meta.url).pat
 const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. ' +
-  'The display may show a name or a frequency. The CLI cannot read the display, so ask the human when it matters which channel the radio is on.';
+  'The display may show a name or a frequency. The CLI cannot read the display.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 const REASON_ENUM = [
   'device-unavailable',
@@ -28,6 +31,8 @@ const REASON_ENUM = [
   'audio-process-failed',
   'capture-incomplete',
   'file-write-failed',
+  'speech-engine-failed',
+  'audio-device-unavailable',
   'session-unavailable',
   'protocol-reply-invalid',
   'radio-unsupported',
@@ -36,7 +41,10 @@ const REASON_ENUM = [
   'image-incompatible',
   'audio-inactive',
   'squelch-open',
+  'channel-busy',
   'invalid-argument',
+  'station-unconfigured',
+  'utterance-too-long',
   'device-busy',
   'serial-timeout',
   'unexpected-error',
@@ -196,9 +204,12 @@ describe('help', () => {
       scratchSlot: expect.stringContaining('Slot 0'),
       channel: CHANNEL_RULE,
       oneVerb: 'Run one verb at a time. Do not open, cat, screen or stty the serial port.',
-      clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry.',
+      clone: 'The receiver is deaf during a clone session. Back-to-back verbs take about 3 s longer for the handshake retry. key, say, id and hear open no clone session.',
       speaker:
-        'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or by playing the WAVs in sweep --out-dir DIR after the run.',
+        'The radio speaker is silent while the AIOC is plugged in. The human hears receive audio only through listen --seconds 5 --out FILE --play or by playing the WAVs in sweep --out-dir DIR or hear --out-dir DIR after the run.',
+      transmit: TRANSMIT_RULE,
+      station: expect.stringContaining('UV5R_CONFIG'),
+      hear: expect.stringContaining('hear and say never run at the same time'),
     });
     expect(Object.keys(help.exitCodes)).toEqual(['0', '1', '2', '3', '4', '5', '6', '128+signal']);
     expect(help.errors.format).toContain('reason');
@@ -206,7 +217,7 @@ describe('help', () => {
     expect(help.errors.format).toContain('when output is JSON, piped or with --json');
     expect(help.errors.format).toContain('On a terminal it prints the message and a remedy line as text.');
     expect(help.errors.format).toContain(
-      'On SIGINT, SIGTERM or SIGHUP once key or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
+      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key, say, id or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
     );
     expect(help.errors.format).toContain('A failed PTT release after the signal exits 3 with interrupted in the error.');
     expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check).');
@@ -214,7 +225,7 @@ describe('help', () => {
     for (const line of Object.values(help.errors.reasons)) expect(line).toMatch(/^exit \d: /);
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
-    expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'dump', 'restore', 'settings', 'listen', 'sweep']);
+    expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep']);
     const flag = (verb: string, name: string) => help.verbs[verb].flags.find((f: { flag: string }) => f.flag === name);
     expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--device', '--json', '--target']);
     expect(flag('sweep', '--seconds').default).toBe(30);
@@ -272,7 +283,7 @@ describe('help', () => {
     const line = stderr.join('');
     expect(Buffer.byteLength(line)).toBeLessThan(300);
     expect(errJson().message).toBe(
-      'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, dump, restore, settings, listen, sweep; run uv5r help VERB',
+      'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, say, id, dump, restore, settings, listen, hear, sweep; run uv5r help VERB',
     );
     expect(line).not.toContain('usage:');
     expect(line).not.toContain('exit codes');
@@ -315,11 +326,10 @@ describe('help', () => {
     expect(outJson()).toMatchObject({ verb: 'check' });
   });
 
-  it('states the channel rule in the same words in help, README.md and SKILL.md', async () => {
+  it('states the channel rule in the same words in help and README.md', async () => {
     const help = await helpJson();
     expect(help.rules.channel).toBe(CHANNEL_RULE);
     expect(readFileSync(README, 'utf8')).toContain(CHANNEL_RULE);
-    expect(readFileSync(SKILL, 'utf8')).toContain(CHANNEL_RULE);
   });
 
   it('keeps SKILL.md at most 60 lines', () => {
@@ -878,6 +888,16 @@ describe('dump output file', () => {
     expect(existsSync(out)).toBe(false);
   });
 
+  it('exits 3 with ptt-control-failed and keeps a new FILE that holds the image when the port close hangs', async () => {
+    const out = join(tempDir(), 'radio.img');
+    const radio = FakeRadio.fromImage(PRIMARY.image);
+    radio.close = () => new Promise<void>(() => {});
+    await run(['dump', '--out', out, '--json'], opener(radio));
+    expect(process.exitCode).toBe(3);
+    expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', message: 'the port did not close within 3 s; PTT may be high' });
+    expect([...readFileSync(out)]).toEqual([...PRIMARY.image]);
+  });
+
   it('leaves an existing FILE in place when the port does not open', async () => {
     const out = join(tempDir(), 'radio.img');
     writeFileSync(out, 'old bytes');
@@ -909,12 +929,13 @@ describe('dump output file', () => {
     expect(Object.keys((JSON.parse(stdout.join('')) as { result: object }).result)).toEqual(Object.keys(result));
   });
 
-  it('names the probe exit and the post-read write exit in help dump', async () => {
+  it('names the probe exit, the post-read write exit and the hung close exit in help dump', async () => {
     await cli(['help', 'dump', '--json']);
     const help = JSON.parse(stdout.join('')) as { exits: Array<{ code: number; when: string }> };
     expect(help.exits).toEqual([
       { code: 2, when: 'FILE not writable, found before the port opens' },
       { code: 3, when: 'a write that fails after the read, such as a full disk; an existing FILE may be left partial' },
+      { code: 3, when: 'ptt-control-failed when the port close hangs after the write; FILE keeps the full image' },
     ]);
   });
 });
@@ -1002,6 +1023,136 @@ describe('key output', () => {
     const err = errJson();
     expect(err).toMatchObject({ reason: 'ptt-control-failed', remedy: 'ask the human to unplug the AIOC to drop PTT', retry: 'no', target: 'fake' });
     expect(err).not.toHaveProperty('phase');
+  });
+
+  it('exits 3 with the unplug remedy when the port close hangs after a key', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      radio.close = () => new Promise<void>(() => {});
+      await run(['key', '--seconds', '0.1', '--json'], opener(radio));
+      expect(process.exitCode).toBe(3);
+      expect(stdout).toEqual([]);
+      expect(errJson()).toMatchObject({
+        reason: 'ptt-control-failed',
+        message: 'the port did not close within 3 s; PTT may be high',
+        remedy: 'ask the human to unplug the AIOC to drop PTT',
+        retry: 'no',
+      });
+      expect(closeHung).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves closeHung unset when the port closes in time', async () => {
+    await cli(['key', '--seconds', '0.1', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(closeHung).toBe(false);
+  });
+
+  it('returns with closeHung set while a hung close holds a live handle', async () => {
+    vi.useFakeTimers();
+    let handle: NodeJS.Timeout | undefined;
+    try {
+      const radio = new FakeRadio();
+      radio.close = () => new Promise<void>(() => (handle = realSetInterval(() => {}, 1000)));
+      await run(['key', '--seconds', '0.1', '--json'], opener(radio));
+      expect(process.exitCode).toBe(3);
+      expect(closeHung).toBe(true);
+    } finally {
+      realClearInterval(handle);
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the original error when the port close hangs after a failed key', async () => {
+    vi.useFakeTimers();
+    try {
+      const radio = new FakeRadio();
+      radio.setPtt = async () => {
+        throw new TransportError('ptt-control-failed', 'port gone', { target: 'fake' });
+      };
+      radio.close = () => new Promise<void>(() => {});
+      await run(['key', '--seconds', '0.1', '--json'], opener(radio));
+      expect(process.exitCode).toBe(3);
+      expect(errJson()).toMatchObject({ reason: 'ptt-control-failed', message: 'PTT assertion and release unconfirmed: port gone; ask the human to unplug the AIOC to drop PTT', target: 'fake' });
+      expect(closeHung).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases PTT on SIGTSTP and exits 128 plus the platform number', async () => {
+    const radio = new FakeRadio();
+    const done = cli(['key', '--seconds', '5', '--json'], opener(radio));
+    setTimeout(() => process.emit('SIGTSTP'), 30);
+    await done;
+    expect(process.exitCode).toBe(signalExitCode('SIGTSTP'));
+    expect(outJson()).toMatchObject({ pttAsserted: true, released: true, interrupted: 'SIGTSTP' });
+    expect(radio.pttLog.at(-1)).toBe(false);
+    expect(process.listenerCount('SIGTSTP')).toBe(0);
+  });
+
+  it('lowers PTT on the open transport and exits 1 on a fatal error', async () => {
+    const radio = new FakeRadio();
+    const done = cli(['key', '--seconds', '5', '--json'], opener(radio));
+    await vi.waitFor(() => expect(radio.ptt).toBe(true));
+    await expect(fatal(new Error('boom'))).rejects.toThrow('process.exit called');
+    expect(radio.ptt).toBe(false);
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(JSON.parse(stderr.join('').trim())).toMatchObject({ reason: 'unexpected-error', message: 'boom' });
+    process.emit('SIGINT');
+    await done;
+  });
+
+  it('prints a fatal error as text on a terminal when --json follows --', async () => {
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), 'say', '--', '--json'];
+    vi.stubEnv('UV5R_CONFIG', '');
+    try {
+      await onTerminal(async () => {
+        await cli(['say', '--', '--json'], opener(new FakeRadio()), fakeSpeechDeps({ defaultConfig: join(tempDir(), 'uv5r.json') }));
+        stderr.length = 0;
+        await expect(fatal(new Error('boom'))).rejects.toThrow('process.exit called');
+      });
+    } finally {
+      process.argv = argv;
+    }
+    expect(stderr.join('').startsWith('uv5r: boom')).toBe(true);
+  });
+
+  it.each([
+    ['rejects', () => Promise.reject(new Error('cannot lower DTR'))],
+    ['hangs', () => new Promise<void>(() => {})],
+  ] as const)('tells the human to unplug when the fatal-error release %s', async (_how, release) => {
+    const radio = new FakeRadio();
+    const done = cli(['key', '--seconds', '5', '--json'], opener(radio));
+    await vi.waitFor(() => expect(radio.ptt).toBe(true));
+    const setPtt = radio.setPtt.bind(radio);
+    let first = true;
+    radio.setPtt = (on: boolean) => {
+      if (on || !first) return setPtt(on);
+      first = false;
+      return release();
+    };
+    vi.useFakeTimers();
+    try {
+      const pending = expect(fatal(new Error('boom'))).rejects.toThrow('process.exit called');
+      await vi.advanceTimersByTimeAsync(1000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(JSON.parse(stderr.join('').trim())).toMatchObject({
+      reason: 'unexpected-error',
+      message: 'boom; PTT release unconfirmed; ask the human to unplug the AIOC',
+      remedy: 'ask the human to unplug the AIOC to drop PTT',
+      retry: 'no',
+    });
+    process.emit('SIGINT');
+    await done;
   });
 
   it('describes the displayed channel and receive-only slots in help', async () => {

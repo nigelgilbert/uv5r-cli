@@ -20,6 +20,8 @@ const REASON_ENUM = [
   'audio-process-failed',
   'capture-incomplete',
   'file-write-failed',
+  'speech-engine-failed',
+  'audio-device-unavailable',
   'session-unavailable',
   'protocol-reply-invalid',
   'radio-unsupported',
@@ -28,14 +30,17 @@ const REASON_ENUM = [
   'image-incompatible',
   'audio-inactive',
   'squelch-open',
+  'channel-busy',
   'invalid-argument',
+  'station-unconfigured',
+  'utterance-too-long',
   'device-busy',
   'serial-timeout',
   'unexpected-error',
 ];
 
 describe('error reasons', () => {
-  it('lists the nineteen reasons of the enum, each with a kind, a meaning, a remedy and a retry value', () => {
+  it('lists the twenty-four reasons of the enum, each with a kind, a meaning, a remedy and a retry value', () => {
     expect(Object.keys(REASONS)).toEqual(REASON_ENUM);
     for (const doc of Object.values(REASONS)) {
       expect(doc.means.length).toBeGreaterThan(0);
@@ -56,6 +61,29 @@ describe('error reasons', () => {
     expect(body).toMatchObject({ reason, message: err.message, remedy: REASONS[reason].remedy, retry: REASONS[reason].retry });
     expect(REASON_ENUM).toContain(body.reason);
     expect(body).not.toHaveProperty('kind');
+  });
+
+  it('gives a UsageError invalid-argument by default and the reason it is passed', () => {
+    expect(new UsageError('bad flag').reason).toBe('invalid-argument');
+    const err = new UsageError('no callsign in uv5r.json', { file: 'uv5r.json' }, {}, 'station-unconfigured');
+    expect(err.kind).toBe('usage');
+    expect(err.toJSON()).toMatchObject({ reason: 'station-unconfigured', retry: 'no', remedy: REASONS['station-unconfigured'].remedy, file: 'uv5r.json' });
+  });
+
+  it('names say and whisper-cli under dependency-missing and speech-engine-failed', () => {
+    expect(REASONS['dependency-missing'].means).toContain('whisper-cli');
+    expect(REASONS['dependency-missing'].means).toContain('model file');
+    expect(REASONS['speech-engine-failed'].means).toContain('whisper-cli');
+  });
+
+  it.each([
+    ['station-unconfigured', 'usage', 'no'],
+    ['utterance-too-long', 'usage', 'after-remedy'],
+    ['speech-engine-failed', 'transport', 'after-remedy'],
+    ['audio-device-unavailable', 'transport', 'after-remedy'],
+    ['channel-busy', 'device-state', 'after-remedy'],
+  ] as const)('maps %s to kind %s with retry %s', (reason, kind, retry) => {
+    expect(REASONS[reason]).toMatchObject({ kind, retry });
   });
 
   it('takes a remedy and retry value for one site and keeps the detail fields', () => {

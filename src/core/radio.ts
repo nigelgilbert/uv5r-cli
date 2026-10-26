@@ -20,7 +20,7 @@ import {
   type SettingName,
   type Settings,
 } from './codec.ts';
-import { BaofengError, DeviceStateError, TransportError, type Guidance } from './errors.ts';
+import { BaofengError, DeviceStateError, TransportError, withDetail, type Guidance } from './errors.ts';
 import { DEFAULT_MAGIC_ENTRY, FOREIGN_MAGICS, PROGRAM_MAGICS, SCAN_ORDER, findMagic, type Family, type IdentFlags, type Magic, type MagicName } from './ident.ts';
 import { ACK, SETTLE_MS, Session, attempt, hex, radioUnsupported, settle, sleep, type AttemptOutcome } from './protocol.ts';
 import type { Transport } from './transport.ts';
@@ -544,7 +544,15 @@ export async function verifyRestoredRanges(s: Session, image: Uint8Array): Promi
 }
 
 /** Signals that end a key early. */
-export const KEY_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+export const KEY_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGTSTP'];
+
+/** Milliseconds keyWhile waits for the body after it drops PTT on a signal or at maxMs. */
+export const STOP_GRACE_MS = 2000;
+/** Milliseconds holdPtt adds to its hold for the keyWhile watchdog. */
+const HOLD_WATCHDOG_SLACK_MS = 5000;
+/** Milliseconds keyWhile waits for the port to confirm each PTT change. */
+export const PTT_CONTROL_TIMEOUT_MS = 3000;
+const UNPLUG = 'ask the human to unplug the AIOC to drop PTT';
 
 export interface HoldResult {
   /** True after setPtt(true) succeeded. */
@@ -554,22 +562,81 @@ export interface HoldResult {
   /** True after setPtt(false) succeeded. */
   released: true;
   interrupted?: NodeJS.Signals;
+  /** True when keyWhile dropped PTT at maxMs before the body settled. */
+  timedOut?: true;
 }
 
-/** Message for a failed key, from what the port confirmed. */
-function keyFailureMessage(pttAsserted: boolean, released: boolean, cause: string): string {
-  if (released) return `PTT assertion unconfirmed: ${cause}; PTT released`;
-  const unplug = 'ask the human to unplug the AIOC to drop PTT';
-  if (pttAsserted) return `PTT rose and the release is unconfirmed: ${cause}; ${unplug}`;
-  return `PTT assertion and release unconfirmed: ${cause}; ${unplug}`;
+/** Limits on one keyWhile transmission. */
+export interface KeyOptions {
+  /** Milliseconds after the assertion at which keyWhile drops PTT and stops the body. */
+  maxMs: number;
+}
+
+/** Message for a failed key, from what the port confirmed and whether a timed-out assertion may still land. */
+function keyFailureMessage(pttAsserted: boolean, released: boolean, lateAssert: boolean, cause: string): string {
+  if (pttAsserted && !released) return `PTT rose and the release is unconfirmed: ${cause}; ${UNPLUG}`;
+  if (!released) return `PTT assertion and release unconfirmed: ${cause}; ${UNPLUG}`;
+  if (lateAssert) return `PTT assertion unconfirmed: ${cause}; ${UNPLUG}`;
+  return `PTT assertion unconfirmed: ${cause}; PTT released`;
+}
+
+/** Return the message of `err`, or `err` as a string. */
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
- * Assert PTT for `seconds`, stop early when `signals` emits SIGINT, SIGTERM or SIGHUP, and
- * release PTT in both cases. A failure in any step throws a TransportError whose message
- * and remedy say what the port confirmed.
+ * Set PTT on `t` and reject when the port gives no confirmation within PTT_CONTROL_TIMEOUT_MS.
+ * The timeout error carries detail `timedOut: true`. After a timed-out assertion, a late
+ * completion drops PTT again.
  */
-export async function holdPtt(t: Transport, seconds: number, signals: EventEmitter = process): Promise<HoldResult> {
+async function setPttWithin(t: Transport, on: boolean): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new TransportError('ptt-control-failed', `the port did not confirm PTT ${on ? 'high' : 'low'} within ${PTT_CONTROL_TIMEOUT_MS / 1000} s`, { timedOut: true })),
+      PTT_CONTROL_TIMEOUT_MS,
+    );
+  });
+  const set = t.setPtt(on);
+  // Attach a handler so a rejection after the timeout stays handled.
+  set.catch(() => {});
+  try {
+    await Promise.race([set, late]);
+  } catch (err) {
+    // Lower PTT when a timed-out assertion completes late.
+    if (on && err instanceof BaofengError && err.detail.timedOut === true) void set.then(() => t.setPtt(false), () => {}).catch(() => {});
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Resolve after `ms`, or as soon as `stop` resolves, and leave no timer pending. */
+export function wait(ms: number, stop: Promise<void>): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    void stop.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+/**
+ * Assert PTT on `t`, run `body(stop)` and release PTT when the body settles, when `signals`
+ * emits one of KEY_SIGNALS, or when `options.maxMs` passes after the assertion. On a signal
+ * or at maxMs, drop PTT first, then resolve `stop` and wait up to STOP_GRACE_MS for the body.
+ * A signal that arrives while PTT rises skips the body and releases at once. A body rejection
+ * after a signal or maxMs counts as the stop and fails nothing.
+ *
+ * The first failure wins. A PTT failure throws ptt-control-failed with what the port
+ * confirmed. Each PTT change gets PTT_CONTROL_TIMEOUT_MS; a late assertion counts as a failed
+ * one and keyWhile still releases. A body failure keeps its own reason and gains `seconds`
+ * and any `interrupted`. When the release fails or the assertion timed out, the message and
+ * remedy tell the human to unplug the AIOC.
+ */
+export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Promise<unknown>, options: KeyOptions, signals: EventEmitter = process): Promise<HoldResult> {
   let interrupted: NodeJS.Signals | undefined;
   let wake = () => {};
   const handlers = KEY_SIGNALS.map((signal) => {
@@ -581,51 +648,102 @@ export async function holdPtt(t: Transport, seconds: number, signals: EventEmitt
     signals.on(signal, handler);
     return [signal, handler] as const;
   });
+  let resolveStop = () => {};
+  const stop = new Promise<void>((resolve) => (resolveStop = resolve));
   let pttAsserted = false;
   let released = false;
-  let failure: unknown;
+  let failure: { err: unknown; fromBody: boolean } | undefined;
+  let releaseCause = '';
+  let lateAssert = false;
+  let stopped = false;
+  let timedOut = false;
+  let running: Promise<void> | undefined;
   let heldMs = 0;
-  let timer: NodeJS.Timeout | undefined;
+  let watchdog: NodeJS.Timeout | undefined;
   try {
     try {
-      await t.setPtt(true);
+      await setPttWithin(t, true);
       pttAsserted = true;
       const assertedAt = performance.now();
       if (!interrupted) {
         await new Promise<void>((resolve) => {
-          wake = resolve;
-          timer = setTimeout(resolve, seconds * 1000);
+          let settled = false;
+          const end = (byStop: boolean) => {
+            if (settled) return;
+            settled = true;
+            stopped = byStop;
+            resolve();
+          };
+          wake = () => end(true);
+          watchdog = setTimeout(() => {
+            if (!settled) timedOut = true;
+            end(true);
+          }, options.maxMs);
+          running = new Promise<unknown>((r) => r(body(stop))).then(
+            () => end(false),
+            (err: unknown) => {
+              if (!settled) failure = { err, fromBody: true };
+              end(false);
+            },
+          );
         });
       }
       heldMs = performance.now() - assertedAt;
     } catch (err) {
-      failure = err;
+      failure = { err, fromBody: false };
+      lateAssert = err instanceof BaofengError && err.detail.timedOut === true;
     }
-    clearTimeout(timer);
+    clearTimeout(watchdog);
     try {
-      await t.setPtt(false);
+      await setPttWithin(t, false);
       released = true;
     } catch (err) {
-      if (failure === undefined) failure = err;
+      releaseCause = messageOf(err);
+      failure ??= { err, fromBody: false };
+    }
+    resolveStop();
+    if (stopped && running) {
+      let grace: NodeJS.Timeout | undefined;
+      await Promise.race([running, new Promise<void>((resolve) => (grace = setTimeout(resolve, STOP_GRACE_MS)))]);
+      clearTimeout(grace);
     }
   } finally {
     for (const [signal, handler] of handlers) signals.off(signal, handler);
   }
   const held = Math.round(heldMs / 100) / 10;
-  if (failure !== undefined) {
-    const cause = failure instanceof Error ? failure.message : String(failure);
-    const base = failure instanceof BaofengError ? failure.detail : {};
+  if (failure?.fromBody) {
+    const err = withDetail(failure.err, { seconds: held, ...(interrupted ? { interrupted } : {}) });
+    if (!released) {
+      err.message = `${err.message}; PTT release unconfirmed: ${releaseCause}; ${UNPLUG}`;
+      err.attach({}, { remedy: UNPLUG, retry: 'no' });
+    }
+    throw err;
+  }
+  if (failure) {
+    const { timedOut: _, ...base } = failure.err instanceof BaofengError ? failure.err.detail : {};
     throw new TransportError(
       'ptt-control-failed',
-      keyFailureMessage(pttAsserted, released, cause),
+      keyFailureMessage(pttAsserted, released, lateAssert, messageOf(failure.err)),
       {
         ...base,
         ...(pttAsserted ? { seconds: held } : {}),
         ...(interrupted ? { interrupted } : {}),
       },
-      { remedy: released ? 'report the error and ask the human to check the AIOC cable before keying again' : 'ask the human to unplug the AIOC to drop PTT', retry: 'no' },
+      { remedy: released && !lateAssert ? 'report the error and ask the human to check the AIOC cable before keying again' : UNPLUG, retry: 'no' },
     );
   }
   const result: HoldResult = { pttAsserted: true, seconds: held, released: true };
-  return interrupted ? { ...result, interrupted } : result;
+  if (interrupted) result.interrupted = interrupted;
+  if (timedOut) result.timedOut = true;
+  return result;
+}
+
+/**
+ * Assert PTT for `seconds` through keyWhile, stop early when `signals` emits one of
+ * KEY_SIGNALS, and release PTT in both cases. A failure in any step throws a TransportError
+ * whose message and remedy say what the port confirmed.
+ */
+export function holdPtt(t: Transport, seconds: number, signals: EventEmitter = process): Promise<HoldResult> {
+  const ms = seconds * 1000;
+  return keyWhile(t, (stop) => wait(ms, stop), { maxMs: ms + HOLD_WATCHDOG_SLACK_MS }, signals);
 }

@@ -40,6 +40,8 @@ export interface VerbDoc {
   writesToRadio: { writes: boolean; note: string };
   /** Example of the JSON result on stdout. */
   result: unknown;
+  /** Example NDJSON lines on stdout, for a verb that streams one object per line. */
+  lines?: unknown[];
   /** Notes that add to the global exit table; empty when the table covers the verb. */
   exits: ExitCase[];
   /** Extra name-to-text table, as the settings fields. */
@@ -82,6 +84,7 @@ export function verbJson(name: string, doc: VerbDoc): Record<string, unknown> {
     preconditions: doc.preconditions,
     writesToRadio: doc.writesToRadio,
     result: doc.result,
+    ...(doc.lines ? { lines: doc.lines } : {}),
     exits: doc.exits,
     exitsNote: EXITS_NOTE,
     ...(doc.fields ? { fields: doc.fields } : {}),
@@ -119,6 +122,7 @@ export function verbText(name: string, doc: VerbDoc): string {
     '',
     'result:',
     `  ${JSON.stringify(doc.result)}`,
+    ...(doc.lines ? ['', 'lines:', ...doc.lines.map((line) => `  ${JSON.stringify(line)}`)] : []),
     ...(doc.exits.length ? ['', 'exit codes beyond uv5r help:', ...doc.exits.map((e) => `  ${String(e.code).padEnd(codeWidth)}  ${e.when}`)] : []),
   ].join('\n');
 }
