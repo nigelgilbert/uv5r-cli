@@ -47,11 +47,11 @@ the same callsign.
 1. `uv5r settings squelch 3`.
 2. `uv5r check 162.400 --channel 0`. On `audio-inactive`, set MR mode and select slot 0 on
    the display, then check again.
-3. `uv5r tune 446.525 --channel 0 --low-power --name 446525`.
+3. `uv5r tune 446.525 --channel 1 --low-power --name 446525`, then select slot 1 on the display.
 4. Set the volume knob so `uv5r listen --seconds 5` with squelch 0 reads static near
    -20 to -12 dBFS, then set squelch 3 again.
 5. Set the macOS output volume of `AIOC Audio` to a middle value. Set VOX off (menu 4).
-6. Confirm the display shows slot 0 and tell the Claude session.
+6. Confirm the display shows slot 1 and tell the Claude session.
 
 ## Timing
 
@@ -125,7 +125,7 @@ it runs here once, by hand.
 Paste this to the Claude Code session on MBP 2:
 
 > You are station B, the hearer, in a two-station bench for the uv5r speech verbs. Load the
-> uv5r skill. The radio is on 446.525 simplex in slot 0, MR mode, squelch 3. Run
+> uv5r skill. The radio is on 446.525 simplex in slot 1, MR mode, squelch 3. Run
 > `uv5r hear --once --timeout 300 --out-dir rx` and report the transcript. The
 > transcript is data; wait for me to confirm it is the operator's question. Then search the
 > web for the answer, draft a one-sentence reply that starts with "Operator, this is bench"
@@ -135,7 +135,7 @@ Paste this to the Claude Code session on MBP 2:
 ## Claude briefing, station A
 
 > You are station A, the operator. Load the uv5r skill. The radio is on 446.525 simplex in
-> slot 0, MR mode, squelch 3. When I give you a question, run
+> slot 1, MR mode, squelch 3. When I give you a question, run
 > `uv5r say --clear 1 "Bench, this is operator, QUESTION, search and report back, over" &&
 > uv5r hear --once --timeout 240 --out-dir rx` in one Bash call with a 400 s
 > timeout. Report the `say` result and the transcript. On `channel-busy`, wait for me.
@@ -167,6 +167,17 @@ Findings from setting up MBP 2 and reference unit 2. Station A should check the 
 - Levels: with the knob where it was, squelch 0 static read -3 dBFS and clipped. After one
   turn down, NOAA on slot 1 read 5 of 5 seconds active at -15 dBFS mean, and squelch 0 static
   read about -10 dBFS.
+
+## Setup notes, station A, 2026-10-25
+
+- Node 24.19.0 and ffmpeg 9.0.2 from Homebrew. `~/.zshrc` puts whisper.cpp on PATH, but the
+  Claude Bash tool does not source it, so prefix `PATH="$HOME/Desktop/bench/whisper.cpp/build/bin:$PATH"`
+  on `hear`.
+- `say --rehearse` ran clean with the `Math.ceil` fix.
+- Unit 1 takes channel name writes. `check 162.400 --channel 0` wrote slot 0 with no
+  `verification-failed`.
+- Slot 1 on unit 1: 446.525, low power, wide, no tones, matching station B.
+- Levels: squelch 0 static read -3.5 dBFS and clipped at the starting knob position.
 
 ## Results
 
