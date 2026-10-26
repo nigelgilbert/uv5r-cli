@@ -1,5 +1,5 @@
-import { type ChildProcess, spawn } from 'node:child_process';
-import { KILL_GRACE_MS, exitHow, ffmpegMissing, stderrTail, type ExecError } from '../cli/audio.ts';
+import type { ChildProcess } from 'node:child_process';
+import { KILL_GRACE_MS, execDetached, exitHow, ffmpegMissing, stderrTail } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
 
 /** Milliseconds the device listing gets. */
@@ -7,49 +7,6 @@ const LIST_TIMEOUT_MS = 10_000;
 
 /** UID suffix of the AIOC output device; its input ends in `:2`. */
 const OUTPUT_UID_SUFFIX = ':1';
-
-/** Bytes of stderr a detached run keeps. */
-const STDERR_KEEP = 1024 * 1024;
-
-/**
- * Run `file` with `args` in its own process group and call `callback` once it exits, as
- * execFile calls its callback: a null error on exit 0, else an ExecError with the exit code
- * or signal, `killed` set after a timeout, or the spawn error itself. A terminal Ctrl-C or
- * Ctrl-Z then reaches only uv5r. `timeoutMs` 0 sets no timeout. Return the child so the
- * caller can kill it.
- */
-export function execDetached(file: string, args: string[], timeoutMs: number, callback: (err: ExecError | null, stderr: string) => void): ChildProcess {
-  const child = spawn(file, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
-  let stderr = '';
-  let timedOut = false;
-  let failed: ExecError | undefined;
-  let done = false;
-  const timer =
-    timeoutMs > 0
-      ? setTimeout(() => {
-          timedOut = true;
-          child.kill('SIGTERM');
-        }, timeoutMs)
-      : undefined;
-  const finish = (code: number | null, signal: NodeJS.Signals | null) => {
-    if (done) return;
-    done = true;
-    clearTimeout(timer);
-    if (failed) callback(failed, stderr);
-    else if (code === 0) callback(null, stderr);
-    else callback(Object.assign(new Error(`${file} exited`), { code: code as unknown as string, signal, killed: timedOut }), stderr);
-  };
-  child.stderr?.on('data', (chunk: Buffer) => {
-    stderr = (stderr + chunk.toString()).slice(-STDERR_KEEP);
-  });
-  child.on('error', (e: ExecError) => {
-    failed = e;
-    // A child that never spawned emits no close.
-    if (child.pid === undefined) finish(null, null);
-  });
-  child.on('close', finish);
-  return child;
-}
 
 /** One CoreAudio device as the audiotoolbox listing prints it. */
 export interface OutputDevice {

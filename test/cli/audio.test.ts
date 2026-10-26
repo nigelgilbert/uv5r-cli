@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }));
-vi.mock('node:child_process', () => ({ execFile }));
+const { execFile, spawn } = vi.hoisted(() => ({ execFile: vi.fn(), spawn: vi.fn() }));
+vi.mock('node:child_process', () => ({ execFile, spawn }));
 
 import { CLIP_WARNING, KILL_GRACE_MS, astatsFilter, captureSeconds, checkFfmpeg, ffmpegArgs, listen, parseAstats, play, runFfmpeg, summarize, wholeSeconds } from '../../src/cli/audio.ts';
+import { fakeChild, spawnThen } from '../speech/fakes.ts';
+
+const ENOENT = Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' });
 
 /** Pre-high-pass astats fields for one frame: sample min and max on the float scale, and the count of samples at either. */
 interface Raw {
@@ -40,6 +43,11 @@ function clipped(seconds: number, peakCount: number): string {
 
 /** A loud capture-start burst in frame 0, then three seconds of receive audio. */
 const STDERR = [frame(0, '-3', '-1'), frame(1, '-48.965978', '-47.141749'), frame(2, '-30', '-20.5'), frame(3, '-inf', '-inf')].join('\n');
+
+/** Make the mocked spawn exit with `code` and `stderr` on the next tick. */
+function captureReturns(code: number | null, stderr: string) {
+  spawn.mockImplementation(spawnThen((c) => c.exit(code, { stderr })));
+}
 
 /** Make the mocked execFile call back with the given error and stderr. */
 function ffmpegReturns(err: Partial<NodeJS.ErrnoException & { killed: boolean; signal: string | null }> | null, stderr: string) {
@@ -175,51 +183,65 @@ describe('summarize clipping', () => {
 describe('listen', () => {
   beforeEach(() => {
     execFile.mockReset();
+    spawn.mockReset();
   });
 
   it('reports a missing ffmpeg', async () => {
-    ffmpegReturns({ code: 'ENOENT' }, '');
+    spawn.mockImplementation(spawnThen((c) => c.fail(ENOENT)));
     await expect(listen('AIOC Audio', 2)).rejects.toMatchObject({ kind: 'transport', reason: 'dependency-missing', message: expect.stringMatching(/ffmpeg not found on PATH/) });
   });
   it('rejects a killed run even when astats output already arrived', async () => {
-    const stderr = [STDERR, 'Input #0, avfoundation, from \':AIOC Audio\':', 'Exiting normally, received signal 15.'].join('\n');
-    ffmpegReturns({ killed: true, signal: 'SIGTERM', code: undefined }, stderr);
-    const err = await listen('AIOC Audio', 3).catch((e) => e);
-    expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { signal: 'SIGTERM' } });
-    expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio": /);
-    expect(err.message).toContain('Number_of_samples=48000.000000 | Input #0, avfoundation');
-    expect(err.message).toMatch(/received signal 15\.$/);
+    vi.useFakeTimers();
+    try {
+      const child = fakeChild();
+      spawn.mockReturnValue(child);
+      const pending = listen('AIOC Audio', 3).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(21000);
+      expect(child.kills).toEqual(['SIGTERM']);
+      child.exit(null, { signal: 'SIGTERM', stderr: [STDERR, 'Input #0, avfoundation, from \':AIOC Audio\':', 'Exiting normally, received signal 15.'].join('\n') });
+      const err = await pending;
+      expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { signal: 'SIGTERM' } });
+      expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio": /);
+      expect(err.message).toContain('Number_of_samples=48000.000000 | Input #0, avfoundation');
+      expect(err.message).toMatch(/received signal 15\.$/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('rejects a non-zero exit with the stderr tail', async () => {
-    ffmpegReturns({ code: 1 as unknown as string }, `${frame(0, '-40', '-35')}\n[AVFoundation indev @ 0x2] Error opening input\n:AIOC Audio: Input/output error`);
+    captureReturns(1, `${frame(0, '-40', '-35')}\n[AVFoundation indev @ 0x2] Error opening input\n:AIOC Audio: Input/output error`);
     await expect(listen('AIOC Audio', 1)).rejects.toThrow(/^ffmpeg exited with code 1 capturing from "AIOC Audio": .*Error opening input \| :AIOC Audio: Input\/output error$/);
   });
   it('rejects a clean exit with fewer whole seconds than requested plus the dropped first second', async () => {
-    ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-40', '-35'), frame(2, '-40', '-35'), frame(3, '-40', '-35', 12000)].join('\n'));
+    captureReturns(0, [frame(0, '-40', '-35'), frame(1, '-40', '-35'), frame(2, '-40', '-35'), frame(3, '-40', '-35', 12000)].join('\n'));
     const err = await listen('AIOC Audio', 3).catch((e) => e);
     expect(err).toMatchObject({ kind: 'transport', reason: 'capture-incomplete', retry: 'once', detail: { captured: 3, requested: 4 } });
     expect(err.message).toMatch(/^ffmpeg captured 3 of 4 seconds from "AIOC Audio": /);
   });
   it('rejects an empty capture with the stderr tail', async () => {
-    ffmpegReturns(null, 'Stream mapping:\n  Stream #0:0 -> #0:0 (pcm_f32le (native) -> pcm_s16le (native))\nPress [q] to stop');
+    captureReturns(0, 'Stream mapping:\n  Stream #0:0 -> #0:0 (pcm_f32le (native) -> pcm_s16le (native))\nPress [q] to stop');
     await expect(listen('AIOC Audio', 2)).rejects.toThrow(/^ffmpeg captured 0 of 3 seconds from "AIOC Audio": Stream mapping: \| .* \| Press \[q\] to stop$/);
   });
   it('summarizes a successful run and drops the frames past the window', async () => {
-    ffmpegReturns(null, [STDERR, frame(4, '-1', '-0.1')].join('\n'));
+    captureReturns(0, [STDERR, frame(4, '-1', '-0.1')].join('\n'));
     const r = await listen('AIOC Audio', 3);
     expect(r).toMatchObject({ rmsDbfs: [-48.97, -30, null], zeroSeconds: 1, peakDbfs: -20.5, active: [true, true, false], activeSeconds: 2, warnings: [] });
-    const [file, args, opts] = execFile.mock.calls[0]!;
+    const [file, args] = spawn.mock.calls[0]!;
     expect(file).toBe('ffmpeg');
     expect(args).toEqual(ffmpegArgs('AIOC Audio', 3));
-    expect(opts).toMatchObject({ timeout: 21000 });
+  });
+  it('runs the capture ffmpeg in its own process group', async () => {
+    captureReturns(0, STDERR);
+    await listen('AIOC Audio', 3);
+    expect(spawn.mock.calls[0]![2]).toMatchObject({ detached: true });
   });
   it('accepts exactly the requested whole seconds plus one and drops a trailing partial frame', async () => {
-    ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-30', '-25'), frame(2, '-45', '-40'), frame(3, '-3', '-0.5', 20000)].join('\n'));
+    captureReturns(0, [frame(0, '-40', '-35'), frame(1, '-30', '-25'), frame(2, '-45', '-40'), frame(3, '-3', '-0.5', 20000)].join('\n'));
     const r = await listen('AIOC Audio', 2);
     expect(r).toMatchObject({ seconds: 2, rmsDbfs: [-30, -45], zeroSeconds: 0, peakDbfs: -25, active: [true, true], activeSeconds: 2 });
   });
   it('passes the floor through to the summary', async () => {
-    ffmpegReturns(null, [frame(0, '-40', '-35'), frame(1, '-45', '-40'), frame(2, '-35', '-30')].join('\n'));
+    captureReturns(0, [frame(0, '-40', '-35'), frame(1, '-45', '-40'), frame(2, '-35', '-30')].join('\n'));
     const r = await listen('AIOC Audio', 2, -40);
     expect(r).toMatchObject({ active: [false, true], activeSeconds: 1 });
   });
@@ -227,120 +249,89 @@ describe('listen', () => {
 
 describe('listen with stop', () => {
   beforeEach(() => {
-    execFile.mockReset();
+    spawn.mockReset();
   });
 
   it('kills ffmpeg when stop resolves and rejects only once ffmpeg exits', async () => {
-    let exit = () => {};
-    const kill = vi.fn();
-    execFile.mockImplementation((_file, _args, _opts, cb) => {
-      exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), '', STDERR);
-      return { kill };
-    });
+    const child = fakeChild();
+    spawn.mockReturnValue(child);
     let stop = () => {};
     const stopped = new Promise<void>((resolve) => (stop = resolve));
     let settled = false;
     const done = listen('AIOC Audio', 3, -50, { stop: stopped }).finally(() => (settled = true));
     stop();
     await new Promise((r) => setTimeout(r, 0));
-    expect(kill).toHaveBeenCalledWith('SIGTERM');
+    expect(child.kills).toEqual(['SIGTERM']);
     expect(settled).toBe(false);
-    exit();
+    child.exit(null, { signal: 'SIGTERM', stderr: STDERR });
     const err = await done.catch((e) => e);
     expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed' });
     expect(err.message).toMatch(/^ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"/);
   });
   it('kills ffmpeg at once when stop resolved before the capture started', async () => {
-    let exit = () => {};
-    const kill = vi.fn();
-    execFile.mockImplementation((_file, _args, _opts, cb) => {
-      exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGTERM' }), '', STDERR);
-      return { kill };
-    });
+    const child = fakeChild();
+    spawn.mockReturnValue(child);
     const done = listen('AIOC Audio', 3, -50, { stop: Promise.resolve() });
     await new Promise((r) => setTimeout(r, 0));
-    expect(kill).toHaveBeenCalledWith('SIGTERM');
-    exit();
+    expect(child.kills).toEqual(['SIGTERM']);
+    child.exit(null, { signal: 'SIGTERM', stderr: STDERR });
     await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringMatching(/^ffmpeg killed after a signal to uv5r/) });
   });
   it('resolves normally when stop lands after ffmpeg exited but before the callback', async () => {
-    let exit = () => {};
-    const kill = vi.fn();
-    const child = { kill, exitCode: null as number | null, signalCode: null };
-    execFile.mockImplementation((_file, _args, _opts, cb) => {
-      exit = () => {
-        child.exitCode = 0;
-        cb(null, '', STDERR);
-      };
-      return child;
-    });
+    const child = Object.assign(fakeChild(), { exitCode: null as number | null });
+    spawn.mockReturnValue(child);
     let stop = () => {};
     const done = listen('AIOC Audio', 3, -50, { stop: new Promise<void>((resolve) => (stop = resolve)) });
     child.exitCode = 0;
     stop();
     await new Promise((r) => setTimeout(r, 0));
-    exit();
-    expect(kill).not.toHaveBeenCalled();
+    child.exit(0, { stderr: STDERR });
+    expect(child.kills).toEqual([]);
     expect((await done).activeSeconds).toBe(2);
   });
   it('leaves a finished capture untouched when a later stop resolves', async () => {
-    let exit = () => {};
-    const kill = vi.fn();
+    const target = fakeChild();
     const reads: PropertyKey[] = [];
     let finished = false;
-    // Keep exitCode null so only the callback flag can tell the handler ffmpeg exited.
-    const child = new Proxy(
-      { kill, exitCode: null, signalCode: null },
-      {
-        get(target, key, receiver) {
-          if (finished) reads.push(key);
-          return Reflect.get(target, key, receiver);
-        },
+    // Keep exitCode unset so only the callback flag can tell the handler ffmpeg exited.
+    const child = new Proxy(target, {
+      get(t, key, receiver) {
+        if (finished) reads.push(key);
+        return Reflect.get(t, key, receiver);
       },
-    );
-    execFile.mockImplementation((_file, _args, _opts, cb) => {
-      exit = () => cb(null, '', STDERR);
-      return child;
     });
+    spawn.mockReturnValue(child);
     let stop = () => {};
     const done = listen('AIOC Audio', 3, -50, { stop: new Promise<void>((resolve) => (stop = resolve)) });
-    exit();
+    target.exit(0, { stderr: STDERR });
     expect((await done).activeSeconds).toBe(2);
     finished = true;
     stop();
     await new Promise((r) => setTimeout(r, 0));
-    expect(kill).not.toHaveBeenCalled();
+    expect(target.kills).toEqual([]);
     expect(reads).toEqual([]);
   });
   it('sends SIGKILL when ffmpeg ignores SIGTERM for the grace period', async () => {
     vi.useFakeTimers();
     try {
-      let exit = () => {};
-      const kill = vi.fn();
-      execFile.mockImplementation((_file, _args, _opts, cb) => {
-        exit = () => cb(Object.assign(new Error('killed'), { killed: true, signal: 'SIGKILL' }), '', STDERR);
-        return { kill, exitCode: null, signalCode: null };
-      });
+      const child = fakeChild();
+      spawn.mockReturnValue(child);
       const done = listen('AIOC Audio', 3, -50, { stop: Promise.resolve() });
       await vi.advanceTimersByTimeAsync(0);
-      expect(kill).toHaveBeenCalledTimes(1);
+      expect(child.kills).toEqual(['SIGTERM']);
       await vi.advanceTimersByTimeAsync(KILL_GRACE_MS);
-      expect(kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
-      exit();
+      expect(child.kills).toEqual(['SIGTERM', 'SIGKILL']);
+      child.exit(null, { signal: 'SIGKILL', stderr: STDERR });
       await expect(done).rejects.toMatchObject({ reason: 'audio-process-failed', message: expect.stringMatching(/^ffmpeg killed after a signal to uv5r/) });
     } finally {
       vi.useRealTimers();
     }
   });
   it('leaves ffmpeg running while stop stays pending', async () => {
-    const kill = vi.fn();
-    execFile.mockImplementation((_file, _args, _opts, cb) => {
-      setTimeout(() => cb(null, '', STDERR), 0);
-      return { kill };
-    });
+    captureReturns(0, STDERR);
     const r = await listen('AIOC Audio', 3, -50, { stop: new Promise(() => {}) });
     expect(r.activeSeconds).toBe(2);
-    expect(kill).not.toHaveBeenCalled();
+    expect(spawn.mock.results[0]!.value.kills).toEqual([]);
   });
 });
 
@@ -398,42 +389,41 @@ describe('runFfmpeg', () => {
 describe('listen with out and play', () => {
   beforeEach(() => {
     execFile.mockReset();
+    spawn.mockReset();
   });
 
   it('writes the WAV and reports out without playing it', async () => {
-    ffmpegReturns(null, STDERR);
+    captureReturns(0, STDERR);
     const r = await listen('AIOC Audio', 3, -50, { out: 'rx.wav' });
     expect(r.out).toBe('rx.wav');
-    expect(execFile).toHaveBeenCalledTimes(1);
-    expect(execFile.mock.calls[0]![1]).toEqual(ffmpegArgs('AIOC Audio', 3, 'rx.wav'));
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0]![1]).toEqual(ffmpegArgs('AIOC Audio', 3, 'rx.wav'));
+    expect(execFile).not.toHaveBeenCalled();
   });
   it('leaves out off the result without an out path', async () => {
-    ffmpegReturns(null, STDERR);
+    captureReturns(0, STDERR);
     expect(await listen('AIOC Audio', 3)).not.toHaveProperty('out');
   });
   it('spawns afplay with the path after ffmpeg resolves and not before', async () => {
-    let finish = () => {};
-    execFile.mockImplementation((file, _args, _opts, cb) => {
-      if (file === 'ffmpeg') finish = () => cb(null, '', STDERR);
-      else cb(null, '', '');
-    });
+    const child = fakeChild();
+    spawn.mockReturnValue(child);
+    execFile.mockImplementation((_file, _args, _opts, cb) => cb(null, '', ''));
     const done = listen('AIOC Audio', 3, -50, { out: 'rx.wav', play: true });
     await new Promise((r) => setTimeout(r, 0));
-    expect(execFile.mock.calls.map((c) => c[0])).toEqual(['ffmpeg']);
-    finish();
+    expect(execFile).not.toHaveBeenCalled();
+    child.exit(0, { stderr: STDERR });
     const r = await done;
-    expect(execFile.mock.calls.map((c) => c[0])).toEqual(['ffmpeg', 'afplay']);
-    expect(execFile.mock.calls[1]![1]).toEqual(['rx.wav']);
+    expect(execFile.mock.calls.map((c) => [c[0], c[1]])).toEqual([['afplay', ['rx.wav']]]);
     expect(r.out).toBe('rx.wav');
   });
   it('does not play when the capture fails', async () => {
-    ffmpegReturns({ code: 1 as unknown as string }, 'Error opening input');
+    captureReturns(1, 'Error opening input');
     await expect(listen('AIOC Audio', 3, -50, { out: 'rx.wav', play: true })).rejects.toMatchObject({ kind: 'transport' });
-    expect(execFile.mock.calls.map((c) => c[0])).toEqual(['ffmpeg']);
+    expect(execFile).not.toHaveBeenCalled();
   });
   it('rejects play without out before running ffmpeg', async () => {
     await expect(listen('AIOC Audio', 3, -50, { play: true })).rejects.toMatchObject({ kind: 'usage' });
-    expect(execFile).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
   });
 });
 

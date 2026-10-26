@@ -1,7 +1,6 @@
-import { exitHow, ffmpegMissing, stderrTail } from '../cli/audio.ts';
+import { execDetached, exitHow, ffmpegMissing, stderrTail } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
 import { WAV_RATE } from './levels.ts';
-import { execDetached } from './output.ts';
 
 /** Milliseconds `say` gets to render one utterance. */
 const SAY_TIMEOUT_MS = 60_000;

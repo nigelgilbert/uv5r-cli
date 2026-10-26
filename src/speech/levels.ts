@@ -1,6 +1,5 @@
-import { astatsFilter, exitHow, ffmpegMissing, parseAstats, stderrTail } from '../cli/audio.ts';
+import { astatsFilter, execDetached, exitHow, ffmpegMissing, parseAstats, stderrTail } from '../cli/audio.ts';
 import { TransportError } from '../core/index.ts';
-import { execDetached } from './output.ts';
 
 /** Sample rate measureWav counts samples at; the transmit WAV is 48 kHz. */
 export const WAV_RATE = 48000;

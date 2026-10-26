@@ -1,4 +1,4 @@
-import { type ChildProcess, execFile } from 'node:child_process';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import { TransportError, UsageError } from '../core/index.ts';
 
 export interface ListenResult {
@@ -244,6 +244,49 @@ export function exitHow(e: ExecError, timeoutMs: number): string {
   return e.signal ? `stopped on ${e.signal}` : `exited with code ${e.code}`;
 }
 
+/** Bytes of stderr a detached run keeps. */
+const STDERR_KEEP = 64 * 1024 * 1024;
+
+/**
+ * Run `file` with `args` in its own process group and call `callback` once it exits, as
+ * execFile calls its callback: a null error on exit 0, else an ExecError with the exit code
+ * or signal, `killed` set after a timeout, or the spawn error itself. A terminal Ctrl-C or
+ * Ctrl-Z then reaches only uv5r. `timeoutMs` 0 sets no timeout. Return the child so the
+ * caller can kill it.
+ */
+export function execDetached(file: string, args: string[], timeoutMs: number, callback: (err: ExecError | null, stderr: string) => void): ChildProcess {
+  const child = spawn(file, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+  let stderr = '';
+  let timedOut = false;
+  let failed: ExecError | undefined;
+  let done = false;
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGTERM');
+        }, timeoutMs)
+      : undefined;
+  const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    if (failed) callback(failed, stderr);
+    else if (code === 0) callback(null, stderr);
+    else callback(Object.assign(new Error(`${file} exited`), { code: code as unknown as string, signal, killed: timedOut }), stderr);
+  };
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr = (stderr + chunk.toString()).slice(-STDERR_KEEP);
+  });
+  child.on('error', (e: ExecError) => {
+    failed = e;
+    // A child that never spawned emits no close.
+    if (child.pid === undefined) finish(null, null);
+  });
+  child.on('close', finish);
+  return child;
+}
+
 /** Guidance for a failed afplay, since a rerun with the same --out records over the saved capture. */
 const PLAYBACK_FAILED = { remedy: 'the capture is saved at file; ask the human to play it; do not capture again', retry: 'no' } as const;
 
@@ -333,7 +376,7 @@ export function checkFfmpeg(): Promise<void> {
 }
 
 /**
- * Run ffmpeg once and summarize its astats output; with `out`, ffmpeg also writes the WAV.
+ * Run ffmpeg once in its own process group and summarize its astats output; with `out`, ffmpeg also writes the WAV.
  * When `stop` resolves, send ffmpeg SIGTERM, then SIGKILL after KILL_GRACE_MS, and reject once it exits.
  * The stop handler outlives the capture in a sweep with no signal, so the callback drops the
  * child to keep it and its buffered stderr from staying reachable through `stop`.
@@ -345,11 +388,10 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
   let escalate: NodeJS.Timeout | undefined;
   let child: ChildProcess | undefined;
   return new Promise((resolve, reject) => {
-    child = execFile('ffmpeg', ffmpegArgs(device, seconds, out), { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, _stdout, stderr) => {
+    child = execDetached('ffmpeg', ffmpegArgs(device, seconds, out), timeoutMs, (e, stderr) => {
       clearTimeout(escalate);
       exited = true;
       child = undefined;
-      const e = err as ExecError | null;
       if (e?.code === 'ENOENT') {
         reject(ffmpegMissing());
         return;
