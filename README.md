@@ -44,6 +44,14 @@ Listen on the radio. Whenever you hear a transmission, reply "pong".
 
 Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow the rules. 🙂
 
+## What you can do with this
+
+Configuring your radio for a new place has never been easier.
+
+Control your camp remotely.  Use HAM radio to control your lights, report weather conditions and GPS coordinates.
+
+Control robots, test your handhelds, setup ad-hoc emergency stations in 1 line.
+
 ## First fifteen minutes
 
 Plug in the AIOC, turn the radio on and set the volume knob to about half.
