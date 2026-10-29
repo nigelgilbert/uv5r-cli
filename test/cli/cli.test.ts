@@ -951,13 +951,63 @@ describe('key output', () => {
     expect(out.seconds).toBeGreaterThanOrEqual(0.5);
   });
 
-  it('prints pttAsserted, seconds and released on success', async () => {
+  it('prints pttAsserted, seconds, released and the PTT edge stamps, the keys of the help result', async () => {
     await cli(['key', '--seconds', '0.1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     const out = outJson();
-    expect(Object.keys(out)).toEqual(['pttAsserted', 'seconds', 'released']);
+    expect(Object.keys(out)).toEqual(['pttAsserted', 'seconds', 'released', 'assertedAtMs', 'releasedAtMs']);
     expect(out).toMatchObject({ pttAsserted: true, released: true });
     expect(out.seconds).toBeGreaterThanOrEqual(0.1);
+    stdout.length = 0;
+    await cli(['help', 'key', '--json']);
+    const help = JSON.parse(stdout.join('')) as { result: object; effects: string[] };
+    expect(Object.keys(help.result)).toEqual(Object.keys(out));
+    expect(help.effects.filter((e) => e.includes('assertedAtMs') && e.includes('releasedAtMs'))).toHaveLength(1);
+  });
+
+  it('stamps assertedAtMs and releasedAtMs about 1000 ms apart for --seconds 1', async () => {
+    const before = Date.now();
+    await cli(['key', '--seconds', '1', '--json'], opener(new FakeRadio()));
+    const after = Date.now();
+    expect(process.exitCode).toBe(0);
+    const { assertedAtMs, releasedAtMs } = outJson() as { assertedAtMs: number; releasedAtMs: number };
+    expect(Number.isInteger(assertedAtMs)).toBe(true);
+    expect(Number.isInteger(releasedAtMs)).toBe(true);
+    expect(assertedAtMs).toBeGreaterThanOrEqual(before);
+    expect(releasedAtMs).toBeGreaterThan(assertedAtMs);
+    expect(releasedAtMs).toBeLessThanOrEqual(after);
+    expect(Math.abs(releasedAtMs - assertedAtMs - 1000)).toBeLessThanOrEqual(50);
+  });
+
+  it('prints both stamps with interrupted on SIGINT', async () => {
+    const radio = new FakeRadio();
+    const done = cli(['key', '--seconds', '5', '--json'], opener(radio));
+    setTimeout(() => process.emit('SIGINT'), 30);
+    await done;
+    expect(process.exitCode).toBe(signalExitCode('SIGINT'));
+    const out = outJson() as { assertedAtMs: number; releasedAtMs: number };
+    expect(out).toMatchObject({ pttAsserted: true, released: true, interrupted: 'SIGINT' });
+    expect(Number.isInteger(out.assertedAtMs)).toBe(true);
+    expect(Number.isInteger(out.releasedAtMs)).toBe(true);
+    expect(out.releasedAtMs).toBeGreaterThanOrEqual(out.assertedAtMs);
+    expect(out.releasedAtMs - out.assertedAtMs).toBeLessThan(1000);
+  });
+
+  it.each([
+    ['completes', [], /^PTT asserted for [\d.]+ s; PTT released; assertedAtMs (\d+), releasedAtMs (\d+)$/],
+    ['is interrupted', ['SIGINT'], /^PTT asserted for 0 s; interrupted by SIGINT; PTT released; assertedAtMs (\d+), releasedAtMs (\d+)$/],
+  ] as const)('prints both stamps in the text line when the key %s', async (_how, signals, pattern) => {
+    const radio = new FakeRadio();
+    const setPtt = radio.setPtt.bind(radio);
+    radio.setPtt = async (on: boolean) => {
+      await setPtt(on);
+      for (const signal of signals) if (on) process.emit(signal);
+    };
+    await onTerminal(() => cli(['key', '--seconds', '0.1'], opener(radio)));
+    const line = stdout.join('').trim();
+    expect(line).toMatch(pattern);
+    const [, asserted, released] = pattern.exec(line)!;
+    expect(Number(released)).toBeGreaterThanOrEqual(Number(asserted));
   });
 
   it('exits 3 with the unplug remedy when the release fails after the assertion', async () => {

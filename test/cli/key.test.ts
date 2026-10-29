@@ -55,9 +55,9 @@ describe('holdPtt', () => {
     expect(radio.ptt).toBe(false);
   });
 
-  it('reports pttAsserted, seconds and released on success', async () => {
+  it('reports pttAsserted, seconds, released and the PTT edge stamps on success', async () => {
     const result = await holdPtt(new FakeRadio(), 0.1, new EventEmitter());
-    expect(Object.keys(result)).toEqual(['pttAsserted', 'seconds', 'released']);
+    expect(Object.keys(result)).toEqual(['pttAsserted', 'seconds', 'released', 'assertedAtMs', 'releasedAtMs']);
     expect(result).toMatchObject({ pttAsserted: true, released: true });
   });
 
@@ -111,6 +111,8 @@ describe('holdPtt', () => {
     expect((err as TransportError).toJSON()).toMatchObject({ target: 'fake', retry: 'no', remedy: 'report the error and ask the human to check the AIOC cable before keying again' });
     expect((err as TransportError).toJSON()).not.toHaveProperty('pttAsserted');
     expect((err as TransportError).toJSON()).not.toHaveProperty('released');
+    expect((err as TransportError).toJSON()).not.toHaveProperty('assertedAtMs');
+    expect((err as TransportError).toJSON().releasedAtMs).toEqual(expect.any(Number));
     expect((err as TransportError).message).not.toContain('unplug');
   });
 });

@@ -56,6 +56,7 @@ import {
   type ChannelResult,
   type ChannelSpec,
   type Family,
+  type HoldResult,
   type IdentifyResult,
   type Magic,
   type MagicName,
@@ -449,6 +450,7 @@ const verbs: Record<string, Verb> = {
     flags: [{ name: 'seconds', value: 'S', required: true, help: `hold time, 0 < S <= ${MAX_KEY_SECONDS}` }, ...COMMON_FLAGS],
     effects: [
       'Raise PTT (DTR high, RTS low) for S seconds, then release it. The result reports the measured hold.',
+      'Set assertedAtMs and releasedAtMs to Date.now() epoch ms as the DTR set that raises PTT and the one that drops it resolve. An error leaves out the stamp of a DTR set that failed.',
       'Transmit on the channel the radio display shows. The CLI cannot read the displayed channel; a receive-only slot radiates nothing.',
       'Once the port is open, Ctrl-C, Ctrl-Z, SIGTERM or SIGHUP releases PTT, adds interrupted to the result and exits 128 plus the signal number.',
       'A failed PTT release after the signal exits 3 with interrupted in the error.',
@@ -459,7 +461,7 @@ const verbs: Record<string, Verb> = {
       'Key only when the human asked and the frequency is one they may transmit on.',
     ],
     writesToRadio: { writes: false, note: 'raises PTT only, which transmits on a TX-capable channel' },
-    result: { pttAsserted: true, seconds: 2, released: true },
+    result: { pttAsserted: true, seconds: 2, released: true, assertedAtMs: 1761696000000, releasedAtMs: 1761696002000 },
     exits: [{ code: 3, when: 'a PTT control failure' }],
     positionals: 0,
     run: keyVerb,
@@ -1102,6 +1104,11 @@ async function eraseVerb(args: Invocation): Promise<number> {
   return EXIT.ok;
 }
 
+/** Return the PTT edge stamps of `held` as a text line fragment. */
+function stampText(held: HoldResult): string {
+  return `assertedAtMs ${held.assertedAtMs}, releasedAtMs ${held.releasedAtMs}`;
+}
+
 async function keyVerb(args: Invocation): Promise<number> {
   checkFlags('key', args.flags, flagNames('key'));
   if (!args.flags.has('seconds')) throw new UsageError(`key needs --seconds S (max ${MAX_KEY_SECONDS}), as in: key --seconds 2`);
@@ -1110,10 +1117,10 @@ async function keyVerb(args: Invocation): Promise<number> {
   const held = await withTransport(args, (t) => holdPtt(t, seconds));
   const signal = held.interrupted;
   if (signal) {
-    print(args, held, () => `PTT asserted for ${held.seconds} s; interrupted by ${signal}; PTT released`);
+    print(args, held, () => `PTT asserted for ${held.seconds} s; interrupted by ${signal}; PTT released; ${stampText(held)}`);
     return signalExitCode(signal);
   }
-  print(args, held, () => `PTT asserted for ${held.seconds} s; PTT released`);
+  print(args, held, () => `PTT asserted for ${held.seconds} s; PTT released; ${stampText(held)}`);
   return EXIT.ok;
 }
 

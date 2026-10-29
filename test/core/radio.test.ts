@@ -961,7 +961,8 @@ describe('keyWhile', () => {
     );
     expect(pttAtStart).toBe(true);
     expect(radio.pttLog).toEqual([true, false]);
-    expect(result).toEqual({ pttAsserted: true, seconds: 0, released: true });
+    expect(result).toEqual({ pttAsserted: true, seconds: 0, released: true, assertedAtMs: expect.any(Number), releasedAtMs: expect.any(Number) });
+    expect(result.releasedAtMs).toBeGreaterThanOrEqual(result.assertedAtMs);
   });
 
   it.each(['SIGINT', 'SIGTSTP'] as const)('releases PTT before the player settles on %s mid-play', async (signal) => {
@@ -996,12 +997,13 @@ describe('keyWhile', () => {
     );
     expect(ran).toBe(false);
     expect(radio.pttLog).toEqual([true, false]);
-    expect(result).toEqual({ pttAsserted: true, seconds: 0, released: true, interrupted: 'SIGTERM' });
+    expect(result).toEqual({ pttAsserted: true, seconds: 0, released: true, assertedAtMs: expect.any(Number), releasedAtMs: expect.any(Number), interrupted: 'SIGTERM' });
   });
 
-  it('drops PTT at maxMs on a hung player and returns after the grace', async () => {
+  it('drops PTT at maxMs on a hung player, returns after the grace and stamps both PTT edges', async () => {
     vi.useFakeTimers();
     const radio = new FakeRadio();
+    const start = Date.now();
     const pending = keyWhile(radio, () => new Promise(() => {}), { maxMs: 100 }, new EventEmitter());
     await vi.advanceTimersByTimeAsync(100);
     expect(radio.ptt).toBe(false);
@@ -1010,7 +1012,8 @@ describe('keyWhile', () => {
     await vi.advanceTimersByTimeAsync(STOP_GRACE_MS - 10);
     expect(done).toBe(false);
     await vi.advanceTimersByTimeAsync(10);
-    expect(await pending).toMatchObject({ pttAsserted: true, released: true, timedOut: true });
+    const result = await pending;
+    expect(result).toMatchObject({ pttAsserted: true, released: true, timedOut: true, assertedAtMs: start, releasedAtMs: start + 100 });
     expect(radio.pttLog).toEqual([true, false]);
   });
 
@@ -1063,7 +1066,7 @@ describe('keyWhile', () => {
       { maxMs: 5000 },
       new EventEmitter(),
     ).catch((e: unknown) => e);
-    expect((err as TransportError).toJSON()).toEqual({ reason: 'audio-process-failed', message: 'ffmpeg exited with code 1', remedy: 'reseat the AIOC', retry: 'after-remedy', seconds: 0 });
+    expect((err as TransportError).toJSON()).toEqual({ reason: 'audio-process-failed', message: 'ffmpeg exited with code 1', remedy: 'reseat the AIOC', retry: 'after-remedy', seconds: 0, assertedAtMs: expect.any(Number), releasedAtMs: expect.any(Number) });
     expect(radio.pttLog).toEqual([true, false]);
   });
 
@@ -1081,7 +1084,8 @@ describe('keyWhile', () => {
     const err = await pending.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     expect((err as TransportError).kind).toBe('transport');
-    expect((err as TransportError).toJSON()).toMatchObject({ reason: 'ptt-control-failed', interrupted: 'SIGINT', remedy: 'ask the human to unplug the AIOC to drop PTT', retry: 'no' });
+    expect((err as TransportError).toJSON()).toMatchObject({ reason: 'ptt-control-failed', interrupted: 'SIGINT', remedy: 'ask the human to unplug the AIOC to drop PTT', retry: 'no', assertedAtMs: expect.any(Number) });
+    expect((err as TransportError).toJSON()).not.toHaveProperty('releasedAtMs');
     expect(listeners(em)).toBe(0);
   });
 

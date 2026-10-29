@@ -561,6 +561,10 @@ export interface HoldResult {
   seconds: number;
   /** True after setPtt(false) succeeded. */
   released: true;
+  /** Epoch ms from Date.now() when the setPtt(true) DTR set resolved. */
+  assertedAtMs: number;
+  /** Epoch ms from Date.now() when the setPtt(false) DTR set resolved. */
+  releasedAtMs: number;
   interrupted?: NodeJS.Signals;
   /** True when keyWhile dropped PTT at maxMs before the body settled. */
   timedOut?: true;
@@ -628,13 +632,15 @@ export function wait(ms: number, stop: Promise<void>): Promise<void> {
  * emits one of KEY_SIGNALS, or when `options.maxMs` passes after the assertion. On a signal
  * or at maxMs, drop PTT first, then resolve `stop` and wait up to STOP_GRACE_MS for the body.
  * A signal that arrives while PTT rises skips the body and releases at once. A body rejection
- * after a signal or maxMs counts as the stop and fails nothing.
+ * after a signal or maxMs counts as the stop and fails nothing. `assertedAtMs` and
+ * `releasedAtMs` take Date.now() as each PTT change resolves.
  *
  * The first failure wins. A PTT failure throws ptt-control-failed with what the port
  * confirmed. Each PTT change gets PTT_CONTROL_TIMEOUT_MS; a late assertion counts as a failed
  * one and keyWhile still releases. A body failure keeps its own reason and gains `seconds`
  * and any `interrupted`. When the release fails or the assertion timed out, the message and
- * remedy tell the human to unplug the AIOC.
+ * remedy tell the human to unplug the AIOC. A thrown error carries each stamp whose PTT
+ * change resolved and leaves the other out.
  */
 export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Promise<unknown>, options: KeyOptions, signals: EventEmitter = process): Promise<HoldResult> {
   let interrupted: NodeJS.Signals | undefined;
@@ -659,10 +665,13 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
   let timedOut = false;
   let running: Promise<void> | undefined;
   let heldMs = 0;
+  let assertedAtMs: number | undefined;
+  let releasedAtMs: number | undefined;
   let watchdog: NodeJS.Timeout | undefined;
   try {
     try {
       await setPttWithin(t, true);
+      assertedAtMs = Date.now();
       pttAsserted = true;
       const assertedAt = performance.now();
       if (!interrupted) {
@@ -696,6 +705,7 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
     clearTimeout(watchdog);
     try {
       await setPttWithin(t, false);
+      releasedAtMs = Date.now();
       released = true;
     } catch (err) {
       releaseCause = messageOf(err);
@@ -711,8 +721,9 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
     for (const [signal, handler] of handlers) signals.off(signal, handler);
   }
   const held = Math.round(heldMs / 100) / 10;
+  const stamps = { ...(assertedAtMs === undefined ? {} : { assertedAtMs }), ...(releasedAtMs === undefined ? {} : { releasedAtMs }) };
   if (failure?.fromBody) {
-    const err = withDetail(failure.err, { seconds: held, ...(interrupted ? { interrupted } : {}) });
+    const err = withDetail(failure.err, { seconds: held, ...stamps, ...(interrupted ? { interrupted } : {}) });
     if (!released) {
       err.message = `${err.message}; PTT release unconfirmed: ${releaseCause}; ${UNPLUG}`;
       err.attach({}, { remedy: UNPLUG, retry: 'no' });
@@ -727,12 +738,13 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
       {
         ...base,
         ...(pttAsserted ? { seconds: held } : {}),
+        ...stamps,
         ...(interrupted ? { interrupted } : {}),
       },
       { remedy: released && !lateAssert ? 'report the error and ask the human to check the AIOC cable before keying again' : UNPLUG, retry: 'no' },
     );
   }
-  const result: HoldResult = { pttAsserted: true, seconds: held, released: true };
+  const result: HoldResult = { pttAsserted: true, seconds: held, released: true, assertedAtMs: assertedAtMs!, releasedAtMs: releasedAtMs! };
   if (interrupted) result.interrupted = interrupted;
   if (timedOut) result.timedOut = true;
   return result;
