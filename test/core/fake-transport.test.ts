@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADDR, encodeChannel } from '../../src/core/codec.ts';
 import { FAKE_APPLY_MS, FakeRadio, FakeTransport, PTT_HEARTBEAT_MS, parseFakeFault, type FakeState, type PttFile } from '../../src/core/fake.ts';
 import { SETTLE_MS, type Session } from '../../src/core/protocol.ts';
-import { readChannel, readStatus, withSession, writeChannel } from '../../src/core/radio.ts';
+import { EventEmitter } from 'node:events';
+import { HOLD_WATCHDOG_SLACK_MS, holdPtt, readChannel, readStatus, withSession, writeChannel } from '../../src/core/radio.ts';
 
 let dir: string;
 let env: NodeJS.ProcessEnv;
@@ -63,6 +64,8 @@ describe('parseFakeFault', () => {
     expect(parseFakeFault('tune-delay:4000')).toEqual({ kind: 'tune-delay', ms: 4000 });
     expect(parseFakeFault('name-not-taken')).toEqual({ kind: 'name-not-taken' });
     expect(parseFakeFault('tune-wrong-freq')).toEqual({ kind: 'tune-wrong-freq' });
+    expect(parseFakeFault('ptt-control-failed')).toEqual({ kind: 'ptt-control-failed' });
+    expect(parseFakeFault('hang')).toEqual({ kind: 'hang' });
   });
 
   it.each(['tune-delay', 'tune-delay:-1', 'hang-forever'])('rejects %s naming the variable', (text) => {
@@ -244,5 +247,48 @@ describe('FakeTransport faults', () => {
     expect(tuned.t.handshakes).toHaveLength(1);
     expect(tuned.ms - status.ms).toBeGreaterThanOrEqual(4000);
     expect(tuned.ms - status.ms).toBeLessThan(5000);
+  });
+
+  it('ptt-control-failed fails the raising DTR set and leaves the PTT file alone', async () => {
+    const vars = { ...env, UV5R_FAKE_FAULT: 'ptt-control-failed' };
+    const t = await FakeTransport.open({ env: vars, verb: 'key' });
+    await expect(drive(holdPtt(t, 1, new EventEmitter()))).rejects.toMatchObject({ reason: 'ptt-control-failed', retry: 'no', detail: { target: 'fake' } });
+    await t.close();
+    expect(t.ptt).toBe(false);
+    expect(t.pttLog).toEqual([false, true, false, false]);
+    expect(existsSync(env.TINYSA_SIM_PTT!)).toBe(false);
+  });
+
+  it('hang holds PTT past the hold until the watchdog and reports timedOut with the release', async () => {
+    const t = await FakeTransport.open({ env: { ...env, UV5R_FAKE_FAULT: 'hang' }, verb: 'key' });
+    const held = await drive(holdPtt(t, 1, new EventEmitter()));
+    await t.close();
+    expect(held).toMatchObject({ pttAsserted: true, released: true, timedOut: true, seconds: 1 + HOLD_WATCHDOG_SLACK_MS / 1000 });
+    expect(held.interrupted).toBeUndefined();
+    const file = pttFile();
+    expect(file).toMatchObject({ ptt: false, ptt_on_ms: held.assertedAtMs, ptt_off_ms: held.releasedAtMs });
+    expect(held.releasedAtMs - held.assertedAtMs).toBe(1000 + HOLD_WATCHDOG_SLACK_MS);
+  });
+
+  it('hang releases on a signal and reports interrupted', async () => {
+    const t = await FakeTransport.open({ env: { ...env, UV5R_FAKE_FAULT: 'hang' }, verb: 'key' });
+    const signals = new EventEmitter();
+    const holding = holdPtt(t, 1, signals);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(pttFile()).toMatchObject({ ptt: true, ptt_off_ms: null });
+    signals.emit('SIGINT');
+    const held = await drive(holding);
+    await t.close();
+    expect(held).toMatchObject({ released: true, interrupted: 'SIGINT', seconds: 2 });
+    expect(held.timedOut).toBeUndefined();
+    expect(pttFile()).toMatchObject({ ptt: false, ptt_off_ms: held.releasedAtMs });
+  });
+
+  it('holds for the given seconds without the hang fault', async () => {
+    const t = await FakeTransport.open({ env, verb: 'key' });
+    const held = await drive(holdPtt(t, 1, new EventEmitter()));
+    await t.close();
+    expect(held).toMatchObject({ released: true, seconds: 1 });
+    expect(held.timedOut).toBeUndefined();
   });
 });

@@ -159,6 +159,43 @@ describe.concurrent('uv5r --target fake across processes', () => {
     expect(delayed.ms - plain.ms).toBeLessThan(5000);
   });
 
+  it('ptt-control-failed exits 3 at the first key with retry no', { timeout: 15_000 }, async () => {
+    const run = await uv5r(['key', '--seconds', '1', '--target', 'fake', '--json'], harnessEnv('ptt-control-failed'));
+    expect(run.code).toBe(3);
+    expect(JSON.parse(run.stderr)).toMatchObject({ reason: 'ptt-control-failed', retry: 'no' });
+  });
+
+  it('hang holds a 1 s key until the watchdog and exits 0 with timedOut', { timeout: 20_000 }, async () => {
+    const vars = harnessEnv('hang');
+    const { run } = await key(1, vars);
+    expect(run.code, run.stderr).toBe(0);
+    const held = JSON.parse(run.stdout) as { timedOut?: boolean; released: boolean; assertedAtMs: number; releasedAtMs: number };
+    expect(held).toMatchObject({ timedOut: true, released: true });
+    expect(held.releasedAtMs - held.assertedAtMs).toBeGreaterThanOrEqual(6000);
+    const after = pttFile(vars);
+    expect(after).toMatchObject({ ptt: false });
+    expect(after.ptt_off_ms).toBeLessThanOrEqual(held.releasedAtMs);
+    expect(after.ptt_off_ms).toBeGreaterThanOrEqual(held.assertedAtMs + 6000);
+  });
+
+  it('hang releases on SIGINT 2 s into the key and exits 130', { timeout: 20_000 }, async () => {
+    const vars = harnessEnv('hang');
+    const { UV5R_TARGET: _t, UV5R_FAKE_STATE: _s, UV5R_FAKE_FAULT: _f, TINYSA_SIM_PTT: _p, BENCH_RUN_ID: _r, ...base } = process.env;
+    const child = spawn(process.execPath, ['src/cli/main.ts', 'key', '--seconds', '1', '--target', 'fake', '--json'], { cwd: ROOT, env: { ...base, ...vars } });
+    let stdout = '';
+    child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
+    const closed = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)));
+    await until(Date.now() + 2000);
+    expect(pttFile(vars)).toMatchObject({ ptt: true });
+    const signalledMs = Date.now();
+    child.kill('SIGINT');
+    const code = await closed;
+    expect(Date.now() - signalledMs).toBeLessThan(2000);
+    expect(code).toBe(130);
+    expect(JSON.parse(stdout)).toMatchObject({ released: true, interrupted: 'SIGINT' });
+    expect(pttFile(vars)).toMatchObject({ ptt: false });
+  });
+
   it('exits 2 naming UV5R_FAKE_STATE when UV5R_TARGET=fake and the variable is unset', { timeout: 15_000 }, async () => {
     const { UV5R_FAKE_STATE: _, ...vars } = harnessEnv();
     const run = await uv5r(['status', '--json'], { ...vars, UV5R_TARGET: 'fake' });

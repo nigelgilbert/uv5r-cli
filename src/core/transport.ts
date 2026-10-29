@@ -22,6 +22,8 @@ export interface Transport {
   /** Change the baud rate of the open port. */
   setBaud(rate: number): Promise<void>;
   close(): Promise<void>;
+  /** Replace the hold body of holdPtt, which otherwise waits `ms` or until `stop`; the fake's hang fault sets it. */
+  holdBody?(ms: number, stop: Promise<void>): Promise<unknown>;
 }
 
 /** Find the AIOC CDC port; prefers the callout device on macOS. */

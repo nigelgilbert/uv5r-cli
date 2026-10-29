@@ -552,7 +552,7 @@ export const KEY_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIG
 /** Milliseconds keyWhile waits for the body after it drops PTT on a signal or at maxMs. */
 export const STOP_GRACE_MS = 2000;
 /** Milliseconds holdPtt adds to its hold for the keyWhile watchdog. */
-const HOLD_WATCHDOG_SLACK_MS = 5000;
+export const HOLD_WATCHDOG_SLACK_MS = 5000;
 /** Milliseconds keyWhile waits for the port to confirm each PTT change. */
 export const PTT_CONTROL_TIMEOUT_MS = 3000;
 const UNPLUG = 'ask the human to unplug the AIOC to drop PTT';
@@ -756,9 +756,11 @@ export async function keyWhile(t: Transport, body: (stop: Promise<void>) => Prom
 /**
  * Assert PTT for `seconds` through keyWhile, stop early when `signals` emits one of
  * KEY_SIGNALS, and release PTT in both cases. A failure in any step throws a TransportError
- * whose message and remedy say what the port confirmed.
+ * whose message and remedy say what the port confirmed. A transport with `holdBody` supplies
+ * the body; the keyWhile watchdog still releases at `seconds` plus HOLD_WATCHDOG_SLACK_MS.
  */
 export function holdPtt(t: Transport, seconds: number, signals: EventEmitter = process): Promise<HoldResult> {
   const ms = seconds * 1000;
-  return keyWhile(t, (stop) => wait(ms, stop), { maxMs: ms + HOLD_WATCHDOG_SLACK_MS }, signals);
+  const body = (stop: Promise<void>) => (t.holdBody ? t.holdBody(ms, stop) : wait(ms, stop));
+  return keyWhile(t, body, { maxMs: ms + HOLD_WATCHDOG_SLACK_MS }, signals);
 }

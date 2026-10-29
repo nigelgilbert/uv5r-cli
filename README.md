@@ -189,7 +189,7 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 | `UV5R_FAKE_STATE=FILE` | State file of the fake radio; `--target fake` exits 2 without it |
 | `TINYSA_SIM_PTT=FILE` | PTT file the fake radio writes on each key for the tinySA sim; unset skips it |
 | `BENCH_RUN_ID=ID` | `run_id` in the PTT file; `null` when unset |
-| `UV5R_FAKE_FAULT=FAULT` | One fake radio fault: `tune-delay:MS`, `name-not-taken` or `tune-wrong-freq` |
+| `UV5R_FAKE_FAULT=FAULT` | One fake radio fault: `tune-delay:MS`, `name-not-taken`, `tune-wrong-freq`, `ptt-control-failed` or `hang` |
 
 ## Plan fields
 

@@ -4,7 +4,7 @@ import { ADDR, CHANNEL_BASE, CHANNEL_COUNT, NAME_BASE, decodeChannel, encodeLbcd
 import { TransportError, UsageError } from './errors.ts';
 import { magicByName, type MagicName } from './ident.ts';
 import { SETTLE_MS, VERSION_LENGTH, VERSION_OFFSET, hex, sleep } from './protocol.ts';
-import { AUX_SIZE, IMAGE_AUX, IMAGE_HEADER } from './radio.ts';
+import { AUX_SIZE, IMAGE_AUX, IMAGE_HEADER, wait } from './radio.ts';
 import type { Transport } from './transport.ts';
 
 /** Start of the page the radio serves from its reload snapshot and aliases for 16-byte reads. */
@@ -314,7 +314,7 @@ const CHANNELS_END = CHANNEL_BASE + CHANNEL_COUNT * 16;
 const NAMES_END = NAME_BASE + CHANNEL_COUNT * 16;
 
 /** One fault `UV5R_FAKE_FAULT` selects. */
-export type FakeFault = { kind: 'tune-delay'; ms: number } | { kind: 'name-not-taken' } | { kind: 'tune-wrong-freq' };
+export type FakeFault = { kind: 'tune-delay'; ms: number } | { kind: 'name-not-taken' } | { kind: 'tune-wrong-freq' } | { kind: 'ptt-control-failed' } | { kind: 'hang' };
 
 /** TX frequency in Hz and power of a slot; both null for an empty, malformed or receive-only slot. */
 export interface Transmission {
@@ -350,16 +350,19 @@ export interface FakeOptions {
   verb?: string;
 }
 
+/** The faults `UV5R_FAKE_FAULT` takes, as the usage error lists them. */
+const FAULT_NAMES = 'tune-delay:MS, name-not-taken, tune-wrong-freq, ptt-control-failed or hang';
+
 /** Parse `UV5R_FAKE_FAULT`; an unset or empty value gives undefined and an unknown one throws UsageError. */
 export function parseFakeFault(text: string | undefined): FakeFault | undefined {
   if (text === undefined || text === '') return undefined;
-  if (text === 'name-not-taken' || text === 'tune-wrong-freq') return { kind: text };
+  if (text === 'name-not-taken' || text === 'tune-wrong-freq' || text === 'ptt-control-failed' || text === 'hang') return { kind: text };
   const delay = /^tune-delay:(\d+)$/.exec(text);
   if (delay) return { kind: 'tune-delay', ms: Number(delay[1]) };
   throw new UsageError(
-    `UV5R_FAKE_FAULT=${text} names no fault; use tune-delay:MS, name-not-taken or tune-wrong-freq`,
+    `UV5R_FAKE_FAULT=${text} names no fault; use ${FAULT_NAMES}`,
     { variable: 'UV5R_FAKE_FAULT', value: text },
-    { remedy: 'set UV5R_FAKE_FAULT to tune-delay:MS, name-not-taken or tune-wrong-freq, or unset it', retry: 'after-remedy' },
+    { remedy: `set UV5R_FAKE_FAULT to ${FAULT_NAMES}, or unset it`, retry: 'after-remedy' },
   );
 }
 
@@ -417,7 +420,10 @@ function readState(path: string): FakeState | undefined {
  * Faults from `UV5R_FAKE_FAULT`: `tune-delay:MS` holds the handshake ack of `tune` for MS,
  * past the read timeout the host asked for. `name-not-taken` acks name writes and drops them.
  * `tune-wrong-freq` drops name writes too and, at the close of the tune, adds
- * WRONG_FREQ_SHIFT_HZ to the tuned slot's TX frequency.
+ * WRONG_FREQ_SHIFT_HZ to the tuned slot's TX frequency. `ptt-control-failed` rejects each
+ * setPtt(true) from released, as a DTR set that fails, so `key` exits 3. `hang` gives holdPtt
+ * a hold body that waits for the stop alone, so PTT stays up past the hold until a signal
+ * arrives or the keyWhile watchdog fires; the release then writes `ptt: false` as usual.
  */
 export class FakeTransport extends FakeRadio {
   private readonly statePath: string;
@@ -528,9 +534,18 @@ export class FakeTransport extends FakeRadio {
     return super.read(n, ms);
   }
 
+  /** Wait for the stop alone under `hang`, else wait `ms` or until the stop. */
+  holdBody(ms: number, stop: Promise<void>): Promise<void> {
+    return this.fault?.kind === 'hang' ? stop : wait(ms, stop);
+  }
+
   override async setPtt(on: boolean): Promise<void> {
     const now = Date.now();
     const was = this.ptt;
+    if (on && !was && this.fault?.kind === 'ptt-control-failed') {
+      this.pttLog.push(on);
+      throw new TransportError('ptt-control-failed', 'the fake radio failed the DTR set that raises PTT', { target: this.target });
+    }
     await super.setPtt(on);
     if (on && !was) {
       this.keyed = { ptt_on_ms: now, ptt_off_ms: null, ...this.transmission(now) };
