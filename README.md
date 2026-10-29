@@ -185,7 +185,11 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 | `UV5R_DEBUG=1` | Log every serial byte to stderr |
 | `UV5R_MAGIC=NAME` | Open clone sessions with `291` (default), `ORIG`, `UV82`, `A58` or `UV5G`; another name exits 2 |
 | `UV5R_CONFIG=FILE` | Station config path; `--config` overrides it |
-| `UV5R_TARGET=PATH` | Serial device path; `--target` overrides it. Default: the AIOC found by USB id 1209:7388 |
+| `UV5R_TARGET=PATH` | Serial device path, or `fake` for the fake radio; `--target` overrides it. Default: the AIOC found by USB id 1209:7388 |
+| `UV5R_FAKE_STATE=FILE` | State file of the fake radio; `--target fake` exits 2 without it |
+| `TINYSA_SIM_PTT=FILE` | PTT file the fake radio writes on each key for the tinySA sim; unset skips it |
+| `BENCH_RUN_ID=ID` | `run_id` in the PTT file; `null` when unset |
+| `UV5R_FAKE_FAULT=FAULT` | One fake radio fault: `tune-delay:MS`, `name-not-taken` or `tune-wrong-freq` |
 
 ## Plan fields
 

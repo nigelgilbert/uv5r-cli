@@ -40,6 +40,57 @@ both rules.
 
 ## The fake radio
 
-`test/core/fake.ts` is an in-memory radio with the bench behaviour: aligned reads, acked writes,
-VFO writes ignored, settings reload on session drop, the 16-byte read alias in
-`0x0E10..0x0E4F`, and the staged settings block committed by a write at `0x0E40`.
+`src/core/fake.ts` holds `FakeRadio`, an in-memory radio with the bench behaviour: aligned
+reads, acked writes, VFO writes ignored, settings reload on session drop, the 16-byte read alias
+in `0x0E10..0x0E4F`, and the staged settings block committed by a write at `0x0E40`.
+`test/core/fake.ts` re-exports it for the tests.
+
+### `--target fake`
+
+`--target fake` or `UV5R_TARGET=fake` opens `FakeTransport`, a `FakeRadio` kept in the file
+`UV5R_FAKE_STATE` names. No config is needed: `tune`, `status`, `read` and `key` read no
+`uv5r.json`. The bench-operator harness runs each verb from the repo root as:
+
+```sh
+UV5R_FAKE_STATE=/abs/run/state.json TINYSA_SIM_PTT=/abs/run/ptt.json BENCH_RUN_ID=RUN \
+  node src/cli/main.ts tune 446.00625 --channel 3 --low-power --target fake --json
+```
+
+A missing state file starts from the `FakeRadio` image with work mode `0x0E4C` set to 1, so
+`status` reports `workmode: channel`. Every acked write and every close saves the file:
+
+```json
+{ "eeprom": "BASE64 OF 0x2000 BYTES", "tunedSlot": 3, "tuneEndedMs": 1793260328340,
+  "freq_hz": 446006250, "power": "low", "lastCommandMs": 1793260328288 }
+```
+
+`tunedSlot` is the slot the last channel write hit and stands in for the display. `freq_hz` and
+`power` are what transmits until that tune applies. `lastCommandMs` is the last byte of the last
+clone session.
+
+The fake keeps the radio's lead time on the real clock. A handshake within 2.5 s of
+`lastCommandMs` lands in the old session and gets no ack, so the verb waits 3 s and retries. A
+tune applies 3 s after `tuneEndedMs`. Before that, a key reports the values that applied
+before, or the slot's values from before the first tune. An empty or receive-only slot reports
+`null` for both.
+
+The first `setPtt(true)` of a process writes the file `TINYSA_SIM_PTT` names and rewrites it
+every 500 ms while PTT is held. The release that follows stops the rewrites and writes
+`ptt: false`. The open and close releases of the clone verbs leave the file alone. Each write
+goes to a temp name in the same directory and is renamed over the file:
+
+```json
+{ "run_id": "RUN", "written_ms": 1793260320951, "ptt": false, "ptt_on_ms": 1793260319948,
+  "ptt_off_ms": 1793260320951, "freq_hz": 446006250, "power": "low" }
+```
+
+`ptt_on_ms` and `ptt_off_ms` are the edges of the last key, `null` before an edge. `run_id` is
+`BENCH_RUN_ID`, or `null` when it is unset.
+
+`UV5R_FAKE_FAULT` selects one fault:
+
+- `tune-delay:MS`: hold the handshake ack of `tune` for MS.
+- `name-not-taken`: ack name writes and drop them, as the bench radio did on 2026-10-29. `tune`
+  exits 5 with `verification-failed`; `read` shows the new frequency and power.
+- `tune-wrong-freq`: drop name writes and add 1 MHz to the tuned slot's TX frequency after the
+  read-back, so the next `read` and key report another `txMhz`.

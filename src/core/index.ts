@@ -2,6 +2,9 @@
 export { SerialTransport, findAioc, resolveTarget, AIOC_VENDOR_ID, AIOC_PRODUCT_ID } from './transport.ts';
 export type { Transport } from './transport.ts';
 
+export { FakeTransport, FAKE_TARGET, FAKE_APPLY_MS, PTT_HEARTBEAT_MS, parseFakeFault, slotTransmission } from './fake.ts';
+export type { FakeFault, FakeOptions, FakeState, PttFile, Transmission } from './fake.ts';
+
 export { Session, SETTLE_MS, IDLE_LIMIT_MS, settle, hex } from './protocol.ts';
 export type { Ident } from './protocol.ts';
 

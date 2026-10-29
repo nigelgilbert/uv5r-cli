@@ -14,6 +14,8 @@ import {
   dumpImage,
   encodeName,
   eraseChannel,
+  FAKE_TARGET,
+  FakeTransport,
   FOREIGN_MAGICS,
   holdPtt,
   identify,
@@ -72,8 +74,8 @@ import { idSentence } from '../tts/phonetic.ts';
 import { defaultSpeechDeps, ID_OWED_REMEDY, speakUtterance, type SpeakOptions, type SpeakResult, type SpeechDeps } from '../tts/speak.ts';
 import { DEFAULT_MODEL, modelName, repoPath, VAD_MODEL } from '../tts/stt.ts';
 
-/** Open the transport for a target path, or for the discovered AIOC when the path is undefined. */
-export type OpenTransport = (target: string | undefined) => Promise<Transport>;
+/** Open the transport for a target path, or for the discovered AIOC when the path is undefined; `verb` names the verb that asks. */
+export type OpenTransport = (target: string | undefined, verb?: string) => Promise<Transport>;
 
 /** Parsed arguments plus the transport opener and speech dependencies the verb uses. */
 interface Invocation extends ParsedArgs {
@@ -181,7 +183,12 @@ const ERRORS_HELP = {
 };
 
 const JSON_FLAG: FlagDoc = { name: 'json', help: 'print JSON; the default when stdout is not a terminal' };
-const TARGET_FLAG: FlagDoc = { name: 'target', value: 'PATH', help: 'serial device', default: 'UV5R_TARGET, else the AIOC found by USB id 1209:7388' };
+const TARGET_FLAG: FlagDoc = {
+  name: 'target',
+  value: 'PATH',
+  help: 'serial device; fake selects the fake radio kept in the UV5R_FAKE_STATE file',
+  default: 'UV5R_TARGET, else the AIOC found by USB id 1209:7388',
+};
 const OUTPUT_FLAGS = [JSON_FLAG];
 const COMMON_FLAGS = [...OUTPUT_FLAGS, TARGET_FLAG];
 const CHANNEL_FLAG: FlagDoc = { name: 'channel', value: 'N', required: true, help: 'memory slot to write, 0..127; see the channel rule in uv5r help' };
@@ -815,8 +822,9 @@ function selectedMagic(): Magic {
   return magicByName(name === undefined || name === '' ? DEFAULT_MAGIC : name);
 }
 
-/** Open the serial port at the given path, or at the AIOC found by USB id. */
-async function openSerial(target: string | undefined): Promise<Transport> {
+/** Open the fake radio for target `fake`, else the serial port at the given path, or at the AIOC found by USB id. */
+async function openSerial(target: string | undefined, verb?: string): Promise<Transport> {
+  if (target === FAKE_TARGET) return FakeTransport.open({ verb });
   return SerialTransport.open(await resolveTarget(target));
 }
 
@@ -851,7 +859,7 @@ async function closeWithin(t: Transport): Promise<boolean> {
  * error after a failure.
  */
 async function withTransport<T>(args: Invocation, fn: (t: Transport) => Promise<T>): Promise<T> {
-  const transport = await args.open(stringFlag(args.flags, 'target') ?? process.env.UV5R_TARGET);
+  const transport = await args.open(stringFlag(args.flags, 'target') ?? process.env.UV5R_TARGET, args.verb);
   openTransports.add(transport);
   let result: T;
   try {

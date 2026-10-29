@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import type { Settings } from '../../src/core/codec.ts';
 import type { MagicName } from '../../src/core/ident.ts';
-import { IMAGE_AUX, type ChannelResult } from '../../src/core/radio.ts';
+import { AUX_SIZE, IMAGE_AUX, type ChannelResult } from '../../src/core/radio.ts';
+
+export { AUX_SIZE };
 
 const DIR = new URL('../../fixtures/golden/', import.meta.url);
-/** Bytes of the aux block in a CHIRP image, radio memory 0x1EC0..0x1FFF. */
-export const AUX_SIZE = 0x140;
 
 /** A slot the radio showed on its display when the unit was dumped. */
 interface DisplayedSlot {
