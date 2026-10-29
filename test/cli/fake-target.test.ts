@@ -165,17 +165,20 @@ describe.concurrent('uv5r --target fake across processes', () => {
     expect(JSON.parse(run.stderr)).toMatchObject({ reason: 'ptt-control-failed', retry: 'no' });
   });
 
+  // Allow 5 ms because the watchdog runs on the monotonic clock and Date.now() truncates each stamp to whole ms.
+  const WATCHDOG_EARLY_MS = 5;
+
   it('hang holds a 1 s key until the watchdog and exits 0 with timedOut', { timeout: 20_000 }, async () => {
     const vars = harnessEnv('hang');
     const { run } = await key(1, vars);
     expect(run.code, run.stderr).toBe(0);
     const held = JSON.parse(run.stdout) as { timedOut?: boolean; released: boolean; assertedAtMs: number; releasedAtMs: number };
     expect(held).toMatchObject({ timedOut: true, released: true });
-    expect(held.releasedAtMs - held.assertedAtMs).toBeGreaterThanOrEqual(6000);
+    expect(held.releasedAtMs - held.assertedAtMs).toBeGreaterThanOrEqual(6000 - WATCHDOG_EARLY_MS);
     const after = pttFile(vars);
     expect(after).toMatchObject({ ptt: false });
     expect(after.ptt_off_ms).toBeLessThanOrEqual(held.releasedAtMs);
-    expect(after.ptt_off_ms).toBeGreaterThanOrEqual(held.assertedAtMs + 6000);
+    expect(after.ptt_off_ms).toBeGreaterThanOrEqual(held.assertedAtMs + 6000 - WATCHDOG_EARLY_MS);
   });
 
   it('hang releases on SIGINT 2 s into the key and exits 130', { timeout: 20_000 }, async () => {
