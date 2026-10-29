@@ -18,6 +18,8 @@ level beside them. Act on `reason`, `remedy` and `retry`.
   or the `checkMhz` frequency during the check).
 - `summary.slot0` says whether a write landed.
 - A failed check also carries the check result fields.
+- A `key`, `say` or `id` error adds `assertedAtMs` and `releasedAtMs` for each PTT change that
+  resolved.
 
 ## Signals
 

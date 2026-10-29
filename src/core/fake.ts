@@ -4,7 +4,7 @@ import { ADDR, CHANNEL_BASE, CHANNEL_COUNT, NAME_BASE, decodeChannel, encodeLbcd
 import { TransportError, UsageError } from './errors.ts';
 import { magicByName, type MagicName } from './ident.ts';
 import { SETTLE_MS, VERSION_LENGTH, VERSION_OFFSET, hex, sleep } from './protocol.ts';
-import { AUX_SIZE, IMAGE_AUX, IMAGE_HEADER, wait } from './radio.ts';
+import { AUX_SIZE, IMAGE_AUX, IMAGE_HEADER } from './radio.ts';
 import type { Transport } from './transport.ts';
 
 /** Start of the page the radio serves from its reload snapshot and aliases for 16-byte reads. */
@@ -367,7 +367,7 @@ export function parseFakeFault(text: string | undefined): FakeFault | undefined 
 }
 
 /** Return the TX frequency and power of `slot` in `eeprom`. */
-export function slotTransmission(eeprom: Uint8Array, slot: number): Transmission {
+function slotTransmission(eeprom: Uint8Array, slot: number): Transmission {
   const at = CHANNEL_BASE + slot * 16;
   const ch = decodeChannel(eeprom.subarray(at, at + 16), new Uint8Array(16).fill(0xff));
   if (!ch || ch.txHz === null) return { freq_hz: null, power: null };
@@ -441,6 +441,8 @@ export class FakeTransport extends FakeRadio {
   private keyed: Omit<PttFile, 'run_id' | 'written_ms' | 'ptt'> | undefined;
   private heartbeat: NodeJS.Timeout | undefined;
   private closed = false;
+  /** Hold body under `hang`, which waits for the stop alone. */
+  readonly holdBody?: (ms: number, stop: Promise<void>) => Promise<void>;
 
   private constructor(statePath: string, env: NodeJS.ProcessEnv, verb: string | undefined) {
     super();
@@ -448,6 +450,7 @@ export class FakeTransport extends FakeRadio {
     this.pttPath = env.TINYSA_SIM_PTT || undefined;
     this.runId = env.BENCH_RUN_ID || null;
     this.fault = parseFakeFault(env.UV5R_FAKE_FAULT);
+    if (this.fault?.kind === 'hang') this.holdBody = (_ms, stop) => stop;
     this.verb = verb;
     const state = readState(statePath);
     if (state) this.eeprom.set(Buffer.from(state.eeprom, 'base64'));
@@ -532,11 +535,6 @@ export class FakeTransport extends FakeRadio {
       this.lastByteAt = Date.now();
     }
     return super.read(n, ms);
-  }
-
-  /** Wait for the stop alone under `hang`, else wait `ms` or until the stop. */
-  holdBody(ms: number, stop: Promise<void>): Promise<void> {
-    return this.fault?.kind === 'hang' ? stop : wait(ms, stop);
   }
 
   override async setPtt(on: boolean): Promise<void> {

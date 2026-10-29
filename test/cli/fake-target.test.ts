@@ -107,7 +107,7 @@ describe.concurrent('uv5r --target fake across processes', () => {
     expect(b2b.ms - alone.ms).toBeGreaterThan(2500);
     expect(b2b.ms - alone.ms).toBeLessThan(4500);
 
-    // Tune B more than 3.2 s after A, key at once: A is on the air. Key after 3.2 s more: B.
+    // After tuning B, a key at once transmits A and a key 3.2 s later transmits B.
     await until(alone.endMs + 2700);
     const tuneB = await tune('145.5', vars);
     expect(tuneB.code, tuneB.stderr).toBe(0);
