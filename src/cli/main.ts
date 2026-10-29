@@ -362,7 +362,7 @@ const verbs: Record<string, Verb> = {
       ...COMMON_FLAGS,
     ],
     effects: [
-      'Write the channel record and name of slot N in one clone session and read both back.',
+      'In one clone session, write the record at 0x0000 + 16N and the name at 0x1000 + 16N, 16 bytes each, and read each back after its write. Each read-back compares all 16 bytes. The name holds up to 7 characters and 0xFF in the rest.',
       'Keep BCL, PTT-ID, S-code and scan of an existing record. An empty slot gets BCL off, PTT-ID 0, S-code 0 and scan on.',
       APPLIES,
     ],

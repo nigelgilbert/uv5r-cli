@@ -170,6 +170,19 @@ describe('help', () => {
     expect(tune.exits).toEqual([]);
   });
 
+  it('names the byte ranges tune writes and verifies, and tune writes slot 1 at those addresses', async () => {
+    const help = await helpJson('tune');
+    expect(help.effects).toContain(
+      'In one clone session, write the record at 0x0000 + 16N and the name at 0x1000 + 16N, 16 bytes each, and read each back after its write. Each read-back compares all 16 bytes. The name holds up to 7 characters and 0xFF in the rest.',
+    );
+    stdout = [];
+    const radio = new FakeRadio();
+    await cli(['tune', '446.00625', '--channel', '1', '--low-power', '--json'], opener(radio));
+    expect(process.exitCode).toBe(0);
+    expect(radio.writes).toEqual([0x0000 + 16, 0x1000 + 16]);
+    expect(outJson()).toMatchObject({ channel: 1, rxMhz: '446.00625', power: 'low', name: '446.006' });
+  });
+
   it('lists only the verb-specific exit cases in help VERB --json', async () => {
     const status = await helpJson('status');
     expect(status.exits).toEqual([]);
