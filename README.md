@@ -83,6 +83,16 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
 
 `--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display.
 
+## Use it with LLMs
+
+Open your agent in this repo and tell it what to do:
+
+```text
+Listen on the radio. Whenever you hear a transmission, reply "pong".
+```
+
+Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow the rules. 🙂
+
 ## Things that bite
 
 - The radio speaker is silent while the AIOC is plugged in. Listen through `listen --play` or WAVs.

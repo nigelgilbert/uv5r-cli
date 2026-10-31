@@ -296,7 +296,7 @@ const PLAYBACK_FAILED = { remedy: 'the capture is saved at file; ask the human t
 
 /** Run afplay on `file`, a WAV of about `seconds`, and resolve when playback ends. */
 export function play(file: string, seconds: number): Promise<void> {
-  const timeoutMs = (seconds + 15) * 1000;
+  const timeoutMs = Math.ceil((seconds + 15) * 1000);
   return new Promise((resolve, reject) => {
     execFile('afplay', [file], { timeout: timeoutMs }, (err, _stdout, stderr) => {
       const e = err as ExecError | null;
