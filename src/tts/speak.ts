@@ -13,7 +13,7 @@ import { whisperTranscriber, type Transcribe, type WhisperOptions } from './stt.
 import { condition, synthesize } from './tts.ts';
 
 /** Milliseconds keyWhile allows past the padded WAV and --tail for the player to start. */
-export const PLAYER_START_MS = 5000;
+const PLAYER_START_MS = 5000;
 
 /** Seconds past --clear S after which the clear check stops a capture that delivers too few frames. */
 const CLEAR_SLACK_SECONDS = 10;
@@ -22,7 +22,7 @@ const CLEAR_SLACK_SECONDS = 10;
 export const ID_OWED_REMEDY = 'identify by voice or run uv5r id';
 
 /** Device name the result reports for --rehearse. */
-export const REHEARSE_DEVICE = 'system default output';
+const REHEARSE_DEVICE = 'system default output';
 
 /**
  * The child processes and clocks the transmit and receive verbs use, injected so tests run

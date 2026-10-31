@@ -8,7 +8,6 @@ import {
   KEY_SIGNALS,
   settle,
   TransportError,
-  UsageError,
   withDetail,
   withSession,
   writeChannel,
@@ -22,7 +21,7 @@ import {
 /** Seconds `sweep` dwells on each entry when the caller gives no length. */
 export const SWEEP_SECONDS = 30;
 /** Memory slot `sweep` writes the check record and every plan entry into. */
-export const SWEEP_SLOT = 0;
+const SWEEP_SLOT = 0;
 
 export interface DwellOptions {
   /** avfoundation audio input to capture from. */
@@ -80,7 +79,7 @@ export interface SweepSummary {
 }
 
 /** Step of a sweep: the check write and capture, an entry write, or an entry dwell. */
-export type SweepPhase = 'check' | 'entry' | 'dwell';
+type SweepPhase = 'check' | 'entry' | 'dwell';
 
 /** State the sweep steps update as they go; the caller reads it to summarize a sweep that threw. */
 export interface SweepProgress {

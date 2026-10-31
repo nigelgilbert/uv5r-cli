@@ -11,12 +11,12 @@ export const FRAME_SAMPLES = (SAMPLE_RATE * FRAME_MS) / 1000;
 /** Bytes in one frame of s16le mono. */
 export const FRAME_BYTES = FRAME_SAMPLES * 2;
 export const FRAMES_PER_SECOND = 1000 / FRAME_MS;
-export const BYTES_PER_SECOND = SAMPLE_RATE * 2;
+const BYTES_PER_SECOND = SAMPLE_RATE * 2;
 
 /** Consecutive frames at or above the floor plus OPEN_MARGIN_DB that open a segment; 300 ms. */
 export const OPEN_FRAMES = 15;
 /** Decibels above the floor that each frame of the opening run reaches. */
-export const OPEN_MARGIN_DB = 5;
+const OPEN_MARGIN_DB = 5;
 /** Frames before the opening run that a segment includes; 300 ms. */
 export const PRE_ROLL_FRAMES = 15;
 /** Bytes after the last frame at or above the floor that a closed segment includes; 150 ms. */

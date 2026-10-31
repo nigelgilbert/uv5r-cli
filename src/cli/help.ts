@@ -2,7 +2,7 @@
 export const HELP_SCHEMA_VERSION = 2;
 
 /** Pointer printed under every verb's exits in the help JSON. */
-export const EXITS_NOTE = 'exits lists verb-specific notes on the codes in exitCodes in uv5r help --json; empty means none';
+const EXITS_NOTE = 'exits lists verb-specific notes on the codes in exitCodes in uv5r help --json; empty means none';
 
 /** One flag a verb takes. A flag without `value` is boolean. */
 export interface FlagDoc {
@@ -49,7 +49,7 @@ export interface VerbDoc {
 }
 
 /** Return the synopsis of a verb built from its arguments and flags. */
-export function usageLine(name: string, doc: VerbDoc): string {
+function usageLine(name: string, doc: VerbDoc): string {
   const args = doc.args.map((a) => (a.optional ? `[${a.name}]` : a.name));
   const flags = doc.flags.map((f) => {
     const text = f.value ? `--${f.name} ${f.value}` : `--${f.name}`;

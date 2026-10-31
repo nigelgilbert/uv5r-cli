@@ -30,7 +30,7 @@ export class FrameAccumulator {
 }
 
 /** ffmpeg arguments that capture `device` as 16 kHz s16le mono PCM on stdout. */
-export function monitorArgs(device: string): string[] {
+function monitorArgs(device: string): string[] {
   return [
     '-hide_banner',
     '-nostdin',

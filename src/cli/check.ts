@@ -16,7 +16,7 @@ import {
 /** Seconds `check` listens. */
 export const CHECK_SECONDS = 5;
 /** Share of captured seconds a passing check has active. */
-export const CHECK_ACTIVE_SHARE = 0.8;
+const CHECK_ACTIVE_SHARE = 0.8;
 
 export interface CheckOptions {
   /** avfoundation audio input to capture from. */
@@ -48,7 +48,7 @@ export async function refuseOpenSquelch(s: Session, n: number): Promise<void> {
 }
 
 /** Return the active seconds a capture of `seconds` needs to pass a check. */
-export function neededSeconds(seconds: number): number {
+function neededSeconds(seconds: number): number {
   return Math.ceil(CHECK_ACTIVE_SHARE * seconds);
 }
 
