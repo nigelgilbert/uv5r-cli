@@ -13,10 +13,11 @@ Read `uv5r help --json` once at the start of a session for the operating rules, 
 
 - Start with `uv5r status`. Run one verb at a time.
 - When `status` exits 5 with `session-unavailable` and the human confirms the radio is on and the cable is seated, run `uv5r identify` once with no `UV5R_MAGIC` prefix (about 29 s). Put the `pin` line it prints before every later `uv5r` command.
+- At setup, ask the human to select a quiet channel and set the macOS input volume of `AIOC Audio` to 100 percent. Run `uv5r volume`, relay `instruction` word for word, and rerun after the human says done, until `state` is `ok`.
 - Run `uv5r check 162.400 --channel 0` once per session before tuning slot 0, with a NOAA frequency that carries audio at the location. On exit 5, follow the error's `remedy` and `retry`.
 - Write a plan to its own slots with one `uv5r load PLAN.json`. Write public-safety listening channels with `--rx-only`.
 - Run `uv5r sweep channels.json --seconds 30 --out-dir rx` after the human sets MR mode and selects slot 0.
-- On `input clips`, ask the human to turn the volume knob down, then listen again.
+- On `input clips`, run the `volume` loop.
 
 ## Ask the human
 
