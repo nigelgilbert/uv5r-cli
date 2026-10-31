@@ -1502,7 +1502,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;
 }
 
-/** Return a volume result as state, rms and instruction lines in the listen layout. */
+/** Return a volume result as state, rms and instruction lines with aligned values. */
 function volumeText(r: VolumeResult): string {
   return [`state       ${r.state}`, `rms         ${r.rmsDbfs === null ? 'zero' : `${r.rmsDbfs} dBFS`}`, `instruction ${r.instruction}`].join('\n');
 }
