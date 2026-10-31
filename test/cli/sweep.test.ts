@@ -571,7 +571,8 @@ describe('sweep', () => {
   it('leaves knob mode and its flags out of the overview', async () => {
     await cli(['help']);
     const help = stdout.join('');
-    for (const word of ['knob', '--scratch', '--check', '--no-check']) expect(help).not.toContain(word);
+    // Match knob mode by name, since the volume verb names the volume knob.
+    for (const word of ['knob mode', '--scratch', '--check', '--no-check']) expect(help).not.toContain(word);
   });
 });
 
