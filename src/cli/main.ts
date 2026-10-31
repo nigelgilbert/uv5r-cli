@@ -156,7 +156,7 @@ const EXIT_CODES: Record<string, string> = {
   '4': 'timeout: no ack before a block read, or a short block payload',
   '5': 'device-state: no handshake, a bad reply, an unsupported radio, a refused write, a failed verification, an image ident mismatch, an open squelch, a check under 80% active seconds or a busy channel before say keys',
   '6': 'busy: another process holds the serial port',
-  '128+signal': 'interrupted by SIGINT, SIGTERM, SIGHUP or SIGTSTP: key, say and id release PTT, and sweep and hear print their summary',
+  '128+signal': 'interrupted by SIGINT, SIGTERM, SIGHUP or SIGTSTP: key, say and id release PTT, and sweep and hear print their summary; volume restores squelch and prints no result',
 };
 
 const ERROR_GUIDANCE =
@@ -742,7 +742,7 @@ const verbs: Record<string, Verb> = {
       `Judge the capture in this order. A clip warning reads too-loud. A mean RMS of digital zero, or at or under ${DEFAULT_FLOOR_DBFS} dBFS, reads silent. ` +
         `Above ${TARGET_HIGH_DBFS} dBFS reads too-loud, below ${TARGET_LOW_DBFS} dBFS reads too-quiet, and ${TARGET_LOW_DBFS}..${TARGET_HIGH_DBFS} dBFS reads ok. ` +
         `More than ${COARSE_STEP_DB} dB outside the band asks for a quarter turn.`,
-      `The band ${TARGET_LOW_DBFS}..${TARGET_HIGH_DBFS} dBFS is provisional until a bench pass with live speech sets it.`,
+      'The band is provisional until a bench pass with live speech sets it.',
       'state is for branching, rmsDbfs is the mean RMS, and instruction is the sentence to relay to the human word for word. Run volume again after the human says done.',
       'Once squelch is kept above 0, any error carries squelch, the kept value, with the remedy run uv5r settings squelch N, and keeps its own reason and exit code.',
       'On SIGINT, SIGTERM, SIGHUP or SIGTSTP, stop the capture, restore squelch, print no result and exit 128 plus the signal number.',
@@ -1504,7 +1504,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
 
 /** Return a volume result as state, rms and instruction lines in the listen layout. */
 function volumeText(r: VolumeResult): string {
-  return [`state      ${r.state}`, `rms        ${r.rmsDbfs === null ? 'zero' : `${r.rmsDbfs} dBFS`}`, `instruction ${r.instruction}`].join('\n');
+  return [`state       ${r.state}`, `rms         ${r.rmsDbfs === null ? 'zero' : `${r.rmsDbfs} dBFS`}`, `instruction ${r.instruction}`].join('\n');
 }
 
 async function volumeVerb(args: Invocation): Promise<number> {

@@ -1,8 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIP_WARNING, listen, type ListenResult } from '../../src/cli/audio.ts';
-import { KEY_SIGNALS, TransportError } from '../../src/core/index.ts';
-import { signalExitCode } from '../../src/cli/exit.ts';
+import { KEY_SIGNALS, REASONS, TransportError } from '../../src/core/index.ts';
 import { cli, type OpenTransport } from '../../src/cli/main.ts';
 import { judgeVolume, readVolume, TARGET_HIGH_DBFS, TARGET_LOW_DBFS, VOLUME_SECONDS, type WithPort } from '../../src/cli/volume.ts';
 import { FakeRadio } from '../core/fake.ts';
@@ -95,11 +94,14 @@ class DriftingRadio extends FakeRadio {
   }
 }
 
-/** A fake radio that answers writes again from its second handshake on. */
+/** A fake radio that acks writes again from its second handshake on and keeps the squelch it held then. */
 class RecoveringRadio extends FakeRadio {
   private handshakeCount = 0;
+  squelchAtSecondHandshake: number | undefined;
   protected override acked(): void {
-    if (this.handshakeCount++ === 1) this.refuseWriteAt = undefined;
+    if (this.handshakeCount++ !== 1) return;
+    this.squelchAtSecondHandshake = this.eeprom[SQUELCH_AT];
+    this.unackedWriteAt = undefined;
   }
 }
 
@@ -144,6 +146,7 @@ describe('judgeVolume', () => {
 describe('volume', () => {
   it('writes squelch 0, verifies it, captures 2 s, restores squelch and prints the result', async () => {
     const radio = new FakeRadio();
+    radio.eeprom[SQUELCH_AT] = 7;
     let squelchAtListen: number | undefined;
     let writesAtListen: number[] = [];
     listenMock.mockImplementation(async () => {
@@ -159,7 +162,7 @@ describe('volume', () => {
     expect(radio.writes).toEqual([...SETTINGS_WRITES, ...SETTINGS_WRITES]);
     // Open the write session, its verification, the restore and its verification.
     expect(radio.handshakes).toHaveLength(4);
-    expect(radio.eeprom[SQUELCH_AT]).toBe(3);
+    expect(radio.eeprom[SQUELCH_AT]).toBe(7);
     expect(outJson()).toEqual({ state: 'too-loud', rmsDbfs: -10.4, instruction: 'Turn the volume knob down about a quarter turn, then say done.' });
   });
 
@@ -182,14 +185,31 @@ describe('volume', () => {
     expect(outJson()).toEqual({ state: 'too-quiet', rmsDbfs: -40, instruction: 'Turn the volume knob up about a quarter turn, then say done.' });
   });
 
+  it('exits 3 with the capture error and no squelch when squelch is already 0', async () => {
+    const radio = new FakeRadio();
+    radio.eeprom[SQUELCH_AT] = 0;
+    listenMock.mockRejectedValue(new TransportError('capture-incomplete', 'ffmpeg captured 1 of 3 seconds from "AIOC Audio"'));
+    await run(['volume', '--json'], opener(radio));
+    expect(process.exitCode).toBe(3);
+    expect(radio.writes).toEqual([]);
+    expect(errJson()).not.toHaveProperty('squelch');
+    expect(errJson()).toMatchObject({ reason: 'capture-incomplete', remedy: REASONS['capture-incomplete'].remedy });
+  });
+
   it('prints state, rms and instruction on three lines on a terminal', async () => {
     listenMock.mockResolvedValue(heard(null));
     await onTerminal(() => run(['volume'], opener(new FakeRadio())));
     expect(stdout.join('')).toBe(
-      'state      silent\n' +
-        'rms        zero\n' +
+      'state       silent\n' +
+        'rms         zero\n' +
         'instruction The Mac is sending the radio tool silence. In System Settings, Privacy & Security, Microphone, allow the terminal, and check that AIOC Audio is not muted. Then say done.\n',
     );
+  });
+
+  it('prints the rms in dBFS on a terminal', async () => {
+    listenMock.mockResolvedValue(heard(-25));
+    await onTerminal(() => run(['volume'], opener(new FakeRadio())));
+    expect(stdout.join('')).toBe('state       ok\nrms         -25 dBFS\ninstruction The volume knob is set. Leave it there.\n');
   });
 
   it('restores squelch after a capture error and adds squelch and the remedy to the error', async () => {
@@ -215,12 +235,13 @@ describe('volume', () => {
 
   it('restores squelch after the squelch 0 write loses its ack', async () => {
     const radio = new RecoveringRadio();
-    radio.refuseWriteAt = SQUELCH_AT;
+    radio.unackedWriteAt = 0x0e40;
     await run(['volume', '--json'], opener(radio));
     expect(process.exitCode).toBe(5);
     expect(errJson()).toMatchObject({ reason: 'write-unacknowledged', squelch: 3, remedy: 'run uv5r settings squelch 3' });
     expect(listenMock).not.toHaveBeenCalled();
-    expect(radio.writes).toEqual([SQUELCH_AT, ...SETTINGS_WRITES]);
+    expect(radio.writes).toEqual([...SETTINGS_WRITES, ...SETTINGS_WRITES]);
+    expect(radio.squelchAtSecondHandshake).toBe(0);
     expect(radio.eeprom[SQUELCH_AT]).toBe(3);
   });
 
@@ -242,13 +263,14 @@ describe('volume', () => {
 
   it('exits 5 with squelch and the remedy when the restore loses its ack', async () => {
     const radio = new FakeRadio();
+    radio.eeprom[SQUELCH_AT] = 7;
     listenMock.mockImplementation(async () => {
       radio.refuseWriteAt = SQUELCH_AT;
       return heard(-25);
     });
     await run(['volume', '--json'], opener(radio));
     expect(process.exitCode).toBe(5);
-    expect(errJson()).toMatchObject({ reason: 'write-unacknowledged', squelch: 3, remedy: 'run uv5r settings squelch 3', retry: 'after-remedy' });
+    expect(errJson()).toMatchObject({ reason: 'write-unacknowledged', squelch: 7, remedy: 'run uv5r settings squelch 7', retry: 'after-remedy' });
     expect(radio.eeprom[SQUELCH_AT]).toBe(0);
     expect(stdout).toEqual([]);
   });
@@ -303,7 +325,7 @@ describe('volume', () => {
   it('lists the band as provisional and the squelch write in help volume', async () => {
     await cli(['help', 'volume', '--json']);
     const help = JSON.parse(stdout.join('')) as { effects: string[]; preconditions: string[]; writesToRadio: { writes: boolean }; result: unknown };
-    expect(help.effects).toContain('The band -28..-22 dBFS is provisional until a bench pass with live speech sets it.');
+    expect(help.effects).toContain('The band is provisional until a bench pass with live speech sets it.');
     expect(help.preconditions.join(' ')).toContain('AIOC Audio is at 100 percent');
     expect(help.writesToRadio.writes).toBe(true);
     expect(help.result).toEqual({ state: 'too-loud', rmsDbfs: -10.4, instruction: 'Turn the volume knob down about a quarter turn, then say done.' });
@@ -326,7 +348,6 @@ describe('readVolume', () => {
     expect(await done).toEqual({ interrupted: 'SIGTERM' });
     expect(radio.eeprom[SQUELCH_AT]).toBe(3);
     expect(KEY_SIGNALS.reduce((n, s) => n + signals.listenerCount(s), 0)).toBe(0);
-    expect(signalExitCode('SIGTERM')).toBe(143);
   });
 
   it('installs its handlers before the port opens and skips the radio on a signal during the open', async () => {

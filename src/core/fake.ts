@@ -93,6 +93,8 @@ export class FakeRadio implements Transport {
   corruptWriteAt: number | undefined;
   /** Address of a write the radio drops without an ack. */
   refuseWriteAt: number | undefined;
+  /** Address of a write the radio stores without an ack, as when the ack is lost on the wire. */
+  unackedWriteAt: number | undefined;
   /** Address of a read the radio leaves unanswered, to time out the read. */
   silentReadAt: number | undefined;
 
@@ -254,6 +256,7 @@ export class FakeRadio implements Transport {
         this.writes.push(addr);
         if (addr === this.refuseWriteAt) continue;
         this.store(addr, data);
+        if (addr === this.unackedWriteAt) continue;
         this.stored(addr);
         this.outbox.push(0x06);
         continue;
