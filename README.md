@@ -64,10 +64,9 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
    [Troubleshooting](#troubleshooting).
 2. Run `uv5r dump --out backup.img`. It saves the full memory image in about 14 s. Keep it.
    `uv5r restore backup.img --force` writes it back.
-3. Set the macOS input volume of `AIOC Audio` to 100 percent. With the radio on a quiet
-   channel, run `uv5r volume`. It reads 2 s of open-squelch static, puts the squelch back and
-   prints an `instruction`. Turn the knob as it says and run it again until `state` is `ok`.
-   Then run `uv5r settings squelch 3`. At squelch 0, static reads as audio.
+3. Set the macOS input volume of `AIOC Audio` to 100 percent and put the radio on a quiet
+   channel. Run `uv5r volume`, turn the knob as its `instruction` says and run it again until
+   `state` is `ok`. Then run `uv5r settings squelch 3`. At squelch 0, static reads as audio.
 4. Press VFO/MR until the radio shows memory channels (MR mode), slots 0 to 127. VFO mode
    tunes a keyed-in frequency instead. Select slot 0.
 5. Run `uv5r check 162.400 --channel 0` with a NOAA weather frequency that carries audio where

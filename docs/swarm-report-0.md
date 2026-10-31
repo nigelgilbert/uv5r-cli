@@ -16,15 +16,15 @@ Landed in `80a727b`, merged in `3933417`.
   already open. The handlers stay until the restore ends.
 - `main.ts` adds the `volume` entry after `sweep` and `volumeVerb`. Text mode prints `state`,
   `rms` and `instruction`.
-- Two existing tests changed. `cli.test.ts` lists `volume` in the two verb lists. The sweep
-  overview test matched the word `knob` to guard against the removed knob mode; it now matches
-  `knob mode`, since the volume instructions name the knob.
+- Three existing tests changed across two files. `cli.test.ts` lists `volume` in the two verb
+  lists. The sweep overview test matched the word `knob` to guard against the removed knob mode;
+  it now matches `knob mode`, since the volume instructions name the knob.
 - The squelch detail and remedy go on an error only when the kept squelch is above 0. The
   error also carries `retry: after-remedy`, since a rerun at squelch 0 would keep 0 and skip
   the restore.
 - Help wording: "reads as the signal instead of static" became "reads as signal level and
   hides the static".
-- Tests: 36 in `volume.test.ts`. Every judge row, the band edges, clipping at low, in-band and
+- Tests: 37 in `volume.test.ts`. Every judge row, the band edges, clipping at low, in-band and
   null RMS, the full flow against `FakeRadio`, squelch already 0, restore after a capture
   error, a failed verification, a lost ack and SIGINT, restore failure detail, ffmpeg missing,
   unknown flags, help contents, handlers in place before the port opens.
@@ -39,7 +39,7 @@ Landed in `097c7d1`.
 - receive.md: the knob paragraph becomes the loop and the input volume precondition. The
   floor and clip explanations stay.
 - bench-two-station.md: preflight step 4 becomes `uv5r volume` until `ok`. The dated setup
-  notes keep the old recipe as the record.
+  notes keep the level readings taken under the old recipe.
 - SKILL.md: a setup line and the `input clips` line run the loop.
 
 ### Issue 001 measurement rows

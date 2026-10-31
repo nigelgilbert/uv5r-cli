@@ -16,7 +16,8 @@ Set the knob with `uv5r volume`. It measures open-squelch static, which reads th
 antenna and location. It writes squelch 0, captures 2 s, writes the kept squelch back and prints
 `state`, `rmsDbfs` and an `instruction` for the human. Relay the instruction, wait for the
 human to say done, and run `volume` again until `state` is `ok`. `uv5r help volume` gives the
-target band. A failed squelch restore errors with `squelch` and the remedy
+target band. Once `volume` reads a squelch above 0, an error from the squelch write, the
+read-back, the capture or the restore carries `squelch` and the remedy
 `run uv5r settings squelch N`.
 
 Before the first run, select a quiet channel and set the macOS input volume of `AIOC Audio` to
