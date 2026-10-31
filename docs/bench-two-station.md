@@ -48,8 +48,8 @@ the same callsign.
 2. `uv5r check 162.400 --channel 0`. On `audio-inactive`, set MR mode and select slot 0 on
    the display, then check again.
 3. `uv5r tune 446.525 --channel 1 --low-power --name 446525`, then select slot 1 on the display.
-4. Set the volume knob so `uv5r listen --seconds 5` with squelch 0 reads static near
-   -20 to -12 dBFS, then set squelch 3 again.
+4. Set the macOS input volume of `AIOC Audio` to 100 percent. Run `uv5r volume`, turn the
+   knob as its `instruction` says, and rerun until `state` is `ok`.
 5. Set the macOS output volume of `AIOC Audio` to a middle value. Set VOX off (menu 4).
 6. Confirm the display shows slot 1 and tell the Claude session.
 

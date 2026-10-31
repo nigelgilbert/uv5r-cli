@@ -238,7 +238,7 @@ describe('help', () => {
     for (const line of Object.values(help.errors.reasons)) expect(line).toMatch(/^exit \d: /);
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
-    expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep']);
+    expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep', 'volume']);
     const flag = (verb: string, name: string) => help.verbs[verb].flags.find((f: { flag: string }) => f.flag === name);
     expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--device', '--json', '--target']);
     expect(flag('sweep', '--seconds').default).toBe(30);
@@ -296,7 +296,7 @@ describe('help', () => {
     const line = stderr.join('');
     expect(Buffer.byteLength(line)).toBeLessThan(300);
     expect(errJson().message).toBe(
-      'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, say, id, dump, restore, settings, listen, hear, sweep; run uv5r help VERB',
+      'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, say, id, dump, restore, settings, listen, hear, sweep, volume; run uv5r help VERB',
     );
     expect(line).not.toContain('usage:');
     expect(line).not.toContain('exit codes');

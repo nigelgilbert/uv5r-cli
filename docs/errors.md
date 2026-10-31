@@ -20,6 +20,8 @@ level beside them. Act on `reason`, `remedy` and `retry`.
 - A failed check also carries the check result fields.
 - A `key`, `say` or `id` error adds `assertedAtMs` and `releasedAtMs` for each PTT change that
   resolved.
+- A `volume` error from the squelch write, the read-back, the capture or the restore, after it
+  reads a squelch above 0, adds `squelch`, the kept value. The `remedy` writes it back.
 
 ## Signals
 
@@ -38,6 +40,9 @@ A failed PTT release after the signal exits 3 with `interrupted` in the error.
 On the same signals `hear` stops capture and closes the open segment. It prints a `backlog`
 warning for each segment left untranscribed, lets the segment in inference finish and print,
 prints the summary with `interrupted` and exits 128 plus the signal number.
+
+On the same signals `volume` stops the capture, writes the kept squelch back, prints no result
+and exits 128 plus the signal number. A failed restore exits with its own error.
 
 Other verbs end on a signal with no output.
 
