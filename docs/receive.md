@@ -10,10 +10,21 @@ access gives digital zero.
 
 The AIOC's bare ADC floor at 1x gain reads about -66 dBFS. Open-squelch static reads above
 -30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug is short
-of its contact. Set the knob so static reads around -20 to -12.
+of its contact.
+
+Set the knob with `uv5r volume`. It measures open-squelch static, which reads the same at any
+antenna and location. It writes squelch 0, captures 2 s, writes the kept squelch back and prints
+`state`, `rmsDbfs` and an `instruction` for the human. Relay the instruction, wait for the
+human to say done, and run `volume` again until `state` is `ok`. `uv5r help volume` gives the
+target band. A failed squelch restore errors with `squelch` and the remedy
+`run uv5r settings squelch N`.
+
+Before the first run, select a quiet channel and set the macOS input volume of `AIOC Audio` to
+100 percent. The AIOC firmware applies a lower input volume as a digital scale after the ADC,
+which hides clipping and makes static read low. The CLI cannot read that setting.
 
 The warning `input clips: turn the volume knob down` means more than 1 percent of samples sit
-at full scale. Turn the knob down, then listen again.
+at full scale. Run the `volume` loop.
 
 Open-squelch noise reads as audio on any frequency. `check` and `sweep` read the squelch
 setting first and exit 5 with `squelch-open` when it is 0. Run `uv5r settings squelch 3` after

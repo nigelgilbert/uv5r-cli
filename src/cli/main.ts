@@ -69,6 +69,7 @@ import {
 import { EXIT, exitCodeFor, signalExitCode } from './exit.ts';
 import { HELP_SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type Slot0, type SweepSummary } from './sweep.ts';
+import { COARSE_STEP_DB, judgeVolume, readVolume, TARGET_HIGH_DBFS, TARGET_LOW_DBFS, VOLUME_INSTRUCTIONS, VOLUME_SECONDS, type VolumeResult } from './volume.ts';
 import { nextSeq, NOISE_PHRASES, QUEUE_LIMIT, runHear, type HearLine } from '../tts/hear.ts';
 import { idSentence } from '../tts/phonetic.ts';
 import { defaultSpeechDeps, ID_OWED_REMEDY, speakUtterance, type SpeakOptions, type SpeakResult, type SpeechDeps } from '../tts/speak.ts';
@@ -727,6 +728,42 @@ const verbs: Record<string, Verb> = {
     ],
     positionals: 1,
     run: sweepVerb,
+  },
+  volume: {
+    summary: 'Read open-squelch static and print which way to turn the volume knob, with the sentence to relay to the human',
+    example: 'uv5r volume',
+    args: [],
+    flags: [DEVICE_FLAG, ...COMMON_FLAGS],
+    effects: [
+      FFMPEG_FIRST,
+      'Read the squelch setting and keep it. When it is above 0, write squelch 0 in the same clone session, wait for the reload and read the block back in a fresh session.',
+      `Capture ${VOLUME_SECONDS} s of static with the listen pipeline.`,
+      'Write the kept squelch back in a fresh session and read it back. This runs after a failed write, a failed read-back, a failed capture or a signal too. Squelch 0 at the start skips the write and the restore.',
+      `Judge the capture in this order. A clip warning reads too-loud. A mean RMS of digital zero, or at or under ${DEFAULT_FLOOR_DBFS} dBFS, reads silent. ` +
+        `Above ${TARGET_HIGH_DBFS} dBFS reads too-loud, below ${TARGET_LOW_DBFS} dBFS reads too-quiet, and ${TARGET_LOW_DBFS}..${TARGET_HIGH_DBFS} dBFS reads ok. ` +
+        `More than ${COARSE_STEP_DB} dB outside the band asks for a quarter turn.`,
+      `The band ${TARGET_LOW_DBFS}..${TARGET_HIGH_DBFS} dBFS is provisional until a bench pass with live speech sets it.`,
+      'state is for branching, rmsDbfs is the mean RMS, and instruction is the sentence to relay to the human word for word. Run volume again after the human says done.',
+      'Once squelch is kept above 0, any error carries squelch, the kept value, with the remedy run uv5r settings squelch N, and keeps its own reason and exit code.',
+      'On SIGINT, SIGTERM, SIGHUP or SIGTSTP, stop the capture, restore squelch, print no result and exit 128 plus the signal number.',
+    ],
+    preconditions: [
+      RADIO_READY,
+      AUDIO_READY,
+      '--device names the AIOC input.',
+      'The radio is on a quiet channel. A carrier during the capture reads as signal level and hides the static.',
+      'Open squelch shows the human nothing on the display, so name the channel the display shows before running.',
+      'The macOS input volume of AIOC Audio is at 100 percent. The AIOC applies a lower input volume as a digital scale after the ADC, which hides clipping and makes static read low. volume cannot read that setting.',
+    ],
+    writesToRadio: { writes: true, note: 'squelch 0 for the capture; the kept squelch is written back before exit' },
+    result: { state: 'too-loud', rmsDbfs: -10.4, instruction: VOLUME_INSTRUCTIONS.farAbove },
+    exits: [
+      { code: 0, when: 'every state; a knob that needs turning is the expected result' },
+      { code: 3, when: 'a short capture' },
+      { code: 5, when: 'a refused squelch write or a failed read-back, including the restore' },
+    ],
+    positionals: 0,
+    run: volumeVerb,
   },
 };
 
@@ -1463,6 +1500,23 @@ async function sweepVerb(args: Invocation): Promise<number> {
   }
   print(args, summary, () => sweepText(summary));
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;
+}
+
+/** Return a volume result as state, rms and instruction lines in the listen layout. */
+function volumeText(r: VolumeResult): string {
+  return [`state      ${r.state}`, `rms        ${r.rmsDbfs === null ? 'zero' : `${r.rmsDbfs} dBFS`}`, `instruction ${r.instruction}`].join('\n');
+}
+
+async function volumeVerb(args: Invocation): Promise<number> {
+  checkFlags('volume', args.flags, flagNames('volume'));
+  const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  const magic = selectedMagic();
+  await checkFfmpeg();
+  const reading = await readVolume((fn) => withTransport(args, fn), { device, magic, signals: args.deps.signals });
+  if ('interrupted' in reading) return signalExitCode(reading.interrupted);
+  const result = judgeVolume(reading.heard);
+  print(args, result, () => volumeText(result));
+  return EXIT.ok;
 }
 
 async function main(args: Invocation): Promise<number> {

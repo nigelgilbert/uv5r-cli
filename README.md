@@ -46,8 +46,8 @@ Stand up an emergency alert station in one line.  Command robots by talking to t
 
 - A Baofeng UV-5R and an [NA6D AIOC](https://na6d.com/products/aioc-ham-radio-all-in-one-cable?_su_rec=Ge0zP1gLeHTXemaUkJiPyYw7fAjrPZ7alzWWfiv2lllYe16vSE00uoYZaQqplBlw_V4w3BfrwzvGzl4QzgXszX3wYATprmme-sT97GxwemQ8LGHOVLX5pShQTiTzD6KvGEAj7cy0MlCWe3ARXOp2LoneVVBEg1jF7Fo9ku7zHGP1jy5srtNJL_PSSiQFfR-sIlfdgFViw-BzJnjBfZdhBhUDYWgRebkkXuGYm7Br9ah__-raSmzWkvanOPle2cvCx2J5ObvIofiW2kigbXQfmsBQFCI7_teO3igA-pPYr0CIEvgwkgC3d2u2836VWYRhcAKYu06OUyWO3y-17w&_su_rec_id=bad9c452-0906-4377-b98e-b317b4c8ce85-1792990699) seated fully in its K1 jack.
 - Node 24, which runs the `.ts` sources directly.
-- macOS and ffmpeg on PATH for the audio verbs: `check`, `listen`, `sweep`, `hear`, `say` and
-  `id`. They use avfoundation, audiotoolbox, `say` and `afplay`.
+- macOS and ffmpeg on PATH for the audio verbs: `check`, `listen`, `volume`, `sweep`, `hear`,
+  `say` and `id`. They use avfoundation, audiotoolbox, `say` and `afplay`.
 - Microphone access for your terminal in System Settings, Privacy & Security, Microphone.
 - `hear`: `whisper-cli` on PATH and two models in `models/`. See [Transcribe](#transcribe).
 - `say` and `id`: a `uv5r.json` with your callsign, and an amateur license.
@@ -64,14 +64,17 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
    [Troubleshooting](#troubleshooting).
 2. Run `uv5r dump --out backup.img`. It saves the full memory image in about 14 s. Keep it.
    `uv5r restore backup.img --force` writes it back.
-3. Run `uv5r settings squelch 3`. At squelch 0, static reads as audio.
+3. Set the macOS input volume of `AIOC Audio` to 100 percent. With the radio on a quiet
+   channel, run `uv5r volume`. It reads 2 s of open-squelch static, puts the squelch back and
+   prints an `instruction`. Turn the knob as it says and run it again until `state` is `ok`.
+   Then run `uv5r settings squelch 3`. At squelch 0, static reads as audio.
 4. Press VFO/MR until the radio shows memory channels (MR mode), slots 0 to 127. VFO mode
    tunes a keyed-in frequency instead. Select slot 0.
 5. Run `uv5r check 162.400 --channel 0` with a NOAA weather frequency that carries audio where
    you are. Try 162.400 to 162.550. It writes a receive-only record into slot 0, waits 3 s for
    the radio to reload and listens 5 s. Exit 0 means audio in at least 4 of the 5 seconds.
    Exit 5 has two reasons:
-   - `squelch-open`: squelch is 0. Run step 3 again.
+   - `squelch-open`: squelch is 0. Run `uv5r settings squelch 3`.
    - `audio-inactive`: the capture was quiet. The radio is in VFO mode or on another slot, the
      knob is down, the plug is short of its contact, or the frequency is quiet.
 
@@ -157,6 +160,7 @@ channel-plan skill for your location. `channels.json` is gitignored.
 | `restore` | Write an image back, with `--force` | channels, names, settings |
 | `settings` | Print the menu settings, or set them with `FIELD VALUE` pairs | with pairs |
 | `listen` | Record receive audio and report levels | no |
+| `volume` | Read open-squelch static and say which way to turn the volume knob | squelch, restored before exit |
 | `hear` | Transcribe each received transmission | no |
 | `sweep` | Check slot 0, then dwell on each plan entry in slot 0 | slot 0 |
 
@@ -182,7 +186,7 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 | exit 5 `session-unavailable` | the radio did not answer the magic | `uv5r identify`; when it prints a `pin` line, put it before every command |
 | levels read digital zero | the terminal lacks microphone access | grant it in Privacy & Security, Microphone |
 | levels sit near -66 dBFS | the knob is down or the plug is short of its contact | knob up, push the plug home |
-| warning `input clips` | the knob is too high | turn the knob down and listen again |
+| warning `input clips` | the knob is too high | `uv5r volume` until `ok` |
 | silence from the speaker | the AIOC mutes it | `listen --play`, or play the WAVs |
 | exit 2 `station-unconfigured` | `uv5r.json` has no callsign | add the callsign |
 | exit 3 `dependency-missing` | ffmpeg, whisper-cli or a model is missing | install it; the message names it |
