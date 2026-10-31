@@ -8,7 +8,7 @@ from the base commit.
 
 ### Code and tests: items 1, 2, 5, 6, 7, 8, 11, 12
 
-Landed in `241be94`, merged in `2ad9f8a`.
+Landed in `241be94`, merged in `4af0e9d`.
 
 - 1: the flow test and the restore-failure test start at squelch 7 and assert 7, `squelch: 7`
   and the remedy with 7.
