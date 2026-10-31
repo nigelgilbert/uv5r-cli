@@ -186,3 +186,22 @@ Squelch 3 matches step 2. No restore was needed.
 - Expected the instruction to be enough on its own. "Turn the volume knob up a little" names neither the knob nor the direction. The volume knob is also the power switch, and the human gets no sound or display feedback while turning.
 - Expected `uv5r volume` in text mode to print only the result. Under `script -q /dev/null` it printed a leading `^D` before `state`.
 - Expected steady `settings` wall times. The same read took 1.15 to 1.94 s on some runs and 5.42 to 5.43 s on others.
+
+## Knob loop with the human, same day
+
+Run from the main session after the trial, with the human at the radio. The AIOC input was the
+macOS default input device.
+
+| run | before the run | rmsDbfs | state |
+|---|---|---|---|
+| 1 | trial position | -29.53 | too-quiet |
+| 2 | human turned the knob "a little" | -29.90 | too-quiet |
+| 3 | macOS input volume 61 to 100 percent | -29.90 | too-quiet |
+| 4 | human turned the knob about a quarter turn clockwise | -27.81 | ok |
+
+- The macOS input volume change moved the reading by nothing. Issue 001 reports the AIOC
+  firmware scaling the host input volume after the ADC; this radio and cable showed no scaling
+  at 61 percent.
+- "A little" moved the reading under the 0.46 dB run-to-run spread. A quarter turn moved it
+  about 2 dB at this end of the knob's travel.
+- The loop closed in four runs, about 90 s of radio time.
