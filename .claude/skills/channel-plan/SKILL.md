@@ -126,7 +126,7 @@ uv5r load channels.json
 ```
 
 Each entry goes to its own `channel` number. `load` validates `checkMhz` and writes nothing
-for it. Each field maps onto one `tune` flag, as the README's plan fields table lists.
+for it. It prints each record with `rxHz` and `txHz` in integer Hz. Each field maps onto one `tune` flag, as the README's plan fields table lists.
 Exit 2 names the channel and field to fix in the plan; nothing is written. Exit 5 names
 the channel that did not take the write.
 

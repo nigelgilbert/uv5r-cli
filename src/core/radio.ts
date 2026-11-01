@@ -55,8 +55,8 @@ export function channelPayload(n: number, ch: Channel | MalformedRecord | undefi
   if (!ch) return { channel: n, empty: true };
   if ('malformed' in ch) return { channel: n, ...ch };
   // Destructure the first three keys to keep the documented order, which puts txTone before rxTone.
-  const { scan: _scan, rxMhz, txMhz, txTone, ...rest } = channelToJson(ch);
-  return { channel: n, rxMhz, txMhz, txTone, ...rest };
+  const { scan: _scan, rxHz, txHz, txTone, ...rest } = channelToJson(ch);
+  return { channel: n, rxHz, txHz, txTone, ...rest };
 }
 
 /** Bytes of ident before main memory in a CHIRP image. */

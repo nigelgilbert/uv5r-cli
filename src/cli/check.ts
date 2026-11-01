@@ -1,7 +1,7 @@
 import { DEFAULT_FLOOR_DBFS, listen, type ListenResult } from './audio.ts';
 import {
   DeviceStateError,
-  formatMhz,
+  mhzText,
   readSettings,
   settle,
   withDetail,
@@ -25,7 +25,7 @@ export interface CheckOptions {
   magic?: Magic;
 }
 
-export type CheckResult = { slot: number; requestedMhz: string } & ListenResult;
+export type CheckResult = { slot: number; requestedHz: number } & ListenResult;
 
 /** Return `spec` as a receive-only record with no TX frequency. */
 export function receiveOnly(spec: ChannelSpec): ChannelSpec {
@@ -54,18 +54,18 @@ function neededSeconds(seconds: number): number {
 
 /**
  * Judge a capture taken after writing `spec` into slot `n`. Return it with `slot` and
- * `requestedMhz` when at least 80% of its seconds are active. Throw a DeviceStateError
+ * `requestedHz` when at least 80% of its seconds are active. Throw a DeviceStateError
  * that lists the causes otherwise. A pass means audio above the floor after writing slot
  * `n`, consistent with the radio receiving slot `n`; the received frequency stays unverified.
  */
 export function judgeCheck(n: number, spec: ChannelSpec, heard: ListenResult): CheckResult {
-  const result = { slot: n, requestedMhz: formatMhz(spec.rxHz), ...heard };
+  const result = { slot: n, requestedHz: spec.rxHz, ...heard };
   const total = heard.active.length;
   const needed = neededSeconds(total);
   if (total > 0 && heard.activeSeconds >= needed) return result;
   throw new DeviceStateError(
     'audio-inactive',
-    `slot ${n}: ${heard.activeSeconds} of ${total} s active after writing ${result.requestedMhz} MHz, check needs ${needed}; ` +
+    `slot ${n}: ${heard.activeSeconds} of ${total} s active after writing ${mhzText(spec.rxHz)} MHz, check needs ${needed}; ` +
       `causes: VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency; ` +
       `ask the human to set MR mode and select slot ${n}`,
     result,
@@ -77,7 +77,7 @@ export function judgeCheck(n: number, spec: ChannelSpec, heard: ListenResult): C
  * Refuse an open squelch, then write `spec` into slot `n` as a receive-only record in the
  * same clone session. Wait for the reload, listen CHECK_SECONDS at DEFAULT_FLOOR_DBFS and
  * judge the capture with judgeCheck. Slot `n` keeps the receive-only record after the
- * write, also when the capture fails; a capture error then carries `slot` and `requestedMhz`.
+ * write, also when the capture fails; a capture error then carries `slot` and `requestedHz`.
  */
 export async function checkChannel(t: Transport, n: number, spec: ChannelSpec, options: CheckOptions): Promise<CheckResult> {
   await withSession(t, async (s) => {
@@ -89,7 +89,7 @@ export async function checkChannel(t: Transport, n: number, spec: ChannelSpec, o
   try {
     heard = await listen(options.input, CHECK_SECONDS, DEFAULT_FLOOR_DBFS);
   } catch (err) {
-    throw withDetail(err, { slot: n, requestedMhz: formatMhz(spec.rxHz) });
+    throw withDetail(err, { slot: n, requestedHz: spec.rxHz });
   }
   return judgeCheck(n, spec, heard);
 }

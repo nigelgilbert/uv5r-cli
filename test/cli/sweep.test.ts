@@ -157,8 +157,8 @@ describe('sweep', () => {
       seconds: 30,
       input: 'AIOC Audio',
       active: [
-        { channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 },
-        { channel: 3, slot: 0, name: 'NOAA 3', requestedMhz: '162.55', activeSeconds: 1 },
+        { channel: 1, slot: 0, name: 'NOAA 1', requestedHz: 162_400_000, activeSeconds: 2 },
+        { channel: 3, slot: 0, name: 'NOAA 3', requestedHz: 162_550_000, activeSeconds: 1 },
       ],
       warnings: [],
       slot0: { channel: 7, name: 'SHERIFF' },
@@ -166,7 +166,7 @@ describe('sweep', () => {
     stdout = [];
     radio.dropSession();
     await run(['read', '0', '--json'], opener(radio));
-    expect(outJson()).toMatchObject({ channel: 0, rxMhz: '154.695', txMhz: null, rxTone: '156.7', bandwidth: 'narrow', name: 'SHERIFF' });
+    expect(outJson()).toMatchObject({ channel: 0, rxHz: 154_695_000, txHz: null, rxTone: '156.7', bandwidth: 'narrow', name: 'SHERIFF' });
   });
 
   it('writes each entry with its own TX setting', async () => {
@@ -207,7 +207,7 @@ describe('sweep', () => {
       phase: 'check',
       slot: 0,
       channel: null,
-      requestedMhz: '162.4',
+      requestedHz: 162_400_000,
       activeSeconds: active,
       summary: { swept: 0, seconds: 2, input: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' } },
     });
@@ -413,12 +413,12 @@ describe('sweep', () => {
       phase: 'dwell',
       slot: 0,
       channel: 2,
-      requestedMhz: '162.475',
+      requestedHz: 162_475_000,
       summary: {
         swept: 1,
         seconds: 2,
         input: 'AIOC Audio',
-        active: [{ channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 }],
+        active: [{ channel: 1, slot: 0, name: 'NOAA 1', requestedHz: 162_400_000, activeSeconds: 2 }],
         warnings: [],
         slot0: { channel: 2, name: 'NOAA 2' },
       },
@@ -442,7 +442,7 @@ describe('sweep', () => {
       phase: 'entry',
       slot: 0,
       channel: 3,
-      requestedMhz: '162.55',
+      requestedHz: 162_550_000,
       summary: { swept: 2, slot0: null },
     });
     expect(errJson()).not.toHaveProperty('written');
@@ -475,17 +475,17 @@ describe('sweep', () => {
       phase: 'check',
       slot: 0,
       channel: null,
-      requestedMhz: '162.4',
+      requestedHz: 162_400_000,
       summary: { swept: 0, active: [], slot0: null },
     });
     expect(stdout).toEqual([]);
   });
 
-  it('carries the checkMhz frequency in requestedMhz when the check capture fails', async () => {
+  it('carries the checkMhz frequency in requestedHz when the check capture fails', async () => {
     listenMock.mockRejectedValue(new TransportError('audio-process-failed', 'ffmpeg exited 1 capturing from "AIOC Audio"'));
     await run(['sweep', planFile({ checkMhz: 162.55, channels: [{ channel: 9, rxMhz: 162.4, name: 'WX' }] }), '--seconds', '2', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(3);
-    expect(errJson()).toMatchObject({ reason: 'audio-process-failed', phase: 'check', slot: 0, channel: null, requestedMhz: '162.55' });
+    expect(errJson()).toMatchObject({ reason: 'audio-process-failed', phase: 'check', slot: 0, channel: null, requestedHz: 162_550_000 });
   });
 
   it.each([
@@ -674,13 +674,13 @@ describe('runSweep', () => {
     const steps: SweepSteps = {
       check: async (p) => {
         p.slot0 = { channel: null, name: '162.4' };
-        throw new TransportError('audio-process-failed', 'ffmpeg exited 1', { requestedMhz: '162.4' });
+        throw new TransportError('audio-process-failed', 'ffmpeg exited 1', { requestedHz: 162_400_000 });
       },
       prepare,
     };
     await expect(runSweep(entries, steps, options, progress, new EventEmitter())).rejects.toMatchObject({
       message: 'ffmpeg exited 1',
-      detail: { phase: 'check', slot: 0, channel: null, requestedMhz: '162.4' },
+      detail: { phase: 'check', slot: 0, channel: null, requestedHz: 162_400_000 },
     });
     expect(prepare).not.toHaveBeenCalled();
     expect(progress).toEqual({ dwells: [], checkWarnings: [], slot0: { channel: null, name: '162.4' } });

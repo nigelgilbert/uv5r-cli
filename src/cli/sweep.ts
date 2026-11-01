@@ -38,7 +38,7 @@ export interface DwellRecord {
   channel: number;
   slot: number;
   name: string;
-  requestedMhz: string;
+  requestedHz: number;
   activeSeconds: number;
   active: boolean[];
   meanRmsDbfs: number | null;
@@ -52,7 +52,7 @@ export interface ActiveEntry {
   channel: number;
   slot: number;
   name: string;
-  requestedMhz: string;
+  requestedHz: number;
   activeSeconds: number;
   out?: string;
 }
@@ -152,7 +152,7 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
     channel: entry.channel,
     slot: SWEEP_SLOT,
     name: entry.spec.name ?? formatMhz(entry.spec.rxHz),
-    requestedMhz: formatMhz(entry.spec.rxHz),
+    requestedHz: entry.spec.rxHz,
     activeSeconds: heard.activeSeconds,
     active: heard.active,
     meanRmsDbfs: heard.meanRmsDbfs,
@@ -168,7 +168,7 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
  * CHECK_SECONDS at DEFAULT_FLOOR_DBFS, stores the capture warnings in `progress.checkWarnings` and
  * applies the `check` rule. Each entry write puts the entry with its own TX setting into slot 0 in a
  * fresh clone session and waits for the reload. Each write sets `progress.slot0` to null first, then
- * sets it to the record read back once the write verifies. An error in the check carries `requestedMhz`.
+ * sets it to the record read back once the write verifies. An error in the check carries `requestedHz`.
  * Every session opens with `options.magic`, 291 when absent.
  */
 export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { input: string; magic?: Magic }): SweepSteps {
@@ -191,7 +191,7 @@ export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { input:
         progress.checkWarnings = heard.warnings;
         judgeCheck(SWEEP_SLOT, spec, heard);
       } catch (err) {
-        throw withDetail(err, { requestedMhz: formatMhz(checkSpec.rxHz) });
+        throw withDetail(err, { requestedHz: checkSpec.rxHz });
       }
     },
     async prepare(entry, progress, stop) {
@@ -210,7 +210,7 @@ export function summarize(progress: SweepProgress, options: { seconds: number; i
     input: options.input,
     active: records
       .filter((r) => r.activeSeconds > 0)
-      .map(({ channel, slot, name, requestedMhz, activeSeconds, out }) => ({ channel, slot, name, requestedMhz, activeSeconds, ...(out === undefined ? {} : { out }) })),
+      .map(({ channel, slot, name, requestedHz, activeSeconds, out }) => ({ channel, slot, name, requestedHz, activeSeconds, ...(out === undefined ? {} : { out }) })),
     warnings: [...progress.checkWarnings.map((w) => `check: ${w}`), ...records.flatMap((r) => r.warnings.map((w) => `channel ${r.channel}: ${w}`))],
     slot0: progress.slot0,
   };
@@ -224,7 +224,7 @@ export function summarize(progress: SweepProgress, options: { seconds: number; i
  * it to exit. The summary then covers the dwells finished before the signal and names it in
  * `interrupted`. A dwell whose capture the signal cut short is left out. On a throw, `progress` holds
  * the check warnings, the finished dwells and slot 0, and the error carries `phase`, `slot`,
- * `requestedMhz` and the plan `channel`, null during the check. `requestedMhz` is the entry
+ * `requestedHz` and the plan `channel`, null during the check. `requestedHz` is the entry
  * frequency; the check step sets it to the check frequency.
  */
 export async function runSweep(
@@ -247,14 +247,14 @@ export async function runSweep(
   });
   let phase: SweepPhase = 'check';
   let channel: number | null = null;
-  let requestedMhz: string | null = null;
+  let requestedHz: number | null = null;
   try {
     await steps.check(progress, stop);
     for (const entry of entries) {
       if (stop.signal) break;
       phase = 'entry';
       channel = entry.channel;
-      requestedMhz = formatMhz(entry.spec.rxHz);
+      requestedHz = entry.spec.rxHz;
       await steps.prepare(entry, progress, stop);
       if (stop.signal) break;
       phase = 'dwell';
@@ -262,8 +262,8 @@ export async function runSweep(
       progress.dwells.push(record);
     }
   } catch (err) {
-    // Leave out a null requestedMhz so the check step's own value stays.
-    if (!stop.signal) throw withDetail(err, { phase, slot: SWEEP_SLOT, channel, ...(requestedMhz === null ? {} : { requestedMhz }) });
+    // Leave out a null requestedHz so the check step's own value stays.
+    if (!stop.signal) throw withDetail(err, { phase, slot: SWEEP_SLOT, channel, ...(requestedHz === null ? {} : { requestedHz }) });
   } finally {
     for (const [signal, handler] of handlers) signals.off(signal, handler);
   }

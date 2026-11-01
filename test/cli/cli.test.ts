@@ -166,7 +166,7 @@ describe('help', () => {
     expect(tune.effects.length).toBeGreaterThan(0);
     expect(tune.preconditions).toContain(CHANNEL_RULE);
     expect(tune.writesToRadio).toEqual({ writes: true, note: expect.any(String) });
-    expect(tune.result).toMatchObject({ channel: 5, rxMhz: '154.68', appliesAfterSeconds: 3 });
+    expect(tune.result).toMatchObject({ channel: 5, rxHz: 154_680_000, appliesAfterSeconds: 3 });
     expect(tune.exits).toEqual([]);
   });
 
@@ -180,7 +180,7 @@ describe('help', () => {
     await cli(['tune', '446.00625', '--channel', '1', '--low-power', '--json'], opener(radio));
     expect(process.exitCode).toBe(0);
     expect(radio.writes).toEqual([0x0000 + 16, 0x1000 + 16]);
-    expect(outJson()).toMatchObject({ channel: 1, rxMhz: '446.00625', power: 'low', name: '446.006' });
+    expect(outJson()).toMatchObject({ channel: 1, rxHz: 446_006_250, power: 'low', name: '446.006' });
   });
 
   it('lists only the verb-specific exit cases in help VERB --json', async () => {
@@ -233,7 +233,7 @@ describe('help', () => {
       'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key, say, id or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number.',
     );
     expect(help.errors.format).toContain('A failed PTT release after the signal exits 3 with interrupted in the error.');
-    expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check).');
+    expect(help.errors.format).toContain('An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedHz (the entry frequency in Hz, or the checkMhz frequency during the check).');
     expect(Object.keys(help.errors.reasons)).toEqual(REASON_ENUM);
     for (const line of Object.values(help.errors.reasons)) expect(line).toMatch(/^exit \d: /);
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
@@ -419,7 +419,7 @@ describe('status output', () => {
     await cli(['help', 'status', '--json']);
     const { result } = JSON.parse(stdout.join('')) as { result: Record<string, unknown> };
     expect(Object.keys(result)).toEqual(Object.keys(STATUS));
-    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxMhz', 'name', 'note']) expect(result).not.toHaveProperty(key);
+    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxHz', 'name', 'note']) expect(result).not.toHaveProperty(key);
   });
 });
 
@@ -716,7 +716,7 @@ describe('tune input checks', () => {
   it('accepts a negative offset and writes the TX frequency', async () => {
     await cli(['tune', '146.82', '--channel', '5', '--offset', '-0.6', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
-    expect(outJson()).toMatchObject({ channel: 5, rxMhz: '146.82', txMhz: '146.22' });
+    expect(outJson()).toMatchObject({ channel: 5, rxHz: 146_820_000, txHz: 146_220_000 });
   });
 
   it('rejects an offset finer than 10 Hz before opening the transport', async () => {
@@ -730,7 +730,7 @@ describe('tune input checks', () => {
   it('writes a receive-only channel with --rx-only', async () => {
     await cli(['tune', '155.475', '--channel', '5', '--rx-only', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
-    expect(outJson()).toMatchObject({ channel: 5, rxMhz: '155.475', txMhz: null });
+    expect(outJson()).toMatchObject({ channel: 5, rxHz: 155_475_000, txHz: null });
   });
 
   it('rejects --rx-only with --offset before opening the transport', async () => {
@@ -1252,9 +1252,12 @@ describe('load', () => {
     expect(records).toHaveLength(7);
     expect(records.map((r) => r.channel)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(records.every((r) => r.appliesAfterSeconds === 3)).toBe(true);
-    for (const r of records.slice(0, 3)) expect(r).toMatchObject({ rxMhz: expect.stringMatching(/^162\./), txMhz: null });
-    expect(records[3]).toMatchObject({ channel: 4, rxMhz: '146.82', txMhz: '146.22', txTone: '82.5', name: 'BIG SKY' });
-    expect(records[6]).toMatchObject({ channel: 7, rxMhz: '154.695', txMhz: null, bandwidth: 'narrow', name: 'SHERIFF' });
+    for (const r of records.slice(0, 3)) {
+      expect(r).toMatchObject({ txHz: null });
+      expect(Math.floor((r.rxHz as number) / 1_000_000)).toBe(162);
+    }
+    expect(records[3]).toMatchObject({ channel: 4, rxHz: 146_820_000, txHz: 146_220_000, txTone: '82.5', name: 'BIG SKY' });
+    expect(records[6]).toMatchObject({ channel: 7, rxHz: 154_695_000, txHz: null, bandwidth: 'narrow', name: 'SHERIFF' });
     for (const { appliesAfterSeconds: _, ...record } of records) {
       stdout = [];
       radio.dropSession();
@@ -1384,6 +1387,6 @@ describe('load', () => {
     expect(process.exitCode).toBe(0);
     const lines = stdout.join('').trim().split('\n');
     expect(lines).toHaveLength(7);
-    expect(lines[3]).toBe('ch 4: rx 146.82 tx 146.22 tone 82.5 rx-tone none wide high BIG SKY');
+    expect(lines[3]).toBe('ch 4: rx 146.820 tx 146.220 tone 82.5 rx-tone none wide high BIG SKY');
   });
 });

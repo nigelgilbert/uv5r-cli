@@ -14,8 +14,8 @@ level beside them. Act on `reason`, `remedy` and `retry`.
 - A `load` error from a plan entry write adds `slot`.
 - A `sweep` error after the port is requested adds `summary`, the sweep result so far.
 - An error inside the sweep loop adds `phase` (`check`, `entry` or `dwell`), `slot` (0),
-  `channel` (the plan channel, `null` during the check) and `requestedMhz` (the entry frequency,
-  or the `checkMhz` frequency during the check).
+  `channel` (the plan channel, `null` during the check) and `requestedHz` (the entry frequency
+  in Hz, or the `checkMhz` frequency during the check).
 - `summary.slot0` says whether a write landed.
 - A failed check also carries the check result fields.
 - An audio capture error adds `input`, the avfoundation input it captured from.

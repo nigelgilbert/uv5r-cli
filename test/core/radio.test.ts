@@ -799,11 +799,11 @@ describe('channels', () => {
   it('builds the channel payload with the documented keys in order', () => {
     const ch = decodeChannel(encodeChannel({ rxHz: 146_820_000, txHz: 146_220_000, txTone: parseTone('82.5') }), encodeName('RPT'))!;
     const payload = channelPayload(3, ch);
-    expect(Object.keys(payload)).toEqual(['channel', 'rxMhz', 'txMhz', 'txTone', 'rxTone', 'bandwidth', 'power', 'name']);
+    expect(Object.keys(payload)).toEqual(['channel', 'rxHz', 'txHz', 'txTone', 'rxTone', 'bandwidth', 'power', 'name']);
     expect(payload).toEqual({
       channel: 3,
-      rxMhz: '146.82',
-      txMhz: '146.22',
+      rxHz: 146_820_000,
+      txHz: 146_220_000,
       txTone: '82.5',
       rxTone: 'none',
       bandwidth: 'wide',
@@ -829,7 +829,7 @@ describe('channels', () => {
     await s.start();
     expect(await readChannel(s, 6)).toBeUndefined();
   });
-  it('reports a TX-inhibited record with a null txMhz', async () => {
+  it('reports a TX-inhibited record with a null txHz', async () => {
     const radio = new FakeRadio();
     const mem = encodeChannel({ rxHz: 162_550_000 });
     mem.set([0xff, 0xff, 0xff, 0xff], 4);
@@ -839,7 +839,7 @@ describe('channels', () => {
     await s.start();
     const ch = await readChannel(s, 7);
     expect(ch).toMatchObject({ rxHz: 162_550_000, txHz: null, name: 'WX' });
-    expect(channelPayload(7, ch)).toMatchObject({ channel: 7, rxMhz: '162.55', txMhz: null, name: 'WX' });
+    expect(channelPayload(7, ch)).toMatchObject({ channel: 7, rxHz: 162_550_000, txHz: null, name: 'WX' });
   });
 });
 
@@ -912,7 +912,7 @@ describe('status', () => {
       beep: 'on',
       abr: 5,
     });
-    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxMhz', 'name', 'note']) expect(st).not.toHaveProperty(key);
+    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxHz', 'name', 'note']) expect(st).not.toHaveProperty(key);
   });
   it('reads the settings block from the page values despite the 16-byte read alias', async () => {
     const radio = new FakeRadio();

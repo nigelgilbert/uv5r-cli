@@ -121,6 +121,11 @@ export function formatMhz(hz: number): string {
   return (hz / 1_000_000).toFixed(5).replace(/0+$/, '').replace(/\.$/, '.0');
 }
 
+/** Format `hz` as MHz with three to five decimals, as text output prints it. */
+export function mhzText(hz: number): string {
+  return (hz / 1_000_000).toFixed(5).replace(/0{1,2}$/, '');
+}
+
 /** Little-endian BCD of a frequency in 10 Hz units, 4 bytes. */
 export function encodeLbcd(hz: number): Uint8Array {
   let v = Math.round(hz / 10);
@@ -257,8 +262,8 @@ export function decodeChannel(mem: Uint8Array, name: Uint8Array): Channel | unde
 }
 
 export interface ChannelJson {
-  rxMhz: string;
-  txMhz: string | null;
+  rxHz: number;
+  txHz: number | null;
   rxTone: string;
   txTone: string;
   bandwidth: 'wide' | 'narrow';
@@ -269,8 +274,8 @@ export interface ChannelJson {
 
 export function channelToJson(ch: Channel): ChannelJson {
   return {
-    rxMhz: formatMhz(ch.rxHz),
-    txMhz: ch.txHz === null ? null : formatMhz(ch.txHz),
+    rxHz: ch.rxHz,
+    txHz: ch.txHz,
     rxTone: formatTone(ch.rxTone),
     txTone: formatTone(ch.txTone),
     bandwidth: ch.wide ? 'wide' : 'narrow',

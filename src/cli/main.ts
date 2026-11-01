@@ -23,6 +23,7 @@ import {
   imageSettingsBlock,
   isSettingName,
   magicByName,
+  mhzText,
   parseFrequency,
   parseSettingValue,
   parseTone,
@@ -161,7 +162,7 @@ const ERROR_GUIDANCE =
   'On a terminal it prints the message and a remedy line as text. ' +
   'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
   'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +
-  'An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedMhz (the entry frequency, or the checkMhz frequency during the check). ' +
+  'An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedHz (the entry frequency in Hz, or the checkMhz frequency during the check). ' +
   'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +
   'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key, say, id or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
   'say and id without --rehearse do the same for a signal before the port opens, with pttAsserted false. ' +
@@ -279,7 +280,7 @@ const HEAR_LINES = [
   HEAR_SUMMARY,
 ];
 
-const CHANNEL_RECORD = { rxMhz: '154.68', txMhz: '154.68', txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
+const CHANNEL_RECORD = { rxHz: 154_680_000, txHz: 154_680_000, txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
 const SETTINGS_EXAMPLE = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'freq', mdfb: 'freq' };
 const LISTEN_EXAMPLE = {
   input: DEFAULT_AUDIO_DEVICE,
@@ -399,11 +400,11 @@ const verbs: Record<string, Verb> = {
       `A second is active when its RMS is above ${DEFAULT_FLOOR_DBFS} dBFS.`,
       'Pass when at least 80% of the seconds are active, rounded up: 4 of 5.',
       'A pass means audio above the floor after writing slot N, consistent with the radio receiving slot N. The received frequency stays unverified.',
-      'Once the write succeeds, slot N keeps the receive-only record, also after a capture failure. A capture error then carries slot and requestedMhz. A failure during the write leaves the slot state unknown.',
+      'Once the write succeeds, slot N keeps the receive-only record, also after a capture failure. A capture error then carries slot and requestedHz. A failure during the write leaves the slot state unknown.',
     ],
     preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot N.', 'FREQ carries audio at the location, such as a NOAA weather transmitter.'],
     writesToRadio: { writes: true, note: 'a receive-only record and name in slot N; nothing restores the old record' },
-    result: { slot: 0, requestedMhz: '162.4', ...LISTEN_EXAMPLE },
+    result: { slot: 0, requestedHz: 162_400_000, ...LISTEN_EXAMPLE },
     exits: [
       { code: 3, when: 'a short capture' },
       { code: 5, when: 'squelch 0, before the write; or fewer than 80% of the seconds active, where the message lists the causes and the error carries the result fields' },
@@ -425,7 +426,7 @@ const verbs: Record<string, Verb> = {
     ],
     preconditions: [RADIO_READY],
     writesToRadio: { writes: true, note: 'the record and name of each plan slot' },
-    result: [{ channel: 1, rxMhz: '162.4', txMhz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
+    result: [{ channel: 1, rxHz: 162_400_000, txHz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
     exits: [
       {
         code: 2,
@@ -737,7 +738,7 @@ const verbs: Record<string, Verb> = {
       swept: 7,
       seconds: SWEEP_SECONDS,
       input: DEFAULT_AUDIO_DEVICE,
-      active: [{ channel: 1, slot: 0, name: 'NOAA', requestedMhz: '162.4', activeSeconds: 30 }],
+      active: [{ channel: 1, slot: 0, name: 'NOAA', requestedHz: 162_400_000, activeSeconds: 30 }],
       warnings: [],
       slot0: { channel: 7, name: 'SHERIFF' },
     },
@@ -1023,7 +1024,7 @@ function channelSpec(freqText: string, flags: Map<string, string | true>): Chann
 function channelText(c: ChannelResult): string {
   if ('empty' in c) return `ch ${c.channel}: empty`;
   if ('malformed' in c) return `ch ${c.channel}: malformed record ${c.raw}`;
-  return `ch ${c.channel}: rx ${c.rxMhz} tx ${c.txMhz ?? 'off'} tone ${c.txTone} rx-tone ${c.rxTone} ${c.bandwidth} ${c.power} ${c.name}`;
+  return `ch ${c.channel}: rx ${mhzText(c.rxHz)} tx ${c.txHz === null ? 'off' : mhzText(c.txHz)} tone ${c.txTone} rx-tone ${c.rxTone} ${c.bandwidth} ${c.power} ${c.name}`;
 }
 
 /** Return each key of `o` padded to 12 columns and its value, one per line. */
@@ -1116,7 +1117,7 @@ async function checkVerb(args: Invocation): Promise<number> {
   const result = await withTransport(args, (t) => checkChannel(t, n, spec, { input, magic }));
   print(args, result, () =>
     [
-      `slot ${result.slot}: requested ${result.requestedMhz}`,
+      `slot ${result.slot}: requested ${mhzText(result.requestedHz)}`,
       `active     ${result.activeSeconds} of ${result.active.length} s above ${DEFAULT_FLOOR_DBFS} dBFS`,
       `timeline   ${result.active.map((on) => (on ? '#' : '.')).join('')}`,
       ...result.warnings.map((w) => `warning    ${w}`),
@@ -1414,7 +1415,7 @@ function sweepText(s: SweepSummary): string {
   return [
     `swept      ${s.swept} entries, ${s.seconds} s each${s.interrupted ? `; interrupted by ${s.interrupted}` : ''}`,
     `input      ${s.input}`,
-    ...s.active.map((a) => `active     ch ${a.channel} ${a.name} requested ${a.requestedMhz}: ${a.activeSeconds} s${a.out === undefined ? '' : ` ${a.out}`}`),
+    ...s.active.map((a) => `active     ch ${a.channel} ${a.name} requested ${mhzText(a.requestedHz)}: ${a.activeSeconds} s${a.out === undefined ? '' : ` ${a.out}`}`),
     ...s.warnings.map((w) => `warning    ${w}`),
     `slot 0     ${slot0Text(s.slot0)}`,
   ].join('\n');

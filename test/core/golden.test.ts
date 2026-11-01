@@ -67,13 +67,13 @@ describe('golden set', () => {
   it.each(DISPLAYED)('unit $label slot $slot matches the radio display', ({ entry, image }) => {
     const expected = decodeImage(image);
     const slot = expected.slots.find((s) => s.channel === entry.slot);
-    if (slot === undefined || !('rxMhz' in slot)) throw new Error(`slot ${entry.slot} decodes to no channel`);
+    if (slot === undefined || !('rxHz' in slot)) throw new Error(`slot ${entry.slot} decodes to no channel`);
     // The UV-5R numbers its channels 0 to 127 as the CLI does.
     expect(entry.displayNumber).toBe(entry.slot);
     expect(entry.mdf).toBe(expected.settings.mdfa);
     if (entry.mdf === 'freq') expect(entry.rxMhz).toBeDefined();
     if (entry.mdf === 'name') expect(entry.name).toBeDefined();
-    if (entry.rxMhz !== undefined) expect(Number(slot.rxMhz)).toBe(Number(entry.rxMhz));
+    if (entry.rxMhz !== undefined) expect(slot.rxHz).toBe(Math.round(Number(entry.rxMhz) * 1_000_000));
     if (entry.name !== undefined) expect(slot.name).toBe(entry.name);
   });
 

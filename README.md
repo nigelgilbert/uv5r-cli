@@ -171,7 +171,8 @@ Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` 
 ## Output and errors
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. Piped, `hear`
-prints NDJSON, one object per line. A failed command prints nothing on stdout. In JSON mode
+prints NDJSON, one object per line. JSON results give frequencies as integer Hz in `rxHz`,
+`txHz` and `requestedHz`. Text prints MHz. A failed command prints nothing on stdout. In JSON mode
 it prints one error object on stderr with `reason`, `message`, `remedy` and `retry`. On a
 terminal it prints the message and remedy as text.
 
@@ -215,7 +216,7 @@ entry field except `notes` maps onto one `tune` flag. `uv5r load PLAN.json` writ
 plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
 tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`. `checkMhz` is the frequency
 `sweep` checks slot 0 with. It takes the band and 10 Hz rules of `rxMhz`. `load` validates it
-and writes nothing for it.
+and writes nothing for it. Plan frequencies are in MHz; `load` converts them to Hz.
 
 | Field | `tune` flag |
 |---|---|

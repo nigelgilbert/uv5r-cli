@@ -91,7 +91,7 @@ goes to a temp name in the same directory and is renamed over the file:
 - `name-not-taken`: ack name writes and drop them, as the bench radio did on 2026-10-29. `tune`
   exits 5 with `verification-failed`; `read` shows the new frequency and power.
 - `tune-wrong-freq`: drop name writes and add 1 MHz to the tuned slot's TX frequency after the
-  read-back, so the next `read` and key report another `txMhz`.
+  read-back, so the next `read` and key report another `txHz`.
 - `ptt-control-failed`: fail the DTR set that raises PTT. `key` exits 3 with
   `ptt-control-failed` and `retry: no`, and the PTT file stays as it was.
 - `hang`: hold PTT on `key` past `--seconds` until SIGINT, SIGTERM, SIGHUP or SIGTSTP arrives,
