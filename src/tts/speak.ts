@@ -92,12 +92,7 @@ export interface SpeakOptions {
 }
 
 /** The station config values a result reports. */
-interface Pacing {
-  voice: string;
-  leadMs: number;
-  tailMs: number;
-  maxSeconds: number;
-}
+type Pacing = Pick<SpeakOptions, 'voice' | 'leadMs' | 'tailMs' | 'maxSeconds'>;
 
 export interface SpeakResult extends Pacing {
   text: string;
