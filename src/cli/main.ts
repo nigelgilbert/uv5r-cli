@@ -156,7 +156,7 @@ const ERRORS_HELP = {
 const TARGET_FLAG: FlagDoc = {
   name: 'target',
   value: 'PATH',
-  help: 'serial device, or fake',
+  help: 'serial device, or fake; fake reads and writes the state file UV5R_FAKE_STATE names',
   default: 'UV5R_TARGET, else the AIOC',
 };
 const JSON_FLAG: FlagDoc = { name: 'json', help: 'print JSON' };

@@ -228,6 +228,12 @@ describe('help', () => {
     }
   });
 
+  it('names UV5R_FAKE_STATE in the --target help', async () => {
+    const help = await helpJson('tune');
+    const target = (help.flags as Array<{ flag: string; help: string }>).find((f) => f.flag === '--target');
+    expect(target?.help).toContain('UV5R_FAKE_STATE');
+  });
+
   it("every verb's help carries the per-verb fields", async () => {
     const keys = ['schemaVersion', 'verb', 'summary', 'usage', 'example', 'args', 'flags', 'effects', 'preconditions', 'device', 'result', 'exits', 'exitsNote'];
     const extra: Record<string, string> = { say: 'fields', id: 'fields', settings: 'fields', hear: 'lines' };
