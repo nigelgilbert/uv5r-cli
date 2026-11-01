@@ -95,8 +95,5 @@ the field. No callsign exits 2 with `station-unconfigured`.
 - `tailMs` sets how long PTT holds after the player exits, 0 to 5000 ms. It defaults to 400.
 - `maxSeconds` caps the padded WAV plus `tailMs`, above 0 and at most 55. It defaults to 30.
 
-`say` and `id` report `voice`, `leadMs`, `tailMs` and `maxSeconds` in their result. The flags
-`--voice`, `--lead`, `--tail` and `--max-seconds` exit 2 naming the config field.
-
 `hear` reads `inputDevice`, `model` and `callsign` and runs without a config file. The callsign
 is the whisper prompt. With no callsign the prompt is empty.

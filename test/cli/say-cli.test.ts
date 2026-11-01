@@ -90,8 +90,8 @@ describe('say', () => {
     await cli(['say', 'bench check, over', '--config', NO_TAIL, '--json'], opener(radio), fakeSpeechDeps({ synthesize: synth }));
     expect(process.exitCode).toBe(0);
     const result = outJson();
-    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'device', 'voice', 'leadMs', 'tailMs', 'maxSeconds', 'pttAsserted', 'released']);
-    expect(result).toMatchObject({ text: 'bench check, over', spoken: `bench check, over. ${ID}`, identified: true, device: 'AIOC Audio', voice: 'Samantha', leadMs: 300, tailMs: 0, maxSeconds: 30, pttAsserted: true, released: true });
+    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'output', 'pttAsserted', 'released']);
+    expect(result).toMatchObject({ text: 'bench check, over', spoken: `bench check, over. ${ID}`, identified: true, output: 'AIOC Audio', pttAsserted: true, released: true });
     expect(synth.calls[0]).toMatchObject({ text: `bench check, over. ${ID}`, voice: 'Samantha' });
     expect(radio.pttLog).toEqual([true, false]);
   });
@@ -139,22 +139,9 @@ describe('say', () => {
     const station = config({ callsign: 'kj7abc', voice: 'Daniel', leadMs: 500, tailMs: 0, maxSeconds: 20 });
     await cli(['say', 'hello', '--config', station, '--rehearse', '--json'], opener(), deps);
     expect(process.exitCode).toBe(0);
-    expect(outJson()).toMatchObject({ voice: 'Daniel', leadMs: 500, tailMs: 0, maxSeconds: 20, rehearsed: true });
+    expect(outJson()).toMatchObject({ rehearsed: true });
     expect(synth.calls[0]).toMatchObject({ voice: 'Daniel' });
     expect((deps.condition as unknown as { calls: { leadMs: number }[] }).calls[0]!.leadMs).toBe(500);
-  });
-
-  it.each([
-    ['--voice', 'Daniel', 'voice'],
-    ['--lead', '500', 'leadMs'],
-    ['--tail', '0', 'tailMs'],
-    ['--max-seconds', '10', 'maxSeconds'],
-  ])('exits 2 on %s naming the config field %s before open', async (flag, value, field) => {
-    const open = opener();
-    await cli(['say', '--rehearse', 'test', flag, value, '--config', STATION, '--json'], open, fakeSpeechDeps());
-    expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ reason: 'invalid-argument', flag: flag.slice(2), message: expect.stringContaining(`${field} in the station config`) });
-    expect(open.calls).toBe(0);
   });
 
   it.each([
@@ -186,7 +173,7 @@ describe('say', () => {
     await cli(['say', 'hello', '--config', config({ callsign: 'KJ7ABC', outputDevice: 'USB Out', tailMs: 0 }), '--output', 'MacBook Pro Speakers', '--json'], opener(), fakeSpeechDeps({ resolveOutput }));
     expect(process.exitCode).toBe(0);
     expect(resolveOutput.calls).toEqual(['MacBook Pro Speakers']);
-    expect(outJson()).toMatchObject({ device: 'MacBook Pro Speakers' });
+    expect(outJson()).toMatchObject({ output: 'MacBook Pro Speakers' });
   });
 
   it('exits 5 with channel-busy before PTT when --clear hears activity on the config inputDevice', async () => {

@@ -43,20 +43,6 @@ const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unkno
 const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, unknown>;
 
 describe('the --input flag', () => {
-  it.each([
-    [['listen', '--seconds', '1']],
-    [['check', '162.400', '--channel', '0']],
-    [['hear', '--once']],
-    [['sweep', 'channels.json']],
-    [['volume']],
-  ])('exits 2 naming --input when %j gets --device, before running ffmpeg', async (argv) => {
-    await cli([...argv, '--device', 'x', '--json']);
-    expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ reason: 'invalid-argument', flag: 'device', message: expect.stringContaining('--input') });
-    expect(spawn).not.toHaveBeenCalled();
-    expect(execFile).not.toHaveBeenCalled();
-  });
-
   it('passes --input to ffmpeg and reports input', async () => {
     await cli(['listen', '--seconds', '3', '--input', 'USB In', '--json']);
     expect(process.exitCode).toBe(0);

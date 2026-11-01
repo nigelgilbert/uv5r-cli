@@ -54,17 +54,16 @@ describe('id', () => {
     expect(process.exitCode).toBe(0);
     expect(synth.calls.map((c) => c.text)).toEqual([ID]);
     const result = outJson();
-    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'device', 'voice', 'leadMs', 'tailMs', 'maxSeconds', 'pttAsserted', 'released']);
+    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'output', 'pttAsserted', 'released']);
     expect(result).toMatchObject({ text: ID, spoken: ID, identified: true, pttAsserted: true, released: true });
     expect(radio.pttLog).toEqual([true, false]);
   });
 
-  it('reads voice and leadMs from the config and reports them', async () => {
+  it('reads voice from the config', async () => {
     const synth = fakeSynthesize();
     await cli(['id', '--config', config({ callsign: 'KJ7ABC', voice: 'Daniel', leadMs: 500 }), '--json'], opener(), fakeSpeechDeps({ synthesize: synth }));
     expect(process.exitCode).toBe(0);
     expect(synth.calls[0]).toMatchObject({ voice: 'Daniel' });
-    expect(outJson()).toMatchObject({ voice: 'Daniel', leadMs: 500 });
   });
 
   it('exits 2 with station-unconfigured before open without a callsign', async () => {
@@ -89,18 +88,6 @@ describe('id', () => {
     expect(process.exitCode).toBe(2);
     expect(errJson()).toMatchObject({ reason: 'utterance-too-long', maxSeconds: 3 });
     expect(errJson().remedy).not.toContain('shorten');
-    expect(open.calls).toBe(0);
-  });
-
-  it.each([
-    ['--voice', 'Daniel', 'voice'],
-    ['--lead', '500', 'leadMs'],
-    ['--tail', '0', 'tailMs'],
-  ])('exits 2 on %s naming the config field %s', async (flag, value, field) => {
-    const open = opener();
-    await cli(['id', flag, value, '--config', STATION, '--json'], open, fakeSpeechDeps());
-    expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ reason: 'invalid-argument', flag: flag.slice(2), message: expect.stringContaining(`${field} in the station config`) });
     expect(open.calls).toBe(0);
   });
 

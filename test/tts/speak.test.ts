@@ -71,8 +71,8 @@ describe('speakUtterance', () => {
     expect(result.spoken.endsWith(ID)).toBe(true);
     expect(pttAtStart).toEqual([[true]]);
     expect(radio.pttLog).toEqual([true, false]);
-    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'device', 'voice', 'leadMs', 'tailMs', 'maxSeconds', 'pttAsserted', 'released']);
-    expect(result).toMatchObject({ text: 'bench check, over', identified: true, device: 'AIOC Audio', pttAsserted: true, released: true, peakDbfs: -3 });
+    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'output', 'pttAsserted', 'released']);
+    expect(result).toMatchObject({ text: 'bench check, over', identified: true, output: 'AIOC Audio', pttAsserted: true, released: true, peakDbfs: -3 });
   });
 
   it('passes leadMs to the conditioning pass and plays to the resolved index', async () => {
@@ -380,7 +380,7 @@ describe('speakUtterance', () => {
     expect(resolveOutput.calls).toEqual([]);
     expect(played).toHaveLength(1);
     expect(played[0]!.seconds).toBeCloseTo(2.6, 5);
-    expect(result).toMatchObject({ rehearsed: true, pttAsserted: false, released: true, identified: false, seconds: 2.6, device: 'system default output' });
+    expect(result).toMatchObject({ rehearsed: true, pttAsserted: false, released: true, identified: false, seconds: 2.6, output: 'system default output' });
   });
 
   it('keeps the conditioned WAV at --out', async () => {

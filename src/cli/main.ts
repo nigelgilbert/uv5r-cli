@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { accessSync, closeSync, constants as fsConstants, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { checkFlags as checkFlagNames, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
+import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, checkFfmpeg, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
 import { readStation, resolveConfigPath } from './config.ts';
@@ -89,8 +89,6 @@ interface Invocation extends ParsedArgs {
 interface Verb extends VerbDoc {
   /** Most positionals the verb takes after its name. */
   positionals: number;
-  /** Flags the verb dropped, each mapped to what replaces it; a dropped flag exits 2 naming the replacement. */
-  dropped?: Record<string, string>;
   run: (args: Invocation) => Promise<number>;
 }
 
@@ -189,16 +187,6 @@ const TRANSMIT_FIELDS = {
   tailMs: `PTT hold after the player, 0..${MAX_PAD_MS}, default ${DEFAULT_TAIL_MS}`,
   maxSeconds: `WAV plus tail cap, 0 < S <= ${MAX_UTTERANCE_SECONDS}, default ${DEFAULT_MAX_SECONDS}`,
 };
-/** Flags say and id dropped for station config fields. */
-const DROPPED_TRANSMIT = {
-  voice: 'voice in the station config',
-  lead: 'leadMs in the station config',
-  tail: 'tailMs in the station config',
-};
-
-/** What replaces --device on the verbs that capture audio. */
-const DROPPED_DEVICE = { device: '--input NAME' };
-
 const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'MHz (154.680) or Hz, 136-174 or 400-520 MHz, 10 Hz steps' };
 const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
 
@@ -225,7 +213,6 @@ const TRANSMIT_EXITS = [
   { code: 3, when: 'ptt-control-failed; after a signal it adds interrupted' },
 ];
 /** The station config values a say or id result reports. */
-const TRANSMIT_RESULT = { voice: DEFAULT_VOICE, leadMs: DEFAULT_LEAD_MS, tailMs: DEFAULT_TAIL_MS, maxSeconds: DEFAULT_MAX_SECONDS };
 const ID_EXAMPLE = 'This is Kilo, Juliett, Seven, Alfa, Bravo, Charlie';
 
 const HEAR_SUMMARY = { type: 'summary', transmissions: 1, seconds: 14.6, input: DEFAULT_AUDIO_DEVICE, warnings: 1, timedOut: false };
@@ -410,7 +397,6 @@ const verbs: Record<string, Verb> = {
       VERIFY_EXIT,
     ],
     positionals: 1,
-    dropped: DROPPED_DEVICE,
     run: checkVerb,
   },
   load: {
@@ -525,8 +511,7 @@ const verbs: Record<string, Verb> = {
       seconds: 6.4,
       peakDbfs: -0.9,
       rmsDbfs: -17.2,
-      device: DEFAULT_AUDIO_DEVICE,
-      ...TRANSMIT_RESULT,
+      output: DEFAULT_AUDIO_DEVICE,
       pttAsserted: true,
       released: true,
     },
@@ -537,7 +522,6 @@ const verbs: Record<string, Verb> = {
     ],
     fields: TRANSMIT_FIELDS,
     positionals: Infinity,
-    dropped: { ...DROPPED_TRANSMIT, 'max-seconds': 'maxSeconds in the station config' },
     run: sayVerb,
   },
   id: {
@@ -558,15 +542,13 @@ const verbs: Record<string, Verb> = {
       seconds: 4.9,
       peakDbfs: -0.9,
       rmsDbfs: -17.8,
-      device: DEFAULT_AUDIO_DEVICE,
-      ...TRANSMIT_RESULT,
+      output: DEFAULT_AUDIO_DEVICE,
       pttAsserted: true,
       released: true,
     },
     exits: TRANSMIT_EXITS,
     fields: TRANSMIT_FIELDS,
     positionals: 0,
-    dropped: DROPPED_TRANSMIT,
     run: idVerb,
   },
   dump: {
@@ -663,7 +645,6 @@ const verbs: Record<string, Verb> = {
     result: { ...LISTEN_EXAMPLE, out: 'rx.wav' },
     exits: [{ code: 3, when: 'a short capture' }],
     positionals: 0,
-    dropped: DROPPED_DEVICE,
     run: listenVerb,
   },
   hear: {
@@ -705,7 +686,6 @@ const verbs: Record<string, Verb> = {
       { code: 3, when: 'speech-engine-failed on a segment; earlier lines stay on stdout' },
     ],
     positionals: 0,
-    dropped: DROPPED_DEVICE,
     run: hearVerb,
   },
   sweep: {
@@ -751,7 +731,6 @@ const verbs: Record<string, Verb> = {
       { code: 'any', when: 'an error after the port opens adds summary; in the loop also phase (check, entry, dwell), slot, channel and requestedHz' },
     ],
     positionals: 1,
-    dropped: DROPPED_DEVICE,
     run: sweepVerb,
   },
   volume: {
@@ -792,7 +771,6 @@ const verbs: Record<string, Verb> = {
       { code: 'any', when: 'once squelch is kept, an error adds squelch, the kept value; remedy uv5r settings squelch N' },
     ],
     positionals: 0,
-    dropped: DROPPED_DEVICE,
     run: volumeVerb,
   },
 };
@@ -800,16 +778,6 @@ const verbs: Record<string, Verb> = {
 const BOOLEAN_FLAGS = new Set(['help', 'version', ...Object.values(verbs).flatMap((v) => v.flags.filter((f) => !f.value).map((f) => f.name))]);
 /** Flags `uv5r` takes with no verb. */
 const TOP_FLAGS = ['help', 'version', 'json'];
-
-/** Throw UsageError naming the replacement of a flag `verb` dropped, then on any flag outside `allowed`. */
-function checkFlags(verb: string, flags: Map<string, string | true>, allowed: readonly string[]): void {
-  const dropped = isVerb(verb) ? (verbs[verb]!.dropped ?? {}) : {};
-  for (const name of flags.keys()) {
-    const replacement = dropped[name];
-    if (replacement !== undefined) throw new UsageError(`uv5r ${verb}: --${name} is now ${replacement}`, { flag: name });
-  }
-  checkFlagNames(verb, flags, allowed);
-}
 
 /** Return the flags `verb` takes, as the verbs table lists them. */
 function flagNames(verb: string): string[] {
@@ -1236,7 +1204,7 @@ function speakText(r: SpeakResult): string {
   const ptt = r.rehearsed ? `not asserted; rehearsed ${r.seconds} s with the port closed` : r.pttAsserted ? `asserted for ${r.seconds} s; released` : 'not asserted';
   return [
     `spoken     ${r.spoken}`,
-    `device     ${r.device}`,
+    `output     ${r.output}`,
     `levels     peak ${r.peakDbfs} dBFS, rms ${r.rmsDbfs} dBFS`,
     `PTT        ${ptt}`,
     `identified ${r.identified ? 'yes' : 'no'}`,

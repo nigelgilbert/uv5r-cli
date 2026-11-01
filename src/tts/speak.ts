@@ -21,8 +21,8 @@ const CLEAR_SLACK_SECONDS = 10;
 /** What a result or error tells the operator when audio went out without the full ID. */
 export const ID_OWED_REMEDY = 'identify by voice or run uv5r id';
 
-/** Device name the result reports for --rehearse. */
-const REHEARSE_DEVICE = 'system default output';
+/** Output name the result reports for --rehearse. */
+const REHEARSE_OUTPUT = 'system default output';
 
 /**
  * The child processes and clocks the transmit and receive verbs use, injected so tests run
@@ -91,10 +91,7 @@ export interface SpeakOptions {
   rehearse?: boolean;
 }
 
-/** The station config values a result reports. */
-type Pacing = Pick<SpeakOptions, 'voice' | 'leadMs' | 'tailMs' | 'maxSeconds'>;
-
-export interface SpeakResult extends Pacing {
+export interface SpeakResult {
   text: string;
   spoken: string;
   /** True when the player exited 0 before any stop, so the ID at the end of the WAV went out. */
@@ -103,7 +100,7 @@ export interface SpeakResult extends Pacing {
   seconds: number;
   peakDbfs: number;
   rmsDbfs: number;
-  device: string;
+  output: string;
   pttAsserted: boolean;
   released: boolean;
   interrupted?: NodeJS.Signals;
@@ -223,7 +220,6 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     await deps.condition(raw, wav, options.leadMs);
     const levels = await deps.measureWav(wav);
     const measured = { peakDbfs: round(levels.peakDbfs), rmsDbfs: round(levels.rmsDbfs) };
-    const pacing: Pacing = { voice: options.voice, leadMs: options.leadMs, tailMs: options.tailMs, maxSeconds: options.maxSeconds };
     let kept: { out?: string } = {};
     const unkeyed = (signal: NodeJS.Signals): SpeakResult => ({
       text: options.text,
@@ -231,8 +227,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
       identified: false,
       seconds: 0,
       ...measured,
-      device: options.output,
-      ...pacing,
+      output: options.output,
       pttAsserted: false,
       released: true,
       interrupted: signal,
@@ -267,7 +262,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         if (err instanceof BaofengError) err.attach({}, { remedy: 'check the system output, then rerun say --rehearse', retry: 'after-remedy' });
         throw err;
       }
-      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, device: REHEARSE_DEVICE, ...pacing, pttAsserted: false, released: true, rehearsed: true, ...kept };
+      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, output: REHEARSE_OUTPUT, pttAsserted: false, released: true, rehearsed: true, ...kept };
     }
     const index = await deps.resolveOutput(options.output);
     if (options.clearSeconds > 0 && !signalled) {
@@ -332,7 +327,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         idOwed ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' },
       );
     }
-    const result: SpeakResult = { text: options.text, spoken, identified, seconds: held.seconds, ...measured, device: options.output, ...pacing, pttAsserted: held.pttAsserted, released: held.released, ...kept };
+    const result: SpeakResult = { text: options.text, spoken, identified, seconds: held.seconds, ...measured, output: options.output, pttAsserted: held.pttAsserted, released: held.released, ...kept };
     if (held.interrupted) {
       result.interrupted = held.interrupted;
       result.idOwed = owed();
