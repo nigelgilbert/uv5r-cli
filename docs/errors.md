@@ -39,11 +39,11 @@ sits at its top level after them and cannot replace them. Act on `reason`, `reme
 
 - A `verification-failed` error from `tune`, `load`, `erase` or `settings` adds `failed`, the
   fields that read back wrong, and `settings`, a map from each failed field to
-  `{desired, observed}`. `wrote` and `read` hold the bytes as hex.
+  `{desired, observed}`. `wrote` and `read` hold the bytes as hex. `raw` appears when every
+  compared field matches and the bytes differ.
 - `tune`, `load` and `erase` compare `rxHz`, `txHz`, `txTone`, `rxTone`, `bandwidth` and `power`
   on the record, then `name`. An erase desires `null` for each record field and `""` for the name.
-- `settings` compares the setting fields. `raw` appears when only bytes outside those fields
-  differ.
+- `settings` compares the setting fields.
 - A `load` error from a plan entry write adds `slot`.
 - A `sweep` error after the port is requested adds `summary`, the sweep result so far.
 - An error inside the sweep loop adds `phase` (`check`, `entry` or `dwell`), `slot` (0),

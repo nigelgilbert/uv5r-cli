@@ -101,7 +101,7 @@ function recordMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail
   return verificationDetail(recordFields(wrote), recordFields(read), wrote, read);
 }
 
-/** Compare a written name record with its read-back by decoded name, or as `raw` when only the padding differs. */
+/** Compare a written name record with its read-back by decoded name, or as `raw` when the decoded names match and the bytes differ. */
 function nameMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail {
   return verificationDetail({ name: decodeName(wrote) }, { name: decodeName(read) }, wrote, read);
 }
