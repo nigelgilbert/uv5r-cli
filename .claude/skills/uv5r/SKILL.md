@@ -21,10 +21,15 @@ Read `uv5r help --json` once at the start of a session for the operating rules, 
 
 ## Ask the human
 
-- The CLI cannot read the display. Ask which channel the radio shows whenever it matters, and always before `key`, `say` or `id`.
-- Run `key`, `say` and `id` only when the human asked and the frequency is one they may transmit on. The human stays at the radio for every transmission.
-- Run `say --rehearse` before the first transmission of a session.
+- The CLI cannot read the display. Ask which channel the radio shows whenever it matters.
 - Offer to play WAVs from `listen --play`, `sweep --out-dir` or `hear --out-dir`.
+
+## Transmit
+
+- `key`, `say` and `id` transmit on run. Run them only when the human asked and on a frequency they may use. Ask what the display shows first. The human stays at the radio.
+- Run `say --rehearse` before the first transmission of a session.
+- Stop a transmission with Ctrl-C and report it. After a failed transmission, report and wait for the human.
+- `say` and `id` end with the uv5r.json callsign. `key` sends a carrier and no ID. After a `key`, send the callsign with `uv5r id` or ask the human to identify by voice. Do the same on `idOwed: true`.
 
 ## Receive speech
 
@@ -36,4 +41,3 @@ Read `uv5r help --json` once at the start of a session for the operating rules, 
 
 - Follow the error's `remedy` and `retry`. On `retry: no`, do not rerun; report to the human.
 - On `verification-failed`, `failed` names the fields that read back wrong. `failed: ["name"]` means the record took and only the name did not.
-- After a failed or interrupted `key`, `say` or `id`, report and wait for the human. On `idOwed: true`, tell the human to identify by voice or run `uv5r id`.
