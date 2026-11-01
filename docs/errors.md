@@ -1,6 +1,6 @@
 # Errors, signals and slot 0
 
-How a failed or interrupted command reports itself, how PTT is guarded, and what slot 0 holds afterwards. `uv5r help --json` lists every reason with its exit code and retry meaning under `errors`.
+How a failed or interrupted command reports itself, how PTT is guarded, and what slot 0 holds afterwards. `uv5r help errors --json` lists every reason with its exit code, retry, meaning and remedy.
 
 ## Error object
 

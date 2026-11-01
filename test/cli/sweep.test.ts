@@ -555,7 +555,7 @@ describe('sweep', () => {
   it('names the AIOC input, squelch above 0 and the two channel names in help sweep', async () => {
     await cli(['help', 'sweep', '--json']);
     const help = JSON.parse(stdout.join('')) as { preconditions: string[]; effects: string[]; flags: { flag: string; help: string }[]; result: object };
-    expect(help.preconditions).toEqual(expect.arrayContaining(['--input names the AIOC input.', 'Squelch is above 0; uv5r status reports it.']));
+    expect(help.preconditions).toEqual(expect.arrayContaining(['--input names the AIOC input.', 'Squelch is above 0.']));
     expect(help.flags.find((f) => f.flag === '--input')!.help).toContain('name the AIOC input');
     expect(help.effects).toContain('active[].name is the plan name. slot0.name is the name the radio holds, uppercased and cut to 7 characters. Match the two on channel.');
     expect(help.result).toMatchObject({ input: 'AIOC Audio' });

@@ -1,8 +1,11 @@
-/** Version of the `help --json` shape; bump it when a field changes meaning or goes away. */
-export const HELP_SCHEMA_VERSION = 2;
+/**
+ * Version of the help and `--version --json` shape that uv5r and tinysa-cli share.
+ * Bump it when a field changes meaning or goes away.
+ */
+export const SCHEMA_VERSION = 3;
 
 /** Pointer printed under every verb's exits in the help JSON. */
-const EXITS_NOTE = 'exits lists verb-specific notes on the codes in exitCodes in uv5r help --json; empty means none';
+const EXITS_NOTE = 'adds to exitCodes in uv5r help --json';
 
 /** One flag a verb takes. A flag without `value` is boolean. */
 export interface FlagDoc {
@@ -34,13 +37,14 @@ export interface VerbDoc {
   /** Command line to copy. */
   example: string;
   args: ArgDoc[];
+  /** Flags the verb documents; every verb also takes --json, which the output rule covers. */
   flags: FlagDoc[];
   effects: string[];
   preconditions: string[];
   writesToRadio: { writes: boolean; note: string };
   /** Example of the JSON result on stdout. */
   result: unknown;
-  /** Example NDJSON lines on stdout, for a verb that streams one object per line. */
+  /** Example NDJSON lines a streaming verb prints before the line `result` shows. */
   lines?: unknown[];
   /** Notes that add to the global exit table; empty when the table covers the verb. */
   exits: ExitCase[];
@@ -48,14 +52,11 @@ export interface VerbDoc {
   fields?: Record<string, string>;
 }
 
-/** Return the synopsis of a verb built from its arguments and flags. */
+/** Return the synopsis of a verb: its arguments and required flags. */
 function usageLine(name: string, doc: VerbDoc): string {
   const args = doc.args.map((a) => (a.optional ? `[${a.name}]` : a.name));
-  const flags = doc.flags.map((f) => {
-    const text = f.value ? `--${f.name} ${f.value}` : `--${f.name}`;
-    return f.required ? text : `[${text}]`;
-  });
-  return ['uv5r', name, ...args, ...flags].join(' ');
+  const required = doc.flags.filter((f) => f.required).map((f) => (f.value ? `--${f.name} ${f.value}` : `--${f.name}`));
+  return ['uv5r', name, ...args, ...required].join(' ');
 }
 
 /** Return a flag's default as JSON: the declared default, false for a boolean flag, else null. */
@@ -63,6 +64,11 @@ function flagDefault(f: FlagDoc): string | number | boolean | null {
   if (f.default !== undefined) return f.default;
   if (f.required) return null;
   return f.value ? null : false;
+}
+
+/** Return one verb's catalog entry for `help --json`: summary, usage and flag names. */
+export function catalogEntry(name: string, doc: VerbDoc): Record<string, unknown> {
+  return { summary: doc.summary, usage: usageLine(name, doc), flags: doc.flags.map((f) => `--${f.name}`) };
 }
 
 /** Return one verb's help entry as a JSON-safe object. */
@@ -108,9 +114,7 @@ export function verbText(name: string, doc: VerbDoc): string {
     `usage:   ${usageLine(name, doc)}`,
     `example: ${doc.example}`,
     ...(doc.args.length ? ['', 'arguments:', ...doc.args.map((a) => `  ${a.name.padEnd(width)}  ${a.help}${a.optional ? ' (optional)' : ''}`)] : []),
-    '',
-    'flags:',
-    ...doc.flags.map((f) => `  ${flagCol(f).padEnd(width)}  ${f.help}${flagNote(f)}`),
+    ...(doc.flags.length ? ['', 'flags:', ...doc.flags.map((f) => `  ${flagCol(f).padEnd(width)}  ${f.help}${flagNote(f)}`)] : []),
     ...(doc.fields ? ['', 'fields:', ...Object.entries(doc.fields).map(([k, v]) => `  ${k.padEnd(fieldWidth)} ${v}`)] : []),
     '',
     'effects:',

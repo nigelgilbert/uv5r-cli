@@ -208,7 +208,7 @@ describe('check', () => {
   it('names the AIOC input and squelch above 0 in help check', async () => {
     await cli(['help', 'check', '--json']);
     const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; help: string }[] };
-    expect(help.preconditions).toEqual(expect.arrayContaining(['--input names the AIOC input.', 'Squelch is above 0; uv5r status reports it.']));
+    expect(help.preconditions).toEqual(expect.arrayContaining(['--input names the AIOC input.', 'Squelch is above 0.']));
     expect(help.flags.find((f) => f.flag === '--input')!.help).toContain('name the AIOC input');
   });
 

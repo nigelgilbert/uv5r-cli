@@ -357,11 +357,11 @@ describe('say', () => {
     expect(text).not.toContain('asserted for');
   });
 
-  it('carries the control-operator rule in help say and help --json', async () => {
+  it('points help say at the control-operator rule in help --json', async () => {
     await cli(['help', 'say', '--json']);
     const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; default: unknown }[]; fields: Record<string, string> };
-    expect(help.preconditions).toContain(TRANSMIT_RULE);
-    expect(help.flags.map((f) => f.flag)).toEqual(['--output', '--config', '--clear', '--out', '--rehearse', '--json', '--target']);
+    expect(help.preconditions).toContain('Follow the transmit rule in uv5r help; transmit only when the human asked.');
+    expect(help.flags.map((f) => f.flag)).toEqual(['--output', '--config', '--clear', '--out', '--rehearse', '--target']);
     const flag = (name: string) => help.flags.find((f) => f.flag === name)?.default;
     expect([flag('--clear'), flag('--rehearse')]).toEqual([0, false]);
     expect(Object.keys(help.fields)).toEqual(['voice', 'leadMs', 'tailMs', 'maxSeconds']);

@@ -83,7 +83,7 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
    name and reads both back. The radio applies the write about 3 s after the command ends.
 7. Run `uv5r listen --seconds 5 --out rx.wav --play` to record 5 s and play it on your Mac.
 
-`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display.
+`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.
 
 ## Use it with LLMs
 
@@ -105,7 +105,7 @@ Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow
 
 ## Transmit
 
-You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C. Each transmission ends with the callsign from uv5r.json. A stock UV-5R is not certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and control operator.
+You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. Each one ends with the uv5r.json callsign. Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.
 
 Run `cp uv5r.example.json uv5r.json` and put your callsign in it. The CLI reads `--config FILE`
 first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root. The config also sets the `say`
@@ -166,7 +166,7 @@ channel-plan skill for your location. `channels.json` is gitignored.
 | `hear` | Transcribe each received transmission | no |
 | `sweep` | Check slot 0, then dwell on each plan entry in slot 0 | slot 0 |
 
-Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` for JSON.
+Run `uv5r help VERB` for flags, defaults, results and exit cases, and `uv5r help errors` for each error reason, with `--json` for JSON.
 
 ## Output and errors
 
@@ -235,7 +235,8 @@ and writes nothing for it. Plan frequencies are in MHz; `load` converts them to 
 ## For agents
 
 Load `.claude/skills/uv5r/SKILL.md` to drive the radio and `.claude/skills/channel-plan/SKILL.md`
-to build a plan. `uv5r help --json` carries the rules, error reasons, exit codes and every verb.
+to build a plan. Read `uv5r help --json` once per session for the rules, error format, exit codes and
+one line per verb. Read `uv5r help VERB --json` before the first run of a verb.
 
 ## Further reading
 

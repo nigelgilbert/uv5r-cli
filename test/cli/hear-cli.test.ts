@@ -235,13 +235,13 @@ describe('hear', () => {
     expect(text[2]).toBe('heard   1 transmission in 5 s on USB Input, 1 warning');
   });
 
-  it('documents the lines array in help hear --json with schema version 2', async () => {
+  it('documents the event lines and the summary result in help hear --json with schema version 3', async () => {
     await cli(['help', 'hear', '--json']);
     const help = JSON.parse(stdout.join('')) as Record<string, any>;
-    expect(help.schemaVersion).toBe(2);
-    expect(help.lines.map((l: { type: string }) => l.type)).toEqual(['warning', 'transmission', 'summary']);
-    expect(help.result).toEqual(help.lines.at(-1));
-    expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--input', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config', '--json']);
+    expect(help.schemaVersion).toBe(3);
+    expect(help.lines.map((l: { type: string }) => l.type)).toEqual(['warning', 'transmission']);
+    expect(help.result).toMatchObject({ type: 'summary', transmissions: 1, timedOut: false });
+    expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--input', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config']);
     expect(help.writesToRadio).toEqual({ writes: false, note: 'opens no serial port' });
   });
 });
