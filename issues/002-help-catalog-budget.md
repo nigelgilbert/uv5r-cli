@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done (23a46f8)
 
 ## Parent
 
@@ -16,11 +16,11 @@ The catalog stays at most 4096 bytes and each per-verb object at most 3072. Reco
 
 ## Acceptance criteria
 
-- [ ] `uv5r help --json | wc -c` is at most 4096.
-- [ ] `uv5r help say --json` has every field the verb carries today and is at most 3072 bytes.
-- [ ] `uv5r --version --json` prints `name`, `version` and `schemaVersion`.
-- [ ] A test walks every verb: the catalog flag names equal the per-verb spec names and each object stays under its budget.
-- [ ] SKILL.md and README still direct the agent to `help --json` once and `help VERB --json` before a verb's first run. `npm run typecheck` and `npm test` pass.
+- [x] `uv5r help --json | wc -c` is at most 4096.
+- [x] `uv5r help say --json` has every field the verb carries today and is at most 3072 bytes.
+- [x] `uv5r --version --json` prints `name`, `version` and `schemaVersion`.
+- [x] A test walks every verb: the catalog flag names equal the per-verb spec names and each object stays under its budget.
+- [x] SKILL.md and README still direct the agent to `help --json` once and `help VERB --json` before a verb's first run. `npm run typecheck` and `npm test` pass.
 
 ## Blocked by
 
