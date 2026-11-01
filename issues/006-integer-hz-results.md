@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done (4aa99b2)
 
 ## Parent
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] `uv5r read 1 --target fake --json` prints `rxHz` and `txHz` as numbers and no `rxMhz`.
-- [ ] `uv5r read 1 --target fake` prints the frequency in MHz on the terminal.
-- [ ] `uv5r tune 446.00625 --channel 1 --target fake --json` returns `rxHz: 446006250`.
-- [ ] `uv5r help read --json | jq .result` shows the integer fields.
-- [ ] README, SKILL.md and the channel-plan skill match. `npm run typecheck` and `npm test` pass.
+- [x] `uv5r read 1 --target fake --json` prints `rxHz` and `txHz` as numbers and no `rxMhz`.
+- [x] `uv5r read 1 --target fake` prints the frequency in MHz on the terminal.
+- [x] `uv5r tune 446.00625 --channel 1 --target fake --json` returns `rxHz: 446006250`.
+- [x] `uv5r help read --json | jq .result` shows the integer fields.
+- [x] README, SKILL.md and the channel-plan skill match. `npm run typecheck` and `npm test` pass.
 
 ## Blocked by
 
