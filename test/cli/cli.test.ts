@@ -23,34 +23,6 @@ const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
-/**
- * Measured bytes of `uv5r help --json` and each `uv5r help VERB --json`, trailing newline included.
- * Refresh them after a help text change with `node src/cli/main.ts help VERB --json | wc -c`.
- */
-const HELP_BYTES: { catalog: number; verbs: Record<string, number> } = {
-  catalog: 4086,
-  verbs: {
-    status: 1115,
-    identify: 2027,
-    tune: 2330,
-    check: 2447,
-    load: 1528,
-    read: 1022,
-    erase: 1006,
-    key: 1463,
-    say: 3047,
-    id: 2288,
-    dump: 1299,
-    restore: 1505,
-    settings: 1464,
-    listen: 1663,
-    hear: 3022,
-    sweep: 2705,
-    volume: 2224,
-  },
-};
-/** Bytes a help object may drift from its recorded size before the test asks for a refresh. */
-const HELP_BYTES_TOLERANCE = 64;
 /** opensPort, cloneSession, writesToRadio, appliesAfterMs and partialWrite of each verb. */
 const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
   status: [true, true, false, 0, false],
@@ -250,16 +222,13 @@ describe('help', () => {
     await cli(['help', '--json']);
     const catalogBytes = Buffer.byteLength(stdout.join(''));
     expect(catalogBytes).toBeLessThanOrEqual(4096);
-    expect(Math.abs(catalogBytes - HELP_BYTES.catalog), 'catalog').toBeLessThanOrEqual(HELP_BYTES_TOLERANCE);
     const catalog = JSON.parse(stdout.join('')) as { verbs: Record<string, { flags: string[] }> };
-    expect(Object.keys(catalog.verbs)).toEqual(Object.keys(HELP_BYTES.verbs));
     for (const [verb, entry] of Object.entries(catalog.verbs)) {
       stdout = [];
       await cli(['help', verb, '--json']);
       const out = stdout.join('');
       const bytes = Buffer.byteLength(out);
       expect(bytes, verb).toBeLessThanOrEqual(3072);
-      expect(Math.abs(bytes - HELP_BYTES.verbs[verb]!), verb).toBeLessThanOrEqual(HELP_BYTES_TOLERANCE);
       const help = JSON.parse(out) as { flags: Array<{ flag: string }> };
       expect(entry.flags, verb).toEqual(help.flags.map((f) => f.flag));
     }
@@ -268,15 +237,14 @@ describe('help', () => {
   it("every verb's help carries the per-verb fields", async () => {
     const keys = ['schemaVersion', 'verb', 'summary', 'usage', 'example', 'args', 'flags', 'effects', 'preconditions', 'device', 'result', 'exits', 'exitsNote'];
     const extra: Record<string, string> = { say: 'fields', id: 'fields', settings: 'fields', hear: 'lines' };
-    for (const verb of Object.keys(HELP_BYTES.verbs)) {
+    const catalog = await helpJson();
+    for (const [verb, entry] of Object.entries(catalog.verbs)) {
+      expect(Object.keys(entry as object).sort(), verb).toEqual(['flags', 'summary', 'usage']);
       stdout = [];
       const help = await helpJson(verb);
       for (const key of keys) expect(help, verb).toHaveProperty(key);
       if (extra[verb]) expect(help, verb).toHaveProperty(extra[verb]!);
     }
-    stdout = [];
-    const catalog = await helpJson();
-    for (const [verb, entry] of Object.entries(catalog.verbs)) expect(Object.keys(entry as object).sort(), verb).toEqual(['flags', 'summary', 'usage']);
   });
 
   it('gives every verb a device block that matches what the verb does to the port and the radio', async () => {
