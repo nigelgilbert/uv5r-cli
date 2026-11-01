@@ -2,7 +2,7 @@
  * Version of the help and `--version --json` shape that uv5r and tinysa-cli share.
  * Bump it when a field changes meaning or goes away.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Pointer printed under every verb's exits in the help JSON. */
 const EXITS_NOTE = 'adds to exitCodes in uv5r help --json';
@@ -66,11 +66,14 @@ export interface VerbDoc {
   fields?: Record<string, string>;
 }
 
-/** Return the synopsis of a verb: its arguments and required flags. */
+/** Return the synopsis of a verb: its arguments, then every flag in order, with optional ones in brackets. */
 function usageLine(name: string, doc: VerbDoc): string {
   const args = doc.args.map((a) => (a.optional ? `[${a.name}]` : a.name));
-  const required = doc.flags.filter((f) => f.required).map((f) => (f.value ? `--${f.name} ${f.value}` : `--${f.name}`));
-  return ['uv5r', name, ...args, ...required].join(' ');
+  const flags = doc.flags.map((f) => {
+    const text = f.value ? `--${f.name} ${f.value}` : `--${f.name}`;
+    return f.required ? text : `[${text}]`;
+  });
+  return ['uv5r', name, ...args, ...flags].join(' ');
 }
 
 /** Return a flag's default as JSON: the declared default, false for a boolean flag, else null. */

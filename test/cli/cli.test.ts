@@ -153,8 +153,8 @@ describe('help', () => {
 
   it('prints help tune --json with usage, flags, effects, preconditions, writes, result and exits', async () => {
     const tune = await helpJson('tune');
-    expect(tune).toMatchObject({ schemaVersion: 3, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
-    expect(tune.usage).toBe('uv5r tune FREQ --channel N');
+    expect(tune).toMatchObject({ schemaVersion: 4, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
+    expect(tune.usage).toBe('uv5r tune FREQ --channel N [--offset FREQ] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--rx-only] [--name TEXT] [--json] [--target PATH]');
     expect(tune.flags).toContainEqual({ flag: '--channel', value: 'N', required: true, default: null, help: expect.any(String) });
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--rx-tone', default: 'none' }));
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--narrow', value: null, default: false }));
@@ -200,7 +200,7 @@ describe('help', () => {
   it('prints help --json with the schema version, rules, errors, exit codes and one short entry per verb', async () => {
     const help = await helpJson();
     expect(Object.keys(help)).toEqual(['schemaVersion', 'name', 'version', 'output', 'rules', 'errors', 'exitCodes', 'verbs']);
-    expect(help).toMatchObject({ schemaVersion: 3, name: 'uv5r', version: '0.1.0' });
+    expect(help).toMatchObject({ schemaVersion: 4, name: 'uv5r', version: '0.1.0' });
     expect(help.rules).toEqual({
       checkFirst: expect.stringContaining('check 162.400 --channel 0'),
       channel: CHANNEL_RULE,
@@ -216,8 +216,26 @@ describe('help', () => {
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
     expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep', 'volume']);
-    expect(help.verbs.check).toEqual({ summary: expect.any(String), usage: 'uv5r check FREQ --channel N', flags: ['--channel', '--input', '--json', '--target'] });
+    expect(help.verbs.check).toEqual({ summary: expect.any(String), usage: 'uv5r check FREQ --channel N [--input NAME] [--json] [--target PATH]', flags: ['--channel', '--input', '--json', '--target'] });
     for (const verb of Object.values(help.verbs) as Array<{ flags: string[] }>) expect(verb.flags).not.toContain('--device');
+  });
+
+  it('builds each usage line from the args, then every flag with optional ones in brackets', async () => {
+    const catalog = await helpJson();
+    expect(catalog.verbs.key.usage).toBe('uv5r key --seconds S [--json] [--target PATH]');
+    expect(catalog.verbs.settings.usage).toBe('uv5r settings [FIELD VALUE ...] [--json] [--target PATH]');
+    expect(catalog.verbs.restore.usage).toBe('uv5r restore IMAGE --force [--json] [--target PATH]');
+    for (const [verb, entry] of Object.entries(catalog.verbs) as Array<[string, { usage: string }]>) {
+      stdout = [];
+      const help = await helpJson(verb);
+      expect(help.usage, verb).toBe(entry.usage);
+      const args = (help.args as Array<{ name: string; optional: boolean }>).map((a) => (a.optional ? `[${a.name}]` : a.name));
+      const flags = (help.flags as Array<{ flag: string; value: string | null; required: boolean }>).map((f) => {
+        const text = f.value ? `${f.flag} ${f.value}` : f.flag;
+        return f.required ? text : `[${text}]`;
+      });
+      expect(entry.usage, verb).toBe(['uv5r', verb, ...args, ...flags].join(' '));
+    }
   });
 
   it("lists the same flag names in the catalog as in each verb's help", async () => {
@@ -267,7 +285,7 @@ describe('help', () => {
   it('prints the same entry for help VERB, VERB --help and VERB -h', async () => {
     await onTerminal(() => cli(['help', 'tune']));
     const viaHelp = stdout.join('');
-    expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N\n');
+    expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N [--offset FREQ] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--rx-only] [--name TEXT] [--json] [--target PATH]\n');
     expect(viaHelp).toContain('--rx-only');
     for (const argv of [['tune', '--help'], ['tune', '-h'], ['tune', '-h', '--help']]) {
       stdout = [];
@@ -294,7 +312,7 @@ describe('help', () => {
     expect(stdout.join('')).toBe(`${version}\n`);
     stdout = [];
     await cli(['--version', '--json']);
-    expect(outJson()).toEqual({ name: 'uv5r', version, schemaVersion: 3 });
+    expect(outJson()).toEqual({ name: 'uv5r', version, schemaVersion: 4 });
   });
 
   it('prints help and help VERB as JSON when stdout is a pipe', async () => {
@@ -302,7 +320,7 @@ describe('help', () => {
     expect(outJson().exitCodes).toMatchObject({ '4': 'timeout' });
     stdout = [];
     await cli(['help', 'tune']);
-    expect(outJson()).toMatchObject({ schemaVersion: 3, usage: 'uv5r tune FREQ --channel N' });
+    expect(outJson()).toMatchObject({ schemaVersion: 4, usage: 'uv5r tune FREQ --channel N [--offset FREQ] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--rx-only] [--name TEXT] [--json] [--target PATH]' });
   });
 
   it('answers an unknown verb with no help text', async () => {
