@@ -31,6 +31,21 @@ export interface ExitCase {
   when: string;
 }
 
+/** What a verb does to the port and the radio, for a caller that schedules verbs. */
+export interface DeviceDoc {
+  /** The verb opens the serial port. */
+  opensPort: boolean;
+  /** The verb runs a clone session, and the receiver is deaf for the call. */
+  cloneSession: boolean;
+  writesToRadio: boolean;
+  /** Milliseconds after exit before the radio runs the write; 0 when nothing waits. */
+  appliesAfterMs: number;
+  /** A failure can leave some of the write in place. */
+  partialWrite: boolean;
+  /** What the verb writes, or why it writes nothing. */
+  note: string;
+}
+
 /** The help entry of one verb; text help, `help VERB` and `help --json` render it. */
 export interface VerbDoc {
   summary: string;
@@ -41,7 +56,7 @@ export interface VerbDoc {
   flags: FlagDoc[];
   effects: string[];
   preconditions: string[];
-  writesToRadio: { writes: boolean; note: string };
+  device: DeviceDoc;
   /** Example of the JSON result on stdout. */
   result: unknown;
   /** Example NDJSON lines a streaming verb prints before the line `result` shows. */
@@ -88,7 +103,7 @@ export function verbJson(name: string, doc: VerbDoc): Record<string, unknown> {
     })),
     effects: doc.effects,
     preconditions: doc.preconditions,
-    writesToRadio: doc.writesToRadio,
+    device: doc.device,
     result: doc.result,
     ...(doc.lines ? { lines: doc.lines } : {}),
     exits: doc.exits,
@@ -108,6 +123,8 @@ export function verbText(name: string, doc: VerbDoc): string {
   const bullets = (items: string[]) => items.map((s) => `  - ${s}`);
   const codeWidth = Math.max(0, ...doc.exits.map((e) => String(e.code).length));
   const fieldWidth = Math.max(8, ...Object.keys(doc.fields ?? {}).map((k) => k.length));
+  const yes = (b: boolean) => (b ? 'yes' : 'no');
+  const d = doc.device;
   return [
     `uv5r ${name}: ${doc.summary}`,
     '',
@@ -123,7 +140,12 @@ export function verbText(name: string, doc: VerbDoc): string {
     'preconditions:',
     ...bullets(doc.preconditions),
     '',
-    `writes to radio: ${doc.writesToRadio.writes ? 'yes' : 'no'}; ${doc.writesToRadio.note}`,
+    'device:',
+    `  opens port     ${yes(d.opensPort)}`,
+    `  clone session  ${yes(d.cloneSession)}`,
+    `  writes radio   ${yes(d.writesToRadio)}; ${d.note}`,
+    `  applies after  ${d.appliesAfterMs} ms`,
+    `  partial write  ${yes(d.partialWrite)}`,
     '',
     'result:',
     `  ${JSON.stringify(doc.result)}`,

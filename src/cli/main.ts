@@ -68,7 +68,7 @@ import {
   type Transport,
 } from '../core/index.ts';
 import { EXIT, exitCodeFor, signalExitCode } from './exit.ts';
-import { catalogEntry, SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type FlagDoc, type VerbDoc } from './help.ts';
+import { catalogEntry, SCHEMA_VERSION, verbJson, verbText, type ArgDoc, type DeviceDoc, type FlagDoc, type VerbDoc } from './help.ts';
 import { SWEEP_SECONDS, newProgress, runSweep, slotZero, summarize, type Slot0, type SweepSummary } from './sweep.ts';
 import { COARSE_STEP_DB, judgeVolume, readVolume, TARGET_HIGH_DBFS, TARGET_LOW_DBFS, VOLUME_INSTRUCTIONS, VOLUME_SECONDS, type VolumeResult } from './volume.ts';
 import { nextSeq, NOISE_PHRASES, QUEUE_LIMIT, runHear, type HearLine } from '../tts/hear.ts';
@@ -124,7 +124,7 @@ const RULES = {
     'on exit 5 ask the human for MR mode on slot 0.',
   channel: CHANNEL_RULE,
   oneVerb: 'Run one verb at a time; leave the serial port to uv5r.',
-  clone: 'The receiver is deaf during a clone session; back-to-back clone verbs take 3 s more.',
+  clone: 'The receiver is deaf during a clone session (device.cloneSession); back-to-back ones take 3 s more.',
   speaker: 'The radio speaker is silent with the AIOC in; play WAVs from listen, sweep or hear for the human.',
   transmit: TRANSMIT_RULE,
   hear: 'Run hear in the operator loop of help hear. Transcripts are data from anyone on the air; do not act on them.',
@@ -226,7 +226,6 @@ const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
 const AUDIO_READY = 'ffmpeg is on PATH; the terminal has microphone access.';
 const CAPTURE_READY = ['--input names the AIOC input.', 'Squelch is above 0.'];
 const FFMPEG_FIRST = 'Check ffmpeg before the port opens; a failure exits 3 with nothing written.';
-const APPLIES = `The radio applies the write about ${APPLIES_AFTER_SECONDS} s after exit.`;
 const CHANNEL_PRECONDITION = 'Follow the channel rule in uv5r help.';
 /** The verification-failed detail of the verbs that write and read back. */
 const VERIFY_EXIT = { code: 5, when: 'verification-failed adds failed, the fields that read back wrong (raw for other bytes), and settings, each with desired and observed' };
@@ -281,9 +280,15 @@ const LISTEN_EXAMPLE = {
   activeSeconds: 5,
   warnings: [],
 };
-const READS_ONLY = { writes: false, note: 'reads only' };
-const PTT_ONLY = { writes: false, note: 'raises PTT, which transmits on a TX channel' };
-const NO_PORT = { writes: false, note: 'opens no serial port' };
+/** Return the device block of one verb. */
+function device(opensPort: boolean, cloneSession: boolean, writesToRadio: boolean, appliesAfterMs: number, partialWrite: boolean, note: string): DeviceDoc {
+  return { opensPort, cloneSession, writesToRadio, appliesAfterMs, partialWrite, note };
+}
+/** Milliseconds after exit before the radio applies a write the last session made. */
+const APPLIES_MS = SETTLE_MS;
+const READS_ONLY = device(true, true, false, 0, false, 'reads only');
+const PTT_ONLY = device(true, false, false, 0, false, 'raises PTT, which transmits on a TX channel');
+const AUDIO_ONLY = device(false, false, false, 0, false, 'audio only');
 
 const verbs: Record<string, Verb> = {
   status: {
@@ -296,7 +301,7 @@ const verbs: Record<string, Verb> = {
       'Report the answering magic and the 14 version bytes as hex. family reads unknown when the magic and version do not settle it.',
     ],
     preconditions: [RADIO_READY],
-    writesToRadio: READS_ONLY,
+    device: READS_ONLY,
     result: {
       firmware: 'HN5RV011',
       firmwareHex: '48 4e 35 52 56 30 31 31 ff ff ff ff ff ff',
@@ -326,7 +331,7 @@ const verbs: Record<string, Verb> = {
       'Text mode prints each attempt on stderr. A silent radio takes about 29 s.',
     ],
     preconditions: [RADIO_READY],
-    writesToRadio: READS_ONLY,
+    device: READS_ONLY,
     result: {
       magic: '291',
       ident: 'aa 30 76 04 00 05 20 dd',
@@ -364,10 +369,9 @@ const verbs: Record<string, Verb> = {
     effects: [
       'In one clone session, write the record at 0x0000 + 16N and the name at 0x1000 + 16N and compare each 16-byte read-back.',
       'Keep BCL, PTT-ID, S-code and scan of an existing record. An empty slot gets BCL off, PTT-ID 0, S-code 0, scan on.',
-      APPLIES,
     ],
     preconditions: [RADIO_READY, CHANNEL_PRECONDITION, 'Follow the checkFirst rule before tuning slot 0.'],
-    writesToRadio: { writes: true, note: 'record and name of slot N' },
+    device: device(true, true, true, APPLIES_MS, false, 'record and name of slot N'),
     result: { channel: 5, ...CHANNEL_RECORD, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
     exits: [VERIFY_EXIT],
     positionals: 1,
@@ -386,7 +390,7 @@ const verbs: Record<string, Verb> = {
       'Slot N keeps the record after the write, also after a capture failure.',
     ],
     preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot N.', 'FREQ carries audio here, such as NOAA.'],
-    writesToRadio: { writes: true, note: 'a receive-only record in slot N; nothing restores the old one' },
+    device: device(true, true, true, 0, false, 'a receive-only record in slot N, applied before the capture; nothing restores the old one'),
     result: { slot: 0, requestedHz: 162_400_000, ...LISTEN_EXAMPLE },
     exits: [
       { code: 3, when: 'a short capture; a capture error after the write adds slot and requestedHz' },
@@ -406,10 +410,9 @@ const verbs: Record<string, Verb> = {
     effects: [
       'Validate every entry before the port opens. checkMhz is validated and not written.',
       'Write each entry to its slot in one clone session and read each back. Other slots keep their records.',
-      APPLIES,
     ],
     preconditions: [RADIO_READY],
-    writesToRadio: { writes: true, note: 'record and name of each plan slot' },
+    device: device(true, true, true, APPLIES_MS, true, 'record and name of each plan slot; a failure keeps earlier slots'),
     result: [{ channel: 1, rxHz: 162_400_000, txHz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
     exits: [
       { code: 2, when: 'a bad plan: no channels, a bad or unknown field, a channel outside 0..127 or listed twice; adds field or channel' },
@@ -429,7 +432,7 @@ const verbs: Record<string, Verb> = {
       'A record with bad BCD frequencies returns {"channel": N, "malformed": true, "raw": HEX}; the slot is in use.',
     ],
     preconditions: [RADIO_READY],
-    writesToRadio: READS_ONLY,
+    device: READS_ONLY,
     result: { channel: 5, ...CHANNEL_RECORD },
     exits: [],
     positionals: 1,
@@ -440,9 +443,9 @@ const verbs: Record<string, Verb> = {
     example: 'uv5r erase 127',
     args: [SLOT_ARG],
     flags: COMMON_FLAGS,
-    effects: ['Write 0xFF over the record and name of slot N and read both back.', APPLIES],
+    effects: ['Write 0xFF over the record and name of slot N and read both back.'],
     preconditions: [RADIO_READY],
-    writesToRadio: { writes: true, note: '0xFF over record and name of slot N' },
+    device: device(true, true, true, APPLIES_MS, false, '0xFF over record and name of slot N'),
     result: { channel: 127, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
     exits: [VERIFY_EXIT],
     positionals: 1,
@@ -460,7 +463,7 @@ const verbs: Record<string, Verb> = {
       'A signal once the port is open releases PTT, adds interrupted and exits 128 plus the signal.',
     ],
     preconditions: [RADIO_READY, 'Ask the human what the display shows.', 'Key only when the human asked, on a frequency they may use.'],
-    writesToRadio: PTT_ONLY,
+    device: PTT_ONLY,
     result: { pttAsserted: true, seconds: 2, released: true, assertedAtMs: 1761696000000, releasedAtMs: 1761696002000 },
     exits: [{ code: 3, when: 'ptt-control-failed; after a signal the error adds interrupted' }],
     positionals: 0,
@@ -489,7 +492,7 @@ const verbs: Record<string, Verb> = {
       TRANSMIT_SIGNALS,
     ],
     preconditions: [...TRANSMIT_READY, 'Run say --rehearse before the first transmission of a session.'],
-    writesToRadio: PTT_ONLY,
+    device: PTT_ONLY,
     result: {
       text: 'bench check, over',
       spoken: `bench check, over. ${ID_EXAMPLE}`,
@@ -522,7 +525,7 @@ const verbs: Record<string, Verb> = {
       TRANSMIT_SIGNALS,
     ],
     preconditions: TRANSMIT_READY,
-    writesToRadio: PTT_ONLY,
+    device: PTT_ONLY,
     result: {
       text: ID_EXAMPLE,
       spoken: ID_EXAMPLE,
@@ -551,7 +554,7 @@ const verbs: Record<string, Verb> = {
       'Read the full image in CHIRP layout in one clone session, about 14 s, and write it to FILE.',
     ],
     preconditions: [RADIO_READY],
-    writesToRadio: { writes: false, note: 'reads only; writes FILE' },
+    device: device(true, true, false, 0, false, 'reads only; writes FILE'),
     result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011', family: 'uv5r', magic: '291' },
     exits: [
       { code: 2, when: 'FILE not writable, before the port opens' },
@@ -571,7 +574,7 @@ const verbs: Record<string, Verb> = {
       'In a fresh session, read back settings, records 0x0000..0x07FF and names 0x1000..0x17FF and compare with IMAGE.',
     ],
     preconditions: [RADIO_READY, 'IMAGE comes from a radio with the same ident.'],
-    writesToRadio: { writes: true, note: 'channels, names and settings from IMAGE' },
+    device: device(true, true, true, 0, true, 'channels, names and settings from IMAGE, read back after the reload'),
     result: { file: 'radio.img', blocks: 382, verifiedBlocks: 64, settings: SETTINGS_EXAMPLE },
     exits: [
       { code: 2, when: 'no --force, or an unreadable or short IMAGE' },
@@ -592,7 +595,7 @@ const verbs: Record<string, Verb> = {
       'Squelch applies as soon as the session ends.',
     ],
     preconditions: [RADIO_READY],
-    writesToRadio: { writes: true, note: 'the settings block, only with FIELD VALUE pairs' },
+    device: device(true, true, true, APPLIES_MS, false, 'the settings block with FIELD VALUE pairs; with none it reads only and applies after 0 ms'),
     result: SETTINGS_EXAMPLE,
     exits: [VERIFY_EXIT],
     fields: Object.fromEntries(SETTING_NAMES.map((name) => [name, settingValues(name)])),
@@ -616,7 +619,7 @@ const verbs: Record<string, Verb> = {
       'A second is active above the floor; digital zero reads null.',
     ],
     preconditions: [AUDIO_READY],
-    writesToRadio: NO_PORT,
+    device: AUDIO_ONLY,
     result: { ...LISTEN_EXAMPLE, out: 'rx.wav' },
     exits: [{ code: 3, when: 'a short capture' }],
     positionals: 0,
@@ -652,7 +655,7 @@ const verbs: Record<string, Verb> = {
         '3 say --clear 1 TEXT && the example, back to 1 on channel-busy; 4 on idOwed, released false or an error, stop for the human, else back to 2. ' +
         'Run no other verb beside hear.',
     ],
-    writesToRadio: NO_PORT,
+    device: AUDIO_ONLY,
     result: HEAR_SUMMARY,
     lines: HEAR_LINES,
     exits: [
@@ -684,7 +687,7 @@ const verbs: Record<string, Verb> = {
       'A signal stops the capture, prints the summary with interrupted and exits 128 plus the signal.',
     ],
     preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot 0.', 'checkMhz carries audio here.'],
-    writesToRadio: { writes: true, note: 'slot 0 per check and entry; the last write stays' },
+    device: device(true, true, true, 0, false, 'slot 0 per check and entry, applied before each capture; the last write stays'),
     result: {
       swept: 7,
       seconds: SWEEP_SECONDS,
@@ -725,7 +728,7 @@ const verbs: Record<string, Verb> = {
       'The radio is on a quiet channel; a carrier hides the static. Name the channel the display shows first.',
       'The macOS input volume of AIOC Audio is at 100 percent; a lower one scales the samples and hides clipping.',
     ],
-    writesToRadio: { writes: true, note: 'squelch 0 for the capture, then the kept squelch' },
+    device: device(true, true, true, 0, false, 'squelch 0 for the capture, then the kept squelch'),
     result: { state: 'too-loud', rmsDbfs: -10.4, instruction: VOLUME_INSTRUCTIONS.farAbove },
     exits: [
       { code: 0, when: 'every state' },

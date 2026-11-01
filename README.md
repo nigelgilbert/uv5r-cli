@@ -235,8 +235,10 @@ and writes nothing for it. Plan frequencies are in MHz; `load` converts them to 
 ## For agents
 
 Load `.claude/skills/uv5r/SKILL.md` to drive the radio and `.claude/skills/channel-plan/SKILL.md`
-to build a plan. Read `uv5r help --json` once per session for the rules, error format, exit codes and
-one line per verb. Read `uv5r help VERB --json` before the first run of a verb.
+to build a plan. Read `uv5r help --json` once per session for the rules, error format, exit codes and a
+short entry per verb. Read `uv5r help VERB --json` before the first run of a verb. Its `device` block
+says whether the verb opens the port, runs a clone session, writes, when the write applies
+(`appliesAfterMs`) and whether a failure can leave part of it (`partialWrite`).
 
 ## Further reading
 

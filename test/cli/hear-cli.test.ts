@@ -242,6 +242,6 @@ describe('hear', () => {
     expect(help.lines.map((l: { type: string }) => l.type)).toEqual(['warning', 'transmission']);
     expect(help.result).toMatchObject({ type: 'summary', transmissions: 1, timedOut: false });
     expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--input', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config']);
-    expect(help.writesToRadio).toEqual({ writes: false, note: 'opens no serial port' });
+    expect(help.device).toEqual({ opensPort: false, cloneSession: false, writesToRadio: false, appliesAfterMs: 0, partialWrite: false, note: 'audio only' });
   });
 });

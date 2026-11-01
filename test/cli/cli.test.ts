@@ -23,6 +23,54 @@ const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
+/**
+ * Measured bytes of `uv5r help --json` and each `uv5r help VERB --json`, trailing newline included.
+ * Refresh them after a help text change with `node src/cli/main.ts help VERB --json | wc -c`.
+ */
+const HELP_BYTES: { catalog: number; verbs: Record<string, number> } = {
+  catalog: 4057,
+  verbs: {
+    status: 1042,
+    identify: 1943,
+    tune: 2234,
+    check: 2351,
+    load: 1457,
+    read: 938,
+    erase: 914,
+    key: 1385,
+    say: 2997,
+    id: 2212,
+    dump: 1215,
+    restore: 1436,
+    settings: 1404,
+    listen: 1579,
+    hear: 3031,
+    sweep: 2622,
+    volume: 2149,
+  },
+};
+/** Bytes a help object may drift from its recorded size before the test asks for a refresh. */
+const HELP_BYTES_TOLERANCE = 64;
+/** opensPort, cloneSession, writesToRadio, appliesAfterMs and partialWrite of each verb. */
+const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
+  status: [true, true, false, 0, false],
+  identify: [true, true, false, 0, false],
+  tune: [true, true, true, 3000, false],
+  check: [true, true, true, 0, false],
+  load: [true, true, true, 3000, true],
+  read: [true, true, false, 0, false],
+  erase: [true, true, true, 3000, false],
+  key: [true, false, false, 0, false],
+  say: [true, false, false, 0, false],
+  id: [true, false, false, 0, false],
+  dump: [true, true, false, 0, false],
+  restore: [true, true, true, 0, true],
+  settings: [true, true, true, 3000, false],
+  listen: [false, false, false, 0, false],
+  hear: [false, false, false, 0, false],
+  sweep: [true, true, true, 0, false],
+  volume: [true, true, true, 0, false],
+};
 const REASON_ENUM = [
   'device-unavailable',
   'serial-io-failed',
@@ -165,7 +213,8 @@ describe('help', () => {
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--narrow', value: null, default: false }));
     expect(tune.effects.length).toBeGreaterThan(0);
     expect(tune.preconditions).toContain('Follow the channel rule in uv5r help.');
-    expect(tune.writesToRadio).toEqual({ writes: true, note: expect.any(String) });
+    expect(tune.device).toEqual({ opensPort: true, cloneSession: true, writesToRadio: true, appliesAfterMs: 3000, partialWrite: false, note: expect.any(String) });
+    expect(tune).not.toHaveProperty('writesToRadio');
     expect(tune.result).toMatchObject({ channel: 5, rxHz: 154_680_000, appliesAfterSeconds: 3 });
     expect(tune.exits).toEqual([{ code: 5, when: expect.stringContaining('verification-failed adds failed') }]);
   });
@@ -246,15 +295,33 @@ describe('help', () => {
     await cli(['help', '--json']);
     const catalogBytes = Buffer.byteLength(stdout.join(''));
     expect(catalogBytes).toBeLessThanOrEqual(4096);
+    expect(Math.abs(catalogBytes - HELP_BYTES.catalog), 'catalog').toBeLessThanOrEqual(HELP_BYTES_TOLERANCE);
     const catalog = JSON.parse(stdout.join('')) as { verbs: Record<string, { flags: string[] }> };
+    expect(Object.keys(catalog.verbs)).toEqual(Object.keys(HELP_BYTES.verbs));
     for (const [verb, entry] of Object.entries(catalog.verbs)) {
       stdout = [];
       await cli(['help', verb, '--json']);
       const out = stdout.join('');
-      expect(Buffer.byteLength(out), verb).toBeLessThanOrEqual(3072);
+      const bytes = Buffer.byteLength(out);
+      expect(bytes, verb).toBeLessThanOrEqual(3072);
+      expect(Math.abs(bytes - HELP_BYTES.verbs[verb]!), verb).toBeLessThanOrEqual(HELP_BYTES_TOLERANCE);
       const help = JSON.parse(out) as { flags: Array<{ flag: string }> };
       expect(entry.flags, verb).toEqual(help.flags.map((f) => f.flag));
     }
+  });
+
+  it('gives every verb a device block that matches what the verb does to the port and the radio', async () => {
+    for (const [verb, [opensPort, cloneSession, writesToRadio, appliesAfterMs, partialWrite]] of Object.entries(DEVICE)) {
+      stdout = [];
+      const help = await helpJson(verb);
+      expect(help.device, verb).toEqual({ opensPort, cloneSession, writesToRadio, appliesAfterMs, partialWrite, note: expect.any(String) });
+      expect(help, verb).not.toHaveProperty('writesToRadio');
+    }
+    stdout = [];
+    expect((await helpJson('settings')).device.note).toContain('with none it reads only and applies after 0 ms');
+    stdout = [];
+    await onTerminal(() => cli(['help', 'tune']));
+    expect(stdout.join('')).toContain('device:\n  opens port     yes\n  clone session  yes\n  writes radio   yes; record and name of slot N\n  applies after  3000 ms\n  partial write  no\n');
   });
 
   it('prints the same entry for help VERB, VERB --help and VERB -h', async () => {

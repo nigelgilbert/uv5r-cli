@@ -324,10 +324,10 @@ describe('volume', () => {
 
   it('lists the band as provisional and the squelch write in help volume', async () => {
     await cli(['help', 'volume', '--json']);
-    const help = JSON.parse(stdout.join('')) as { effects: string[]; preconditions: string[]; writesToRadio: { writes: boolean }; result: unknown };
+    const help = JSON.parse(stdout.join('')) as { effects: string[]; preconditions: string[]; device: { writesToRadio: boolean }; result: unknown };
     expect(help.effects).toContain('The band is provisional until a bench pass with live speech sets it.');
     expect(help.preconditions.join(' ')).toContain('AIOC Audio is at 100 percent');
-    expect(help.writesToRadio.writes).toBe(true);
+    expect(help.device.writesToRadio).toBe(true);
     expect(help.result).toEqual({ state: 'too-loud', rmsDbfs: -10.4, instruction: 'Turn the volume knob down about a quarter turn, then say done.' });
   });
 });
