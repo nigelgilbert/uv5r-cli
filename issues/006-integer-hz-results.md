@@ -10,7 +10,7 @@
 
 ## What to build
 
-`read`, `tune`, `load`, `erase` and the `sweep` summary report `rxHz` and `txHz` as integers in place of the `rxMhz` and `txMhz` strings, and `offsetHz` where an offset is reported. The text form keeps MHz with three to five decimals. Frequency input is unchanged: MHz, Hz or exponent form. The `verification-failed` field list from #001 uses the new names. The plan file keeps `rxMhz` and `offsetMhz` since humans write it; `load` converts. The fake radio's state file and the PTT file already carry `freq_hz` and stay as they are.
+`read`, `tune` and `load` report `rxHz` and `txHz` as integers. `check` and `sweep` report `requestedHz`. `erase` reports no frequency and no result reports an offset. The text form keeps MHz with three to five decimals. Frequency input is unchanged: MHz, Hz or exponent form. The `verification-failed` field list from #001 uses the new names. The plan file keeps `rxMhz` and `offsetMhz` since humans write it; `load` converts. The fake radio's state file and the PTT file already carry `freq_hz` and stay as they are.
 
 ## Acceptance criteria
 

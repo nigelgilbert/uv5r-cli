@@ -18,7 +18,7 @@ A `verification-failed` error from `tune`, `load`, `erase` or `settings` carries
 
 - [x] `uv5r status --target /dev/null --json` prints an error with `type: "error"`, `kind: "transport"` and `reason: "device-unavailable"`.
 - [x] `UV5R_FAKE_FAULT=name-not-taken uv5r tune 446.00625 --channel 1 --target fake --json` exits 5 with `failed: ["name"]` and `settings.name.desired` and `settings.name.observed`.
-- [x] `UV5R_FAKE_FAULT=tune-wrong-freq` lists `txMhz` in `failed`.
+- [x] `UV5R_FAKE_FAULT=tune-wrong-freq` lists `txHz` in `failed`.
 - [x] A test asserts every reason in `REASONS` serializes with `type` and `kind`.
 - [x] `uv5r help --json | jq .errors.format` names `type` and `kind`. `docs/errors.md` shows the shape.
 - [x] `npm run typecheck` and `npm test` pass.

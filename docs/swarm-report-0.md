@@ -25,7 +25,7 @@ Final checks on `8d16215`: `npm run typecheck` passes. `npm test` passes 989 of 
 
 ### 006 Machine results carry integer Hz
 
-- Landed: `read`, `tune`, `load`, `erase` and the `sweep` summary report `rxHz` and `txHz` as integers. `check` and `sweep` report `requestedHz`. Text output prints MHz with three to five decimals through a new `mhzText`. Plan files keep `rxMhz` and `offsetMhz`. No result reports an offset, so `offsetHz` appears nowhere.
+- Landed: `read`, `tune` and `load` report `rxHz` and `txHz` as integers. `check` and `sweep` report `requestedHz`. `erase` reports no frequency and no result reports an offset. Text output prints MHz with three to five decimals through a new `mhzText`. Plan files keep `rxMhz` and `offsetMhz`.
 - Also changed: the golden snapshots `fixtures/golden/unit-{1,2,3}.json`, which hold `read --json` output. Only the frequency keys and values changed.
 - Files: `src/core/{codec,radio}.ts`, `src/cli/{check,main,sweep}.ts`, fixtures, tests, README, SKILL.md, `.claude/skills/channel-plan/SKILL.md`, `docs/errors.md`.
 - Commits: `4aa99b2`, status `e888e0f`.
