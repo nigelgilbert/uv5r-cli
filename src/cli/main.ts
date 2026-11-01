@@ -1081,7 +1081,7 @@ async function identifyVerb(args: Invocation): Promise<number> {
 async function tuneVerb(args: Invocation): Promise<number> {
   checkFlags('tune', args.flags, flagNames('tune'));
   const freq = args.positionals[0];
-  if (!freq) throw new UsageError('tune needs a frequency in MHz, as in: tune 154.680 --channel 5');
+  if (!freq) throw new UsageError('tune needs a frequency, MHz below 1000, else Hz, as in: tune 154.680 --channel 5');
   if (!args.flags.has('channel')) throw new UsageError('tune needs --channel N, the memory slot to write, as in: tune 154.680 --channel 0; run uv5r help tune for the channel rule');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
@@ -1101,7 +1101,7 @@ async function checkVerb(args: Invocation): Promise<number> {
   }
   checkFlags('check', args.flags, flagNames('check'));
   const freq = args.positionals[0];
-  if (!freq) throw new UsageError('check needs a frequency in MHz, as in: check 162.400 --channel 0');
+  if (!freq) throw new UsageError('check needs a frequency, MHz below 1000, else Hz, as in: check 162.400 --channel 0');
   if (!args.flags.has('channel')) throw new UsageError('check needs --channel N, as in: check 162.400 --channel 0');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
