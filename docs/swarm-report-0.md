@@ -32,7 +32,7 @@ Commit 684511f. Files: `src/cli/main.ts`, `src/core/codec.ts`, `README.md`, `tes
 
 Commit 27d22c6. Files: `src/cli/help.ts`, `test/cli/cli.test.ts`, `test/cli/hear-cli.test.ts`.
 
-`usageLine` lists positionals, then every flag in array order, required bare and optional in brackets. Catalog, `help VERB` text and JSON share the line. `key` reads `uv5r key --seconds S [--json] [--target PATH]`. `SCHEMA_VERSION` is 4. A new test rebuilds the line from args and flags for every verb.
+`usageLine` lists positionals, then every flag in array order, required bare and optional in brackets. An exclusive pair prints as one group with a bar: tune shows `[--offset FREQ | --rx-only]`. Catalog, `help VERB` text and JSON share the line. `key` reads `uv5r key --seconds S [--json] [--target PATH]`. `SCHEMA_VERSION` is 4. A test pins the key, settings, restore and tune lines and checks that the catalog and each verb's help agree.
 
 ### #008 The uv5r skill carries one transmit section
 

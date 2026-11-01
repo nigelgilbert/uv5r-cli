@@ -16,6 +16,13 @@ export interface FlagDoc {
   required?: boolean;
   /** Value the verb uses when the flag is absent; boolean flags default to false. */
   default?: string | number;
+  /** Name of an exclusive group; the usage line prints its members together as `[--a V | --b]`. */
+  group?: string;
+}
+
+/** Return a flag as it appears on the command line, as in `--channel N` or `--narrow`. */
+function flagText(f: FlagDoc): string {
+  return f.value ? `--${f.name} ${f.value}` : `--${f.name}`;
 }
 
 /** One positional argument a verb takes. */
@@ -66,13 +73,23 @@ export interface VerbDoc {
   fields?: Record<string, string>;
 }
 
-/** Return the synopsis of a verb: its arguments, then every flag in order, with optional ones in brackets. */
+/**
+ * Return the synopsis of a verb: its arguments, then every flag in order. Required flags are bare and
+ * optional ones sit in brackets. An exclusive group prints once, where its first member sits, as `[--a V | --b]`.
+ */
 function usageLine(name: string, doc: VerbDoc): string {
   const args = doc.args.map((a) => (a.optional ? `[${a.name}]` : a.name));
-  const flags = doc.flags.map((f) => {
-    const text = f.value ? `--${f.name} ${f.value}` : `--${f.name}`;
-    return f.required ? text : `[${text}]`;
-  });
+  const seen = new Set<string>();
+  const flags: string[] = [];
+  for (const f of doc.flags) {
+    if (f.group === undefined) {
+      flags.push(f.required ? flagText(f) : `[${flagText(f)}]`);
+      continue;
+    }
+    if (seen.has(f.group)) continue;
+    seen.add(f.group);
+    flags.push(`[${doc.flags.filter((g) => g.group === f.group).map(flagText).join(' | ')}]`);
+  }
   return ['uv5r', name, ...args, ...flags].join(' ');
 }
 
@@ -116,8 +133,7 @@ export function verbJson(name: string, doc: VerbDoc): Record<string, unknown> {
 
 /** Return one verb's help entry as text. */
 export function verbText(name: string, doc: VerbDoc): string {
-  const flagCol = (f: FlagDoc) => (f.value ? `--${f.name} ${f.value}` : `--${f.name}`);
-  const width = Math.max(0, ...doc.flags.map((f) => flagCol(f).length), ...doc.args.map((a) => a.name.length));
+  const width = Math.max(0, ...doc.flags.map((f) => flagText(f).length), ...doc.args.map((a) => a.name.length));
   const flagNote = (f: FlagDoc) => {
     if (f.required) return ' (required)';
     return f.default === undefined ? '' : ` (default ${f.default})`;
@@ -133,7 +149,7 @@ export function verbText(name: string, doc: VerbDoc): string {
     `usage:   ${usageLine(name, doc)}`,
     `example: ${doc.example}`,
     ...(doc.args.length ? ['', 'arguments:', ...doc.args.map((a) => `  ${a.name.padEnd(width)}  ${a.help}${a.optional ? ' (optional)' : ''}`)] : []),
-    ...(doc.flags.length ? ['', 'flags:', ...doc.flags.map((f) => `  ${flagCol(f).padEnd(width)}  ${f.help}${flagNote(f)}`)] : []),
+    ...(doc.flags.length ? ['', 'flags:', ...doc.flags.map((f) => `  ${flagText(f).padEnd(width)}  ${f.help}${flagNote(f)}`)] : []),
     ...(doc.fields ? ['', 'fields:', ...Object.entries(doc.fields).map(([k, v]) => `  ${k.padEnd(fieldWidth)} ${v}`)] : []),
     '',
     'effects:',

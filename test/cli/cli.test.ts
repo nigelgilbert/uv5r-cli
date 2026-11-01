@@ -154,7 +154,7 @@ describe('help', () => {
   it('prints help tune --json with usage, flags, effects, preconditions, writes, result and exits', async () => {
     const tune = await helpJson('tune');
     expect(tune).toMatchObject({ schemaVersion: 4, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
-    expect(tune.usage).toBe('uv5r tune FREQ --channel N [--offset FREQ] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--rx-only] [--name TEXT] [--json] [--target PATH]');
+    expect(tune.usage).toBe('uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]');
     expect(tune.flags).toContainEqual({ flag: '--channel', value: 'N', required: true, default: null, help: expect.any(String) });
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--rx-tone', default: 'none' }));
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--narrow', value: null, default: false }));
@@ -220,21 +220,16 @@ describe('help', () => {
     for (const verb of Object.values(help.verbs) as Array<{ flags: string[] }>) expect(verb.flags).not.toContain('--device');
   });
 
-  it('builds each usage line from the args, then every flag with optional ones in brackets', async () => {
+  it('prints usage with positionals, then flags in order, optional ones in brackets and an exclusive pair with a bar', async () => {
     const catalog = await helpJson();
     expect(catalog.verbs.key.usage).toBe('uv5r key --seconds S [--json] [--target PATH]');
     expect(catalog.verbs.settings.usage).toBe('uv5r settings [FIELD VALUE ...] [--json] [--target PATH]');
     expect(catalog.verbs.restore.usage).toBe('uv5r restore IMAGE --force [--json] [--target PATH]');
+    expect(catalog.verbs.tune.usage).toBe('uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]');
     for (const [verb, entry] of Object.entries(catalog.verbs) as Array<[string, { usage: string }]>) {
       stdout = [];
       const help = await helpJson(verb);
       expect(help.usage, verb).toBe(entry.usage);
-      const args = (help.args as Array<{ name: string; optional: boolean }>).map((a) => (a.optional ? `[${a.name}]` : a.name));
-      const flags = (help.flags as Array<{ flag: string; value: string | null; required: boolean }>).map((f) => {
-        const text = f.value ? `${f.flag} ${f.value}` : f.flag;
-        return f.required ? text : `[${text}]`;
-      });
-      expect(entry.usage, verb).toBe(['uv5r', verb, ...args, ...flags].join(' '));
     }
   });
 
@@ -285,7 +280,7 @@ describe('help', () => {
   it('prints the same entry for help VERB, VERB --help and VERB -h', async () => {
     await onTerminal(() => cli(['help', 'tune']));
     const viaHelp = stdout.join('');
-    expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N [--offset FREQ] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--rx-only] [--name TEXT] [--json] [--target PATH]\n');
+    expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]\n');
     expect(viaHelp).toContain('--rx-only');
     for (const argv of [['tune', '--help'], ['tune', '-h'], ['tune', '-h', '--help']]) {
       stdout = [];
@@ -320,7 +315,7 @@ describe('help', () => {
     expect(outJson().exitCodes).toMatchObject({ '4': 'timeout' });
     stdout = [];
     await cli(['help', 'tune']);
-    expect(outJson()).toMatchObject({ schemaVersion: 4, usage: 'uv5r tune FREQ --channel N [--offset FREQ] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--rx-only] [--name TEXT] [--json] [--target PATH]' });
+    expect(outJson()).toMatchObject({ schemaVersion: 4, usage: 'uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]' });
   });
 
   it('answers an unknown verb with no help text', async () => {
