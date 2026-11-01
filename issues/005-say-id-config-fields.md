@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done (68e7601)
 
 ## Parent
 
@@ -14,11 +14,11 @@
 
 ## Acceptance criteria
 
-- [ ] `uv5r say --rehearse "test" --lead 500` exits 2 and the message names `leadMs`.
-- [ ] With `leadMs: 500` in the config, the `say --rehearse` result reports `leadMs: 500`.
-- [ ] A config with `maxSeconds: 90` exits 2 with `invalid-argument` and `field: "maxSeconds"`.
-- [ ] `uv5r help say --json | jq '.flags | length'` is 7 (`--output --config --clear --out --rehearse --json --target`).
-- [ ] README, `docs/transmit.md` and SKILL.md show the config fields. `npm run typecheck` and `npm test` pass.
+- [x] `uv5r say --rehearse "test" --lead 500` exits 2 and the message names `leadMs`.
+- [x] With `leadMs: 500` in the config, the `say --rehearse` result reports `leadMs: 500`.
+- [x] A config with `maxSeconds: 90` exits 2 with `invalid-argument` and `field: "maxSeconds"`.
+- [x] `uv5r help say --json | jq '.flags | length'` is 7 (`--output --config --clear --out --rehearse --json --target`).
+- [x] README, `docs/transmit.md` and SKILL.md show the config fields. `npm run typecheck` and `npm test` pass.
 
 ## Blocked by
 
