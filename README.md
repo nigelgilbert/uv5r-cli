@@ -199,7 +199,7 @@ and writes nothing for it. Plan frequencies are in MHz; `load` converts them to 
 |---|---|
 | `channel` | `--channel N` |
 | `rxMhz` | the `FREQ` argument |
-| `offsetMhz` | `--offset MHZ` |
+| `offsetMhz` | `--offset FREQ` |
 | `tone` | `--tone HZ` |
 | `rxTone` | `--rx-tone HZ` |
 | `narrow` | `--narrow` when true |

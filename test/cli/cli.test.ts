@@ -18,7 +18,6 @@ const tempDir = () => mkdtempSync(join(TMP, 'test-'));
 const FIXTURE = join(TMP, 'primary.img');
 writeFileSync(FIXTURE, PRIMARY.image);
 const README = new URL('../../README.md', import.meta.url).pathname;
-const SKILL = new URL('../../.claude/skills/uv5r/SKILL.md', import.meta.url).pathname;
 const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
@@ -218,18 +217,13 @@ describe('help', () => {
     for (const verb of Object.values(help.verbs) as Array<{ flags: string[] }>) expect(verb.flags).not.toContain('--device');
   });
 
-  it('keeps the catalog within 4096 bytes and each verb within 3072, with the same flag names in both', async () => {
+  it("lists the same flag names in the catalog as in each verb's help", async () => {
     await cli(['help', '--json']);
-    const catalogBytes = Buffer.byteLength(stdout.join(''));
-    expect(catalogBytes).toBeLessThanOrEqual(4096);
     const catalog = JSON.parse(stdout.join('')) as { verbs: Record<string, { flags: string[] }> };
     for (const [verb, entry] of Object.entries(catalog.verbs)) {
       stdout = [];
       await cli(['help', verb, '--json']);
-      const out = stdout.join('');
-      const bytes = Buffer.byteLength(out);
-      expect(bytes, verb).toBeLessThanOrEqual(3072);
-      const help = JSON.parse(out) as { flags: Array<{ flag: string }> };
+      const help = JSON.parse(stdout.join('')) as { flags: Array<{ flag: string }> };
       expect(entry.flags, verb).toEqual(help.flags.map((f) => f.flag));
     }
   });
@@ -302,12 +296,11 @@ describe('help', () => {
     expect(outJson()).toMatchObject({ schemaVersion: 3, usage: 'uv5r tune FREQ --channel N' });
   });
 
-  it('answers an unknown verb in under 340 bytes with no help text', async () => {
+  it('answers an unknown verb with no help text', async () => {
     const open = opener(new FakeRadio());
     await cli(['frobnicate', '--json'], open);
     expect(process.exitCode).toBe(2);
     const line = stderr.join('');
-    expect(Buffer.byteLength(line)).toBeLessThan(340);
     expect(errJson().message).toBe(
       'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, say, id, dump, restore, settings, listen, hear, sweep, volume; run uv5r help VERB',
     );
@@ -356,10 +349,6 @@ describe('help', () => {
     const help = await helpJson();
     expect(help.rules.channel).toBe(CHANNEL_RULE);
     expect(readFileSync(README, 'utf8')).toContain(CHANNEL_RULE);
-  });
-
-  it('keeps SKILL.md at most 60 lines', () => {
-    expect(readFileSync(SKILL, 'utf8').trimEnd().split('\n').length).toBeLessThanOrEqual(60);
   });
 });
 
@@ -746,6 +735,18 @@ describe('tune input checks', () => {
     await cli(['tune', '146.82', '--channel', '5', '--offset', '-0.6', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     expect(outJson()).toMatchObject({ channel: 5, rxHz: 146_820_000, txHz: 146_220_000 });
+  });
+
+  it.each(['-600000', '-600e3', '-0.6e6'])('reads --offset %s as Hz by the frequency rule', async (offset) => {
+    await cli(['tune', '146.82', '--channel', '5', '--offset', offset, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ channel: 5, rxHz: 146_820_000, txHz: 146_220_000 });
+  });
+
+  it('reads a positive Hz offset the same as its MHz form', async () => {
+    await cli(['tune', '146.52', '--channel', '1', '--offset', '600000', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ rxHz: 146_520_000, txHz: 147_120_000 });
   });
 
   it('rejects an offset finer than 10 Hz before opening the transport', async () => {

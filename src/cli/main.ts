@@ -341,7 +341,7 @@ const verbs: Record<string, Verb> = {
     args: [FREQ_ARG],
     flags: [
       CHANNEL_FLAG,
-      { name: 'offset', value: 'MHZ', default: 0, help: 'signed repeater offset, as in -0.6' },
+      { name: 'offset', value: 'FREQ', default: 0, help: 'signed repeater offset; MHz below 1000, else Hz, as in -0.6' },
       { name: 'tone', value: 'HZ', default: 'none', help: 'TX tone: CTCSS (82.5), DCS (D023, D023I) or none' },
       RX_TONE_FLAG,
       NARROW_FLAG,
@@ -977,12 +977,18 @@ function print(args: ParsedArgs, json: object, text: () => string): void {
   else process.stdout.write(`${text()}\n`);
 }
 
+/** Parse a signed `--offset` by the frequency rule on its magnitude: below 1000 is MHz, else Hz. */
+function parseOffset(text: string): number {
+  const n = parseDecimal(text, '--offset');
+  return checkTenHz(Math.abs(n) < 1000 ? n * 1_000_000 : n, `--offset ${text}`);
+}
+
 function channelSpec(freqText: string, flags: Map<string, string | true>): ChannelSpec {
   const rxHz = parseFrequency(freqText);
   const rxOnly = Boolean(flags.get('rx-only'));
   const offsetText = stringFlag(flags, 'offset');
   if (rxOnly && offsetText !== undefined) throw new UsageError('--rx-only and --offset conflict; a receive-only channel has no TX frequency');
-  const offsetHz = offsetText === undefined ? 0 : checkTenHz(parseDecimal(offsetText, '--offset') * 1_000_000, `--offset ${offsetText}`);
+  const offsetHz = offsetText === undefined ? 0 : parseOffset(offsetText);
   const txHz = rxOnly ? undefined : rxHz + offsetHz;
   checkBand(rxHz);
   if (txHz !== undefined) checkBand(txHz);
