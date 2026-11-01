@@ -110,10 +110,14 @@ const MIN_IMAGE_BYTES = IMAGE_HEADER + Math.max(...RESTORE_RANGES.map(([, end]) 
 export const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
 
+/** The station ID sentence for `key`, which the transmit rule and the key help share. */
+const KEY_ID_RULE =
+  '`key` sends a carrier and no ID; send the callsign after it with `uv5r id` or by voice, at the end of the transmission and every ten minutes.';
+
 /** The control-operator rule for the transmit verbs; help and README.md carry it word for word. */
 export const TRANSMIT_RULE =
-  'You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. Each one ends with the uv5r.json callsign. ' +
-  'Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.';
+  'You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. `say` and `id` end with the uv5r.json callsign. ' +
+  `${KEY_ID_RULE} Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.`;
 
 /** Operating rules `help` prints for an agent that reads no other doc. */
 const RULES = {
@@ -472,6 +476,7 @@ const verbs: Record<string, Verb> = {
       'assertedAtMs and releasedAtMs are Date.now() as each DTR set resolves; an error omits the stamp of a failed set.',
       'Transmit on the channel the display shows. A receive-only slot radiates nothing.',
       'A signal once the port is open releases PTT, adds interrupted and exits 128 plus the signal.',
+      KEY_ID_RULE,
     ],
     preconditions: [RADIO_READY, 'Ask the human what the display shows.', 'Key only when the human asked, on a frequency they may use.'],
     device: PTT_ONLY,

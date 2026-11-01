@@ -90,7 +90,7 @@ session, the muted speaker, and slot 0 as the scratch slot that `check` and `swe
 
 ## Transmit
 
-You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. Each one ends with the uv5r.json callsign. Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.
+You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. `say` and `id` end with the uv5r.json callsign. `key` sends a carrier and no ID; send the callsign after it with `uv5r id` or by voice, at the end of the transmission and every ten minutes. Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.
 
 Run `cp uv5r.example.json uv5r.json` and put your callsign in it. The CLI reads `--config FILE`
 first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root. `uv5r help say` lists the other

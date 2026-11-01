@@ -1007,6 +1007,7 @@ describe('key output', () => {
     const help = JSON.parse(stdout.join('')) as { result: object; effects: string[] };
     expect(Object.keys(help.result)).toEqual(Object.keys(out));
     expect(help.effects.filter((e) => e.includes('assertedAtMs') && e.includes('releasedAtMs'))).toHaveLength(1);
+    expect(help.effects.filter((e) => e.includes('no ID') && e.includes('`uv5r id`'))).toHaveLength(1);
   });
 
   it('stamps assertedAtMs and releasedAtMs about 1000 ms apart for --seconds 1', async () => {
