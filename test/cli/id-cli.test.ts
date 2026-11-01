@@ -59,6 +59,14 @@ describe('id', () => {
     expect(radio.pttLog).toEqual([true, false]);
   });
 
+  it('reads voice and leadMs from the config and reports them', async () => {
+    const synth = fakeSynthesize();
+    await cli(['id', '--config', config({ callsign: 'KJ7ABC', voice: 'Daniel', leadMs: 500 }), '--json'], opener(), fakeSpeechDeps({ synthesize: synth }));
+    expect(process.exitCode).toBe(0);
+    expect(synth.calls[0]).toMatchObject({ voice: 'Daniel' });
+    expect(outJson()).toMatchObject({ voice: 'Daniel', leadMs: 500 });
+  });
+
   it('exits 2 with station-unconfigured before open without a callsign', async () => {
     const open = opener();
     await cli(['id', '--config', config({}), '--json'], open, fakeSpeechDeps());
