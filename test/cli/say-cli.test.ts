@@ -361,7 +361,7 @@ describe('say', () => {
     await cli(['help', 'say', '--json']);
     const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; default: unknown }[]; fields: Record<string, string> };
     expect(help.preconditions).toContain('Follow the transmit rule in uv5r help; transmit only when the human asked.');
-    expect(help.flags.map((f) => f.flag)).toEqual(['--output', '--config', '--clear', '--out', '--rehearse', '--target']);
+    expect(help.flags.map((f) => f.flag)).toEqual(['--output', '--config', '--clear', '--out', '--rehearse', '--json', '--target']);
     const flag = (name: string) => help.flags.find((f) => f.flag === name)?.default;
     expect([flag('--clear'), flag('--rehearse')]).toEqual([0, false]);
     expect(Object.keys(help.fields)).toEqual(['voice', 'leadMs', 'tailMs', 'maxSeconds']);

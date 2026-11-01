@@ -241,7 +241,7 @@ describe('hear', () => {
     expect(help.schemaVersion).toBe(3);
     expect(help.lines.map((l: { type: string }) => l.type)).toEqual(['warning', 'transmission']);
     expect(help.result).toMatchObject({ type: 'summary', transmissions: 1, timedOut: false });
-    expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--input', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config']);
+    expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--input', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config', '--json']);
     expect(help.device).toEqual({ opensPort: false, cloneSession: false, writesToRadio: false, appliesAfterMs: 0, partialWrite: false, note: 'audio only' });
   });
 });

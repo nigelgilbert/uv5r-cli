@@ -52,7 +52,6 @@ export interface VerbDoc {
   /** Command line to copy. */
   example: string;
   args: ArgDoc[];
-  /** Flags the verb documents; every verb also takes --json, which the output rule covers. */
   flags: FlagDoc[];
   effects: string[];
   preconditions: string[];

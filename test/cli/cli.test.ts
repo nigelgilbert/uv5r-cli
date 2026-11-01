@@ -28,25 +28,25 @@ const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pat
  * Refresh them after a help text change with `node src/cli/main.ts help VERB --json | wc -c`.
  */
 const HELP_BYTES: { catalog: number; verbs: Record<string, number> } = {
-  catalog: 4057,
+  catalog: 4036,
   verbs: {
-    status: 1042,
-    identify: 1943,
-    tune: 2234,
-    check: 2351,
-    load: 1457,
-    read: 938,
-    erase: 914,
-    key: 1385,
-    say: 2997,
-    id: 2212,
-    dump: 1215,
-    restore: 1436,
-    settings: 1404,
-    listen: 1579,
-    hear: 3031,
-    sweep: 2622,
-    volume: 2149,
+    status: 1115,
+    identify: 2027,
+    tune: 2318,
+    check: 2435,
+    load: 1541,
+    read: 1022,
+    erase: 994,
+    key: 1463,
+    say: 3017,
+    id: 2288,
+    dump: 1299,
+    restore: 1505,
+    settings: 1480,
+    listen: 1663,
+    hear: 3022,
+    sweep: 2706,
+    volume: 2225,
   },
 };
 /** Bytes a help object may drift from its recorded size before the test asks for a refresh. */
@@ -287,7 +287,7 @@ describe('help', () => {
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
     expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep', 'volume']);
-    expect(help.verbs.check).toEqual({ summary: expect.any(String), usage: 'uv5r check FREQ --channel N', flags: ['--channel', '--input', '--target'] });
+    expect(help.verbs.check).toEqual({ summary: expect.any(String), usage: 'uv5r check FREQ --channel N', flags: ['--channel', '--input', '--json', '--target'] });
     for (const verb of Object.values(help.verbs) as Array<{ flags: string[] }>) expect(verb.flags).not.toContain('--device');
   });
 
