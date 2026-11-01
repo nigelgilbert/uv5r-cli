@@ -229,7 +229,7 @@ const CAPTURE_READY = ['--input names the AIOC input.', 'Squelch is above 0.'];
 const FFMPEG_FIRST = 'Check ffmpeg before the port opens; a failure exits 3 with nothing written.';
 const CHANNEL_PRECONDITION = 'Follow the channel rule in uv5r help.';
 /** The verification-failed detail of the verbs that write and read back. */
-const VERIFY_EXIT = { code: 5, when: 'verification-failed adds failed, the fields that read back wrong (raw for other bytes), and settings, each with desired and observed' };
+const VERIFY_EXIT = { code: 5, when: 'verification-failed adds failed, the fields that read back wrong (raw when only other bytes differ), and settings, each with desired and observed' };
 
 const TRANSMIT_READY = [
   RADIO_READY,
@@ -440,7 +440,7 @@ const verbs: Record<string, Verb> = {
     args: [{ name: 'PLAN', help: 'plan JSON: name, notes, checkMhz, channels; README.md "Plan fields" lists entry fields' }],
     flags: COMMON_FLAGS,
     effects: [
-      'Validate every entry before the port opens. checkMhz is validated and not written.',
+      'Validate every entry and checkMhz before the port opens.',
       'Write each entry to its slot in one clone session and read each back. Other slots keep their records.',
     ],
     preconditions: [RADIO_READY],
