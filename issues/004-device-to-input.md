@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done (34d36cd)
 
 ## Parent
 
@@ -14,10 +14,10 @@
 
 ## Acceptance criteria
 
-- [ ] `uv5r listen --seconds 1 --input "AIOC Audio" --json` runs and the result has `input`.
-- [ ] `uv5r listen --seconds 1 --device x` exits 2 and the message names `--input`.
-- [ ] `uv5r help --json` shows no `--device` under any verb.
-- [ ] README, SKILL.md, `docs/receive.md` and `docs/errors.md` use `--input`. `npm run typecheck` and `npm test` pass.
+- [x] `uv5r listen --seconds 1 --input "AIOC Audio" --json` runs and the result has `input`.
+- [x] `uv5r listen --seconds 1 --device x` exits 2 and the message names `--input`.
+- [x] `uv5r help --json` shows no `--device` under any verb.
+- [x] README, SKILL.md, `docs/receive.md` and `docs/errors.md` use `--input`. `npm run typecheck` and `npm test` pass.
 
 ## Blocked by
 
