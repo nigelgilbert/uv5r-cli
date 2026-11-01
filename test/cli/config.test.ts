@@ -54,6 +54,10 @@ describe('readStation', () => {
       outputDevice: 'AIOC Audio',
       inputDevice: 'AIOC Audio',
       model: 'models/ggml-base.en-q5_1.bin',
+      voice: 'Samantha',
+      leadMs: 300,
+      tailMs: 400,
+      maxSeconds: 30,
     });
   });
 

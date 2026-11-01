@@ -71,11 +71,11 @@ describe('speakUtterance', () => {
     expect(result.spoken.endsWith(ID)).toBe(true);
     expect(pttAtStart).toEqual([[true]]);
     expect(radio.pttLog).toEqual([true, false]);
-    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'device', 'pttAsserted', 'released']);
-    expect(result).toMatchObject({ text: 'bench check, over', identified: true, device: 'AIOC Audio', pttAsserted: true, released: true, peakDbfs: -3 });
+    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'output', 'pttAsserted', 'released']);
+    expect(result).toMatchObject({ text: 'bench check, over', identified: true, output: 'AIOC Audio', pttAsserted: true, released: true, peakDbfs: -3 });
   });
 
-  it('passes --lead to the conditioning pass and plays to the resolved index', async () => {
+  it('passes leadMs to the conditioning pass and plays to the resolved index', async () => {
     const deps = fakeSpeechDeps({ resolveOutput: fakeResolveOutput({ 'AIOC Audio': 7 }) });
     const playTo = fakePlayTo();
     await speakUtterance({ ...OPTIONS, leadMs: 500 }, { ...deps, playTo }, port());
@@ -83,7 +83,7 @@ describe('speakUtterance', () => {
     expect(playTo.calls[0]!.index).toBe(7);
   });
 
-  it('holds PTT for --tail after the player exits', async () => {
+  it('holds PTT for tailMs after the player exits', async () => {
     const result = await speakUtterance({ ...OPTIONS, tailMs: 200 }, fakeSpeechDeps(), port());
     expect(result.seconds).toBeGreaterThanOrEqual(0.2);
   });
@@ -102,7 +102,7 @@ describe('speakUtterance', () => {
     expect(withPort.opens).toBe(0);
   });
 
-  it('counts --tail toward --max-seconds', async () => {
+  it('counts tailMs toward maxSeconds', async () => {
     // 2 s of speech plus 0.3 s lead and 0.3 s trailing pad make a 2.6 s WAV.
     const deps = () => fakeSpeechDeps({ synthesize: fakeSynthesize({ seconds: 2 }) });
     await expect(speakUtterance({ ...OPTIONS, maxSeconds: 3, tailMs: 300 }, deps(), port())).resolves.toMatchObject({ identified: true });
@@ -124,7 +124,7 @@ describe('speakUtterance', () => {
     const withPort = port();
     const monitor = fakeMonitor([pcmFrame(-80), pcmFrame(-20), pcmFrame(-80)]);
     const err = await failure(speakUtterance({ ...OPTIONS, clearSeconds: 1 }, fakeSpeechDeps({ monitor: () => monitor }), withPort));
-    expect(err.toJSON()).toMatchObject({ reason: 'channel-busy', device: 'AIOC Audio' });
+    expect(err.toJSON()).toMatchObject({ reason: 'channel-busy', input: 'AIOC Audio' });
     expect(err.kind).toBe('device-state');
     expect(withPort.opens).toBe(0);
     expect(monitor.stops()).toBeGreaterThan(0);
@@ -162,7 +162,7 @@ describe('speakUtterance', () => {
     expect(deps.signals.listenerCount('SIGINT')).toBe(0);
   });
 
-  it('owes no ID when the signal lands inside --lead', async () => {
+  it('owes no ID when the signal lands inside leadMs', async () => {
     const clock = fakeClock();
     const deps = fakeSpeechDeps({ now: clock.now });
     deps.playTo = fakePlayTo({ ms: 5000, clock, onStart: () => setTimeout(() => deps.signals.emit('SIGINT'), 30) });
@@ -221,7 +221,7 @@ describe('speakUtterance', () => {
     expect(result).not.toHaveProperty('remedy');
   });
 
-  it('turns a player failure after --lead into audio-process-failed with retry no, the PTT fields and idOwed', async () => {
+  it('turns a player failure after leadMs into audio-process-failed with retry no, the PTT fields and idOwed', async () => {
     const radio = new FakeRadio();
     const clock = fakeClock();
     const fail = new TransportError('audio-process-failed', 'ffmpeg exited with code 1 playing tx.wav', { output: 3 });
@@ -231,7 +231,7 @@ describe('speakUtterance', () => {
     expect(radio.pttLog).toEqual([true, false]);
   });
 
-  it('owes no ID when the player fails inside --lead', async () => {
+  it('owes no ID when the player fails inside leadMs', async () => {
     const clock = fakeClock();
     const fail = new TransportError('audio-process-failed', 'ffmpeg exited with code 1 playing tx.wav', { output: 3 });
     const deps = fakeSpeechDeps({ now: clock.now, playTo: fakePlayTo({ ms: 40, fail, clock }) });
@@ -253,7 +253,7 @@ describe('speakUtterance', () => {
     expect(err.message).toContain('unplug the AIOC');
   });
 
-  it('drops PTT at the watchdog when the player runs past the padded WAV plus --tail plus 5 s', async () => {
+  it('drops PTT at the watchdog when the player runs past the padded WAV plus tailMs plus 5 s', async () => {
     vi.useFakeTimers();
     try {
       const radio = new FakeRadio();
@@ -334,7 +334,7 @@ describe('speakUtterance', () => {
     expect(err.detail.playedSeconds).toBeGreaterThanOrEqual(1);
   });
 
-  it('returns the interrupted result on a signal during conditioning of a WAV past --max-seconds', async () => {
+  it('returns the interrupted result on a signal during conditioning of a WAV past maxSeconds', async () => {
     const withPort = port();
     const out = join(mkdtempSync(join(tmpdir(), 'uv5r-')), 'tx.wav');
     const deps = fakeSpeechDeps();
@@ -380,7 +380,7 @@ describe('speakUtterance', () => {
     expect(resolveOutput.calls).toEqual([]);
     expect(played).toHaveLength(1);
     expect(played[0]!.seconds).toBeCloseTo(2.6, 5);
-    expect(result).toMatchObject({ rehearsed: true, pttAsserted: false, released: true, identified: false, seconds: 2.6, device: 'system default output' });
+    expect(result).toMatchObject({ rehearsed: true, pttAsserted: false, released: true, identified: false, seconds: 2.6, output: 'system default output' });
   });
 
   it('keeps the conditioned WAV at --out', async () => {

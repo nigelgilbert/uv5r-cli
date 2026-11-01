@@ -12,7 +12,7 @@ import { FRAMES_PER_SECOND, frameLevels } from './segment.ts';
 import { whisperTranscriber, type Transcribe, type WhisperOptions } from './stt.ts';
 import { condition, synthesize } from './tts.ts';
 
-/** Milliseconds keyWhile allows past the padded WAV and --tail for the player to start. */
+/** Milliseconds keyWhile allows past the padded WAV and tailMs for the player to start. */
 const PLAYER_START_MS = 5000;
 
 /** Seconds past --clear S after which the clear check stops a capture that delivers too few frames. */
@@ -21,8 +21,8 @@ const CLEAR_SLACK_SECONDS = 10;
 /** What a result or error tells the operator when audio went out without the full ID. */
 export const ID_OWED_REMEDY = 'identify by voice or run uv5r id';
 
-/** Device name the result reports for --rehearse. */
-const REHEARSE_DEVICE = 'system default output';
+/** Output name the result reports for --rehearse. */
+const REHEARSE_OUTPUT = 'system default output';
 
 /**
  * The child processes and clocks the transmit and receive verbs use, injected so tests run
@@ -100,11 +100,11 @@ export interface SpeakResult {
   seconds: number;
   peakDbfs: number;
   rmsDbfs: number;
-  device: string;
+  output: string;
   pttAsserted: boolean;
   released: boolean;
   interrupted?: NodeJS.Signals;
-  /** Set on a signal; true when the player ran past --lead and the ID did not finish. */
+  /** Set on a signal; true when the player ran past leadMs and the ID did not finish. */
   idOwed?: boolean;
   /** ID_OWED_REMEDY when idOwed is true. */
   remedy?: string;
@@ -169,11 +169,11 @@ export async function checkClear(monitor: Monitor, device: string, seconds: numb
   }
   if (loudest > DEFAULT_FLOOR_DBFS) {
     throw new DeviceStateError('channel-busy', `heard ${round(loudest)} dBFS on ${JSON.stringify(device)} during the ${seconds} s clear check, above ${DEFAULT_FLOOR_DBFS} dBFS`, {
-      device,
+      input: device,
       rmsDbfs: round(loudest),
     });
   }
-  if (got < needed) throw new TransportError('capture-incomplete', `the clear check captured ${got} of ${needed} frames from ${JSON.stringify(device)}`, { device, captured: got, requested: needed });
+  if (got < needed) throw new TransportError('capture-incomplete', `the clear check captured ${got} of ${needed} frames from ${JSON.stringify(device)}`, { input: device, captured: got, requested: needed });
 }
 
 /**
@@ -227,7 +227,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
       identified: false,
       seconds: 0,
       ...measured,
-      device: options.output,
+      output: options.output,
       pttAsserted: false,
       released: true,
       interrupted: signal,
@@ -241,9 +241,9 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     const keyedSeconds = levels.seconds + options.tailMs / 1000;
     if (keyedSeconds > options.maxSeconds) {
       throw new UsageError(
-        `the utterance runs ${round(keyedSeconds)} s with --tail, past --max-seconds ${options.maxSeconds}`,
+        `the utterance runs ${round(keyedSeconds)} s with tailMs, past maxSeconds ${options.maxSeconds}`,
         { seconds: round(keyedSeconds), maxSeconds: options.maxSeconds },
-        {},
+        options.idOnly ? { remedy: 'raise maxSeconds in the station config, then rerun the command' } : {},
         'utterance-too-long',
       );
     }
@@ -262,7 +262,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         if (err instanceof BaofengError) err.attach({}, { remedy: 'check the system output, then rerun say --rehearse', retry: 'after-remedy' });
         throw err;
       }
-      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, device: REHEARSE_DEVICE, pttAsserted: false, released: true, rehearsed: true, ...kept };
+      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, output: REHEARSE_OUTPUT, pttAsserted: false, released: true, rehearsed: true, ...kept };
     }
     const index = await deps.resolveOutput(options.output);
     if (options.clearSeconds > 0 && !signalled) {
@@ -327,7 +327,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         idOwed ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' },
       );
     }
-    const result: SpeakResult = { text: options.text, spoken, identified, seconds: held.seconds, ...measured, device: options.output, pttAsserted: held.pttAsserted, released: held.released, ...kept };
+    const result: SpeakResult = { text: options.text, spoken, identified, seconds: held.seconds, ...measured, output: options.output, pttAsserted: held.pttAsserted, released: held.released, ...kept };
     if (held.interrupted) {
       result.interrupted = held.interrupted;
       result.idOwed = owed();

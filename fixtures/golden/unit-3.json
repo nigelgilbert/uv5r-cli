@@ -12,8 +12,8 @@
   "slots": [
     {
       "channel": 0,
-      "rxMhz": "144.725",
-      "txMhz": "144.725",
+      "rxHz": 144725000,
+      "txHz": 144725000,
       "txTone": "none",
       "rxTone": "none",
       "bandwidth": "wide",
@@ -526,8 +526,8 @@
     },
     {
       "channel": 127,
-      "rxMhz": "435.725",
-      "txMhz": "435.725",
+      "rxHz": 435725000,
+      "txHz": 435725000,
       "txTone": "none",
       "rxTone": "none",
       "bandwidth": "wide",

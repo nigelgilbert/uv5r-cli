@@ -28,6 +28,7 @@ export {
   checkTenHz,
   checkBand,
   formatMhz,
+  mhzText,
   encodeLbcd,
   decodeLbcd,
   encodeChannel,

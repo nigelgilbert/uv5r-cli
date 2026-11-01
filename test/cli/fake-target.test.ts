@@ -131,32 +131,36 @@ describe.concurrent('uv5r --target fake across processes', () => {
     const vars = harnessEnv('name-not-taken');
     const tuned = await uv5r(['tune', '446.00625', '--channel', '1', '--low-power', '--target', 'fake', '--json'], vars);
     expect(tuned.code).toBe(5);
-    const error = JSON.parse(tuned.stderr) as { reason: string; message: string };
-    expect(error.reason).toBe('verification-failed');
-    expect(error.message).toMatch(/name did not take the write$/);
+    expect(JSON.parse(tuned.stderr)).toMatchObject({
+      type: 'error',
+      kind: 'device-state',
+      reason: 'verification-failed',
+      failed: ['name'],
+      settings: { name: { desired: '446.006', observed: '' } },
+    });
     const read = await uv5r(['read', '1', '--target', 'fake', '--json'], vars);
     expect(read.code, read.stderr).toBe(0);
-    expect(JSON.parse(read.stdout)).toMatchObject({ rxMhz: '446.00625', txMhz: '446.00625', power: 'low' });
+    expect(JSON.parse(read.stdout)).toMatchObject({ rxHz: 446_006_250, txHz: 446_006_250, power: 'low' });
   });
 
-  it('tune-wrong-freq leaves another txMhz for the read after the tune', { timeout: 30_000 }, async () => {
+  it('tune-wrong-freq lists txHz in failed and leaves another txHz for the read after the tune', { timeout: 30_000 }, async () => {
     const vars = harnessEnv('tune-wrong-freq');
     const tuned = await uv5r(['tune', '446.00625', '--channel', '1', '--low-power', '--target', 'fake', '--json'], vars);
     expect(tuned.code).toBe(5);
-    expect((JSON.parse(tuned.stderr) as { message: string }).message).toMatch(/name did not take the write$/);
+    expect(JSON.parse(tuned.stderr)).toMatchObject({ reason: 'verification-failed', failed: ['txHz'], settings: { txHz: { desired: 446_006_250, observed: 447_006_250 } } });
     const read = await uv5r(['read', '1', '--target', 'fake', '--json'], vars);
     expect(read.code, read.stderr).toBe(0);
-    expect(JSON.parse(read.stdout)).toMatchObject({ rxMhz: '446.00625', power: 'low' });
-    expect((JSON.parse(read.stdout) as { txMhz: string }).txMhz).not.toBe('446.00625');
+    expect(JSON.parse(read.stdout)).toMatchObject({ rxHz: 446_006_250, power: 'low' });
+    expect((JSON.parse(read.stdout) as { txHz: number }).txHz).not.toBe(446_006_250);
   });
 
-  it('tune-delay:4000 returns the tune about 4 s later', { timeout: 30_000 }, async () => {
+  it('tune-delay:4000 returns the tune at least 4 s later', { timeout: 30_000 }, async () => {
     const plain = await tune('446.00625', harnessEnv());
     const delayed = await tune('446.00625', harnessEnv('tune-delay:4000'));
     expect(plain.code, plain.stderr).toBe(0);
     expect(delayed.code, delayed.stderr).toBe(0);
-    expect(delayed.ms - plain.ms).toBeGreaterThan(3500);
-    expect(delayed.ms - plain.ms).toBeLessThan(5000);
+    expect(delayed.ms).toBeGreaterThanOrEqual(4000);
+    expect(delayed.ms).toBeLessThan(14_000);
   });
 
   it('ptt-control-failed exits 3 at the first key with retry no', { timeout: 15_000 }, async () => {

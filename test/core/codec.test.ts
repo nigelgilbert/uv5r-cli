@@ -10,6 +10,7 @@ import {
   encodeName,
   encodeTone,
   formatMhz,
+  mhzText,
   parseFrequency,
   parseTone,
 } from '../../src/core/codec.ts';
@@ -70,6 +71,12 @@ describe('frequency parsing', () => {
     expect(formatMhz(154_680_000)).toBe('154.68');
     expect(formatMhz(462_562_500)).toBe('462.5625');
   });
+  it('formats text MHz with three to five decimals', () => {
+    expect(mhzText(154_680_000)).toBe('154.680');
+    expect(mhzText(162_400_000)).toBe('162.400');
+    expect(mhzText(462_562_500)).toBe('462.5625');
+    expect(mhzText(446_006_250)).toBe('446.00625');
+  });
   it('rejects frequencies outside the radio bands when encoding', () => {
     expect(() => encodeChannel({ rxHz: 121_500_000 })).toThrow(/outside/);
   });
@@ -95,7 +102,7 @@ describe('channel records', () => {
     mem.set([0xff, 0xff, 0xff, 0xff], 4);
     const ch = decodeChannel(mem, encodeName('WX'));
     expect(ch).toMatchObject({ rxHz: 162_550_000, txHz: null, name: 'WX' });
-    expect(channelToJson(ch!).txMhz).toBeNull();
+    expect(channelToJson(ch!).txHz).toBeNull();
   });
   it('writes the TX-inhibit marker for a receive-only channel and reads it back as txHz null', () => {
     const mem = encodeChannel({ rxHz: 155_475_000, txHz: 155_475_000, rxOnly: true });

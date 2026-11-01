@@ -129,14 +129,14 @@ export function startMonitor(device: string, { spawn = nodeSpawn }: MonitorOptio
   });
   child.on('error', (e: NodeJS.ErrnoException) => {
     if (e.code === 'ENOENT') fail(ffmpegMissing());
-    else fail(new TransportError('audio-process-failed', `ffmpeg failed capturing from ${JSON.stringify(device)}: ${e.message}`, { device, code: e.code ?? null, signal: null }));
+    else fail(new TransportError('audio-process-failed', `ffmpeg failed capturing from ${JSON.stringify(device)}: ${e.message}`, { input: device, code: e.code ?? null, signal: null }));
     // A child that never spawned emits no close.
     if (child.pid === undefined) finish();
   });
   child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
     const tail = stderrTail(stderr);
     const how = signal ? `stopped on ${signal}` : `exited with code ${code}`;
-    fail(new TransportError('audio-process-failed', `ffmpeg ${how} capturing from ${JSON.stringify(device)}${tail ? `: ${tail}` : ''}`, { device, code, signal }));
+    fail(new TransportError('audio-process-failed', `ffmpeg ${how} capturing from ${JSON.stringify(device)}${tail ? `: ${tail}` : ''}`, { input: device, code, signal }));
     finish();
   });
 

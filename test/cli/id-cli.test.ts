@@ -50,13 +50,20 @@ describe('id', () => {
   it('speaks the phonetic callsign alone and keys PTT around it', async () => {
     const radio = new FakeRadio();
     const synth = fakeSynthesize();
-    await cli(['id', '--config', STATION, '--tail', '0', '--json'], opener(radio), fakeSpeechDeps({ synthesize: synth }));
+    await cli(['id', '--config', config({ callsign: 'KJ7ABC', tailMs: 0 }), '--json'], opener(radio), fakeSpeechDeps({ synthesize: synth }));
     expect(process.exitCode).toBe(0);
     expect(synth.calls.map((c) => c.text)).toEqual([ID]);
     const result = outJson();
-    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'device', 'pttAsserted', 'released']);
+    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'output', 'pttAsserted', 'released']);
     expect(result).toMatchObject({ text: ID, spoken: ID, identified: true, pttAsserted: true, released: true });
     expect(radio.pttLog).toEqual([true, false]);
+  });
+
+  it('reads voice from the config', async () => {
+    const synth = fakeSynthesize();
+    await cli(['id', '--config', config({ callsign: 'KJ7ABC', voice: 'Daniel', leadMs: 500 }), '--json'], opener(), fakeSpeechDeps({ synthesize: synth }));
+    expect(process.exitCode).toBe(0);
+    expect(synth.calls[0]).toMatchObject({ voice: 'Daniel' });
   });
 
   it('exits 2 with station-unconfigured before open without a callsign', async () => {
@@ -67,11 +74,20 @@ describe('id', () => {
     expect(open.calls).toBe(0);
   });
 
-  it('caps the utterance at the default --max-seconds of 30', async () => {
+  it('caps the utterance at the default maxSeconds of 30', async () => {
     const open = opener();
     await cli(['id', '--config', STATION, '--json'], open, fakeSpeechDeps({ synthesize: fakeSynthesize({ seconds: 30 }) }));
     expect(process.exitCode).toBe(2);
     expect(errJson()).toMatchObject({ reason: 'utterance-too-long', maxSeconds: 30 });
+    expect(open.calls).toBe(0);
+  });
+
+  it('caps the utterance at the config maxSeconds', async () => {
+    const open = opener();
+    await cli(['id', '--config', config({ callsign: 'KJ7ABC', maxSeconds: 3 }), '--json'], open, fakeSpeechDeps({ synthesize: fakeSynthesize({ seconds: 3 }) }));
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'utterance-too-long', maxSeconds: 3 });
+    expect(errJson().remedy).not.toContain('shorten');
     expect(open.calls).toBe(0);
   });
 

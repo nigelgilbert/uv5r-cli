@@ -43,9 +43,9 @@ export interface Guidance {
 
 /** What each retry value tells the caller. */
 export const RETRY: Record<Retry, string> = {
-  no: 'do not rerun the command; follow the remedy and report to the human',
-  once: 'rerun the same command once; follow the remedy if it fails again',
-  'after-remedy': 'rerun the command after doing the remedy',
+  no: 'do not rerun; report to the human',
+  once: 'rerun once, then follow the remedy',
+  'after-remedy': 'rerun after the remedy',
 };
 
 interface ReasonDoc extends Guidance {
@@ -76,32 +76,32 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'dependency-missing': {
     kind: 'transport',
-    means: 'ffmpeg, afplay, say or whisper-cli is missing from PATH, or a whisper model file is missing',
+    means: 'ffmpeg, afplay, say, whisper-cli or a whisper model file is missing',
     remedy: 'ask the human to install the missing program',
     retry: 'after-remedy',
   },
   'audio-process-failed': {
     kind: 'transport',
     means: 'ffmpeg or afplay exited with an error, timed out or stopped on a signal',
-    remedy: 'check that --device names the AIOC input and the terminal has microphone access',
+    remedy: 'check that --input names the AIOC input and the terminal has microphone access',
     retry: 'after-remedy',
   },
   'capture-incomplete': {
     kind: 'transport',
-    means: 'ffmpeg returned fewer whole seconds than requested plus the first second the CLI drops; captured and requested count that second',
-    remedy: 'rerun the command; check that --device names the AIOC input if it fails again',
+    means: 'ffmpeg returned fewer seconds than requested; captured and requested count the dropped first second',
+    remedy: 'rerun the command; check that --input names the AIOC input if it fails again',
     retry: 'once',
   },
   'file-write-failed': {
     kind: 'transport',
-    means: 'a WAV rename or image write failed after the port opened, such as a full disk or a directory changed mid-run',
+    means: 'a WAV rename or image write failed after the port opened',
     remedy: 'free disk space or pass a writable path, then rerun the command',
     retry: 'after-remedy',
   },
   'speech-engine-failed': {
     kind: 'transport',
     means: 'say or whisper-cli failed, or say wrote digital zero',
-    remedy: 'pass a --voice that say -v ? lists, then rerun the command',
+    remedy: 'set voice in the station config to one that say -v ? lists, then rerun the command',
     retry: 'after-remedy',
   },
   'audio-device-unavailable': {
@@ -130,7 +130,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'write-unacknowledged': {
     kind: 'device-state',
-    means: 'the radio did not ack a block write; the block may or may not hold the new bytes',
+    means: 'the radio did not ack a block write; the block state is unknown',
     remedy: 'rerun the command; read the slot afterwards',
     retry: 'once',
   },
@@ -154,7 +154,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'squelch-open': {
     kind: 'device-state',
-    means: 'squelch is 0, so noise reads as audio on any frequency; check and sweep stop before the write',
+    means: 'squelch is 0, so noise reads as audio; check and sweep stop before the write',
     remedy: 'run uv5r settings squelch 3',
     retry: 'after-remedy',
   },
@@ -178,8 +178,8 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'utterance-too-long': {
     kind: 'usage',
-    means: 'the padded WAV plus --tail runs past --max-seconds',
-    remedy: 'shorten the text, then rerun the command',
+    means: 'the padded WAV plus tailMs runs past maxSeconds',
+    remedy: 'shorten the text or raise maxSeconds in the station config, then rerun the command',
     retry: 'after-remedy',
   },
   'device-busy': {
@@ -232,8 +232,14 @@ export class BaofengError extends Error {
     return this;
   }
 
+  /**
+   * Return the error envelope: type, kind, reason, message, remedy and retry, then the detail
+   * fields. The canonical fields go first and are set again after the detail, so a detail key
+   * cannot replace them.
+   */
   toJSON(): Record<string, unknown> {
-    return { reason: this.reason, message: this.message, remedy: this.remedy, retry: this.retry, ...this.detail };
+    const canonical = { type: 'error', kind: this.kind, reason: this.reason, message: this.message, remedy: this.remedy, retry: this.retry };
+    return { ...canonical, ...this.detail, ...canonical };
   }
 }
 

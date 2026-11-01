@@ -19,6 +19,8 @@ function config(json: object): string {
 }
 
 const STATION = config({ callsign: 'kj7abc' });
+/** A station config with no PTT tail, so a keyed run ends at the player exit. */
+const NO_TAIL = config({ callsign: 'kj7abc', tailMs: 0 });
 
 /** Record each open and hand back `radio`. */
 function opener(radio: Transport = new FakeRadio()): OpenTransport & { calls: number } {
@@ -85,11 +87,11 @@ describe('say', () => {
   it('speaks the text with the phonetic ID and prints the result keys', async () => {
     const radio = new FakeRadio();
     const synth = fakeSynthesize();
-    await cli(['say', 'bench check, over', '--config', STATION, '--tail', '0', '--json'], opener(radio), fakeSpeechDeps({ synthesize: synth }));
+    await cli(['say', 'bench check, over', '--config', NO_TAIL, '--json'], opener(radio), fakeSpeechDeps({ synthesize: synth }));
     expect(process.exitCode).toBe(0);
     const result = outJson();
-    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'device', 'pttAsserted', 'released']);
-    expect(result).toMatchObject({ text: 'bench check, over', spoken: `bench check, over. ${ID}`, identified: true, device: 'AIOC Audio', pttAsserted: true, released: true });
+    expect(Object.keys(result)).toEqual(['text', 'spoken', 'identified', 'seconds', 'peakDbfs', 'rmsDbfs', 'output', 'pttAsserted', 'released']);
+    expect(result).toMatchObject({ text: 'bench check, over', spoken: `bench check, over. ${ID}`, identified: true, output: 'AIOC Audio', pttAsserted: true, released: true });
     expect(synth.calls[0]).toMatchObject({ text: `bench check, over. ${ID}`, voice: 'Samantha' });
     expect(radio.pttLog).toEqual([true, false]);
   });
@@ -98,14 +100,14 @@ describe('say', () => {
     const radio = new FakeRadio();
     const atStart: boolean[][] = [];
     const deps = fakeSpeechDeps({ playTo: fakePlayTo({ onStart: () => atStart.push([...radio.pttLog]) }) });
-    await cli(['say', 'hello', '--config', STATION, '--tail', '0', '--json'], opener(radio), deps);
+    await cli(['say', 'hello', '--config', NO_TAIL, '--json'], opener(radio), deps);
     expect(atStart).toEqual([[true]]);
     expect(radio.pttLog).toEqual([true, false]);
   });
 
   it('speaks text that starts with -- after the terminator', async () => {
     const synth = fakeSynthesize();
-    await cli(['say', '--config', STATION, '--tail', '0', '--json', '--', '--hello'], opener(), fakeSpeechDeps({ synthesize: synth }));
+    await cli(['say', '--config', NO_TAIL, '--json', '--', '--hello'], opener(), fakeSpeechDeps({ synthesize: synth }));
     expect(process.exitCode).toBe(0);
     expect(synth.calls[0]!.text).toBe(`--hello. ${ID}`);
     expect(outJson()).toMatchObject({ text: '--hello' });
@@ -119,16 +121,43 @@ describe('say', () => {
     expect(open.calls).toBe(0);
   });
 
-  it('counts --tail toward --max-seconds and exits 2 with utterance-too-long before open', async () => {
+  it('counts tailMs toward maxSeconds and exits 2 with utterance-too-long before open', async () => {
     const open = opener();
     const deps = () => fakeSpeechDeps({ synthesize: fakeSynthesize({ seconds: 2 }) });
-    await cli(['say', 'hello', '--config', STATION, '--max-seconds', '3', '--tail', '500', '--json'], open, deps());
+    await cli(['say', 'hello', '--config', config({ callsign: 'kj7abc', maxSeconds: 3, tailMs: 500 }), '--json'], open, deps());
     expect(process.exitCode).toBe(2);
-    expect(errJson()).toMatchObject({ reason: 'utterance-too-long', maxSeconds: 3 });
+    expect(errJson()).toMatchObject({ reason: 'utterance-too-long', maxSeconds: 3, remedy: expect.stringContaining('maxSeconds in the station config') });
     expect(open.calls).toBe(0);
     stdout = [];
-    await cli(['say', 'hello', '--config', STATION, '--max-seconds', '3', '--tail', '300', '--json'], open, deps());
+    await cli(['say', 'hello', '--config', config({ callsign: 'kj7abc', maxSeconds: 3, tailMs: 300 }), '--json'], open, deps());
     expect(process.exitCode).toBe(0);
+  });
+
+  it('reads voice, leadMs, tailMs and maxSeconds from the config and reports them', async () => {
+    const synth = fakeSynthesize();
+    const deps = fakeSpeechDeps({ synthesize: synth });
+    const station = config({ callsign: 'kj7abc', voice: 'Daniel', leadMs: 500, tailMs: 0, maxSeconds: 20 });
+    await cli(['say', 'hello', '--config', station, '--rehearse', '--json'], opener(), deps);
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ rehearsed: true });
+    expect(synth.calls[0]).toMatchObject({ voice: 'Daniel' });
+    expect((deps.condition as unknown as { calls: { leadMs: number }[] }).calls[0]!.leadMs).toBe(500);
+  });
+
+  it.each([
+    [{ maxSeconds: 90 }, 'maxSeconds'],
+    [{ maxSeconds: 0 }, 'maxSeconds'],
+    [{ leadMs: -1 }, 'leadMs'],
+    [{ tailMs: 5001 }, 'tailMs'],
+    [{ voice: 3 }, 'voice'],
+  ])('exits 2 with invalid-argument on a config holding %j before open', async (fields, field) => {
+    const open = opener();
+    const synth = fakeSynthesize();
+    await cli(['say', 'hello', '--config', config({ callsign: 'kj7abc', ...fields }), '--json'], open, fakeSpeechDeps({ synthesize: synth }));
+    expect(process.exitCode).toBe(2);
+    expect(errJson()).toMatchObject({ reason: 'invalid-argument', field });
+    expect(open.calls).toBe(0);
+    expect(synth.calls).toEqual([]);
   });
 
   it('exits 3 with audio-device-unavailable before PTT when the output is missing', async () => {
@@ -141,10 +170,10 @@ describe('say', () => {
 
   it('takes --output over the config outputDevice', async () => {
     const resolveOutput = fakeResolveOutput({ 'MacBook Pro Speakers': 2 });
-    await cli(['say', 'hello', '--config', config({ callsign: 'KJ7ABC', outputDevice: 'USB Out' }), '--output', 'MacBook Pro Speakers', '--tail', '0', '--json'], opener(), fakeSpeechDeps({ resolveOutput }));
+    await cli(['say', 'hello', '--config', config({ callsign: 'KJ7ABC', outputDevice: 'USB Out', tailMs: 0 }), '--output', 'MacBook Pro Speakers', '--json'], opener(), fakeSpeechDeps({ resolveOutput }));
     expect(process.exitCode).toBe(0);
     expect(resolveOutput.calls).toEqual(['MacBook Pro Speakers']);
-    expect(outJson()).toMatchObject({ device: 'MacBook Pro Speakers' });
+    expect(outJson()).toMatchObject({ output: 'MacBook Pro Speakers' });
   });
 
   it('exits 5 with channel-busy before PTT when --clear hears activity on the config inputDevice', async () => {
@@ -158,7 +187,7 @@ describe('say', () => {
     });
     await cli(['say', 'hello', '--config', config({ callsign: 'KJ7ABC', inputDevice: 'USB In' }), '--clear', '1', '--json'], open, deps);
     expect(process.exitCode).toBe(5);
-    expect(errJson()).toMatchObject({ reason: 'channel-busy', device: 'USB In' });
+    expect(errJson()).toMatchObject({ reason: 'channel-busy', input: 'USB In' });
     expect(devices).toEqual(['USB In']);
     expect(open.calls).toBe(0);
   });
@@ -265,14 +294,12 @@ describe('say', () => {
 
   it('ignores UV5R_MAGIC', async () => {
     vi.stubEnv('UV5R_MAGIC', 'NOPE');
-    await cli(['say', 'hello', '--config', STATION, '--tail', '0', '--json'], opener(), fakeSpeechDeps());
+    await cli(['say', 'hello', '--config', NO_TAIL, '--json'], opener(), fakeSpeechDeps());
     expect(process.exitCode).toBe(0);
   });
 
   it.each([
     [['say', '--json'], 'say needs TEXT'],
-    [['say', 'hi', '--max-seconds', '56', '--json'], '--max-seconds takes 0 < S <= 55'],
-    [['say', 'hi', '--lead', '-1', '--json'], '--lead takes 0..5000 ms'],
     [['say', 'hi', '--clear', '31', '--json'], '--clear takes 0..30 seconds'],
     [['say', 'hi', '--out', '-', '--json'], '--out takes a file path'],
   ])('exits 2 on %j before open', async (argv, message) => {
@@ -287,7 +314,7 @@ describe('say', () => {
     const tty = process.stdout.isTTY;
     process.stdout.isTTY = true;
     try {
-      await cli(['say', 'hello', '--config', STATION, '--tail', '0'], opener(), fakeSpeechDeps());
+      await cli(['say', 'hello', '--config', NO_TAIL], opener(), fakeSpeechDeps());
     } finally {
       process.stdout.isTTY = tty;
     }
@@ -317,12 +344,18 @@ describe('say', () => {
     expect(text).not.toContain('asserted for');
   });
 
-  it('carries the control-operator rule in help say and help --json', async () => {
+  it('points help say at the control-operator rule in help --json', async () => {
     await cli(['help', 'say', '--json']);
-    const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; default: unknown }[] };
-    expect(help.preconditions).toContain(TRANSMIT_RULE);
+    const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; default: unknown }[]; fields: Record<string, string> };
+    expect(help.preconditions).toContain('Follow the transmit rule in uv5r help; transmit only when the human asked.');
+    expect(help.flags.map((f) => f.flag)).toEqual(['--output', '--config', '--clear', '--out', '--rehearse', '--json', '--target']);
     const flag = (name: string) => help.flags.find((f) => f.flag === name)?.default;
-    expect([flag('--voice'), flag('--lead'), flag('--tail'), flag('--max-seconds'), flag('--clear'), flag('--rehearse')]).toEqual(['Samantha', 300, 400, 30, 0, false]);
+    expect([flag('--clear'), flag('--rehearse')]).toEqual([0, false]);
+    expect(Object.keys(help.fields)).toEqual(['voice', 'leadMs', 'tailMs', 'maxSeconds']);
+    expect(help.fields.voice).toContain('default Samantha');
+    expect(help.fields.leadMs).toContain('default 300');
+    expect(help.fields.tailMs).toContain('default 400');
+    expect(help.fields.maxSeconds).toContain('default 30');
     stdout = [];
     await cli(['help', '--json']);
     expect(JSON.parse(stdout.join('')).rules.transmit).toBe(TRANSMIT_RULE);

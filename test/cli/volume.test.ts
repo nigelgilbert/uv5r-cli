@@ -56,7 +56,7 @@ function opener(radio: FakeRadio): OpenTransport & { calls: number } {
 /** Build a 2 s listen result with mean RMS `rms` and the given warnings. */
 function heard(rms: number | null, warnings: string[] = []): ListenResult {
   return {
-    device: 'AIOC Audio',
+    input: 'AIOC Audio',
     seconds: VOLUME_SECONDS,
     rmsDbfs: [rms, rms],
     zeroSeconds: rms === null ? 2 : 0,
@@ -166,9 +166,9 @@ describe('volume', () => {
     expect(outJson()).toEqual({ state: 'too-loud', rmsDbfs: -10.4, instruction: 'Turn the volume knob down about a quarter turn, then say done.' });
   });
 
-  it('passes --device to listen', async () => {
+  it('passes --input to listen', async () => {
     listenMock.mockResolvedValue(heard(-25));
-    await run(['volume', '--device', '1', '--json'], opener(new FakeRadio()));
+    await run(['volume', '--input', '1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     expect(listenMock.mock.calls[0]![0]).toBe('1');
     expect(outJson()).toMatchObject({ state: 'ok' });
@@ -214,7 +214,7 @@ describe('volume', () => {
 
   it('restores squelch after a capture error and adds squelch and the remedy to the error', async () => {
     const radio = new FakeRadio();
-    listenMock.mockRejectedValue(new TransportError('capture-incomplete', 'ffmpeg captured 1 of 3 seconds from "AIOC Audio"', { device: 'AIOC Audio', captured: 1, requested: 3 }));
+    listenMock.mockRejectedValue(new TransportError('capture-incomplete', 'ffmpeg captured 1 of 3 seconds from "AIOC Audio"', { input: 'AIOC Audio', captured: 1, requested: 3 }));
     await run(['volume', '--json'], opener(radio));
     expect(process.exitCode).toBe(3);
     expect(errJson()).toMatchObject({ reason: 'capture-incomplete', squelch: 3, remedy: 'run uv5r settings squelch 3', retry: 'after-remedy', captured: 1 });
@@ -324,10 +324,10 @@ describe('volume', () => {
 
   it('lists the band as provisional and the squelch write in help volume', async () => {
     await cli(['help', 'volume', '--json']);
-    const help = JSON.parse(stdout.join('')) as { effects: string[]; preconditions: string[]; writesToRadio: { writes: boolean }; result: unknown };
+    const help = JSON.parse(stdout.join('')) as { effects: string[]; preconditions: string[]; device: { writesToRadio: boolean }; result: unknown };
     expect(help.effects).toContain('The band is provisional until a bench pass with live speech sets it.');
     expect(help.preconditions.join(' ')).toContain('AIOC Audio is at 100 percent');
-    expect(help.writesToRadio.writes).toBe(true);
+    expect(help.device.writesToRadio).toBe(true);
     expect(help.result).toEqual({ state: 'too-loud', rmsDbfs: -10.4, instruction: 'Turn the volume knob down about a quarter turn, then say done.' });
   });
 });
@@ -343,7 +343,7 @@ describe('readVolume', () => {
       await options!.stop;
       throw new TransportError('audio-process-failed', 'ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"');
     });
-    const done = readVolume(direct(radio), { device: 'AIOC Audio', signals });
+    const done = readVolume(direct(radio), { input: 'AIOC Audio', signals });
     await vi.runAllTimersAsync();
     expect(await done).toEqual({ interrupted: 'SIGTERM' });
     expect(radio.eeprom[SQUELCH_AT]).toBe(3);
@@ -358,7 +358,7 @@ describe('readVolume', () => {
       signals.emit('SIGHUP');
       await fn(radio);
     };
-    expect(await readVolume(withPort, { device: 'AIOC Audio', signals })).toEqual({ interrupted: 'SIGHUP' });
+    expect(await readVolume(withPort, { input: 'AIOC Audio', signals })).toEqual({ interrupted: 'SIGHUP' });
     expect(radio.handshakes).toEqual([]);
     expect(listenMock).not.toHaveBeenCalled();
   });
@@ -375,7 +375,7 @@ describe('readVolume', () => {
       }
       write(bytes);
     });
-    const done = readVolume(direct(radio), { device: 'AIOC Audio', signals });
+    const done = readVolume(direct(radio), { input: 'AIOC Audio', signals });
     await vi.runAllTimersAsync();
     expect(await done).toEqual({ interrupted: 'SIGINT' });
     expect(listenMock).not.toHaveBeenCalled();

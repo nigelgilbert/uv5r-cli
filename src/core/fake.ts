@@ -422,8 +422,8 @@ function readState(path: string): FakeState | undefined {
  *
  * Faults from `UV5R_FAKE_FAULT`: `tune-delay:MS` holds the handshake ack of `tune` for MS,
  * past the read timeout the host asked for. `name-not-taken` acks name writes and drops them.
- * `tune-wrong-freq` drops name writes too and, at the close of the tune, adds
- * WRONG_FREQ_SHIFT_HZ to the tuned slot's TX frequency. `ptt-control-failed` rejects each
+ * `tune-wrong-freq` adds WRONG_FREQ_SHIFT_HZ to the TX frequency of each channel record
+ * write, so the read-back fails on txHz. `ptt-control-failed` rejects each
  * setPtt(true) from released, as a DTR set that fails, so `key` exits 3. `hang` gives holdPtt
  * a hold body that waits for the stop alone, so PTT stays up past the hold until a signal
  * arrives or the keyWhile watchdog fires; the release then writes `ptt: false` as usual.
@@ -502,8 +502,7 @@ export class FakeTransport extends FakeRadio {
   }
 
   protected override ignores(addr: number): boolean {
-    const namesDropped = this.fault?.kind === 'name-not-taken' || this.fault?.kind === 'tune-wrong-freq';
-    return super.ignores(addr) || (namesDropped && addr >= NAME_BASE && addr < NAMES_END);
+    return super.ignores(addr) || (this.fault?.kind === 'name-not-taken' && addr >= NAME_BASE && addr < NAMES_END);
   }
 
   protected override acked(): void {
@@ -525,6 +524,7 @@ export class FakeTransport extends FakeRadio {
       this.tunedNow = slot;
       this.saved.tunedSlot = slot;
       this.saved.tuneEndedMs = Date.now();
+      if (this.fault?.kind === 'tune-wrong-freq') this.shiftTx(slot);
     }
     this.save();
   }
@@ -573,10 +573,7 @@ export class FakeTransport extends FakeRadio {
     this.closed = true;
     this.stopHeartbeat();
     await this.setPtt(false);
-    if (this.tunedNow !== undefined) {
-      this.saved.tuneEndedMs = Date.now();
-      if (this.fault?.kind === 'tune-wrong-freq') this.shiftTx(this.tunedNow);
-    }
+    if (this.tunedNow !== undefined) this.saved.tuneEndedMs = Date.now();
     this.save();
   }
 

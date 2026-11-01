@@ -104,7 +104,7 @@ describe('parseAstats and summarize', () => {
     expect(levels.rms).toEqual([-3, -48.965978, -30, -Infinity]);
     expect(levels.samples).toEqual([48000, 48000, 48000, 48000]);
     const r = summarize('AIOC Audio', 3, levels);
-    expect(r).toMatchObject({ device: 'AIOC Audio', seconds: 3, rmsDbfs: [-48.97, -30, null], zeroSeconds: 1, peakDbfs: -20.5, active: [true, true, false] });
+    expect(r).toMatchObject({ input: 'AIOC Audio', seconds: 3, rmsDbfs: [-48.97, -30, null], zeroSeconds: 1, peakDbfs: -20.5, active: [true, true, false] });
     expect(r.meanRmsDbfs).toBeCloseTo(-34.72, 1);
   });
   it('trims every series to the requested seconds after the first', () => {
@@ -118,7 +118,7 @@ describe('parseAstats and summarize', () => {
     const zero: Raw = { min: 0, max: 0, peakCount: 96000 };
     const r = summarize('AIOC Audio', 2, parseAstats([0, 1, 2].map((i) => frame(i, '-inf', '-inf', 48000, zero)).join('\n')));
     expect(r).toEqual({
-      device: 'AIOC Audio',
+      input: 'AIOC Audio',
       seconds: 2,
       rmsDbfs: [null, null],
       zeroSeconds: 2,
@@ -220,7 +220,7 @@ describe('listen', () => {
       const err = await pending;
       await vi.advanceTimersByTimeAsync(5000);
       expect(child.kills).toEqual(['SIGTERM']);
-      expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { device: 'AIOC Audio', code: 255, signal: null } });
+      expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { input: 'AIOC Audio', code: 255, signal: null } });
       expect(err.message).toMatch(/^ffmpeg timed out after 21s capturing from "AIOC Audio"/);
     } finally {
       vi.useRealTimers();
@@ -237,7 +237,7 @@ describe('listen', () => {
       const err = await pending;
       await vi.advanceTimersByTimeAsync(30000);
       expect(child.kills).toEqual([]);
-      expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { device: 'AIOC Audio', code: null, signal: 'SIGTERM' } });
+      expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { input: 'AIOC Audio', code: null, signal: 'SIGTERM' } });
       expect(err.message).toMatch(/^ffmpeg stopped on SIGTERM capturing from "AIOC Audio"/);
     } finally {
       vi.useRealTimers();
@@ -394,7 +394,7 @@ describe('checkFfmpeg', () => {
     const err = await checkFfmpeg().catch((e) => e);
     expect(err).toMatchObject({ kind: 'transport', reason: 'audio-process-failed', detail: { code: 1 } });
     expect(err.message).toBe('ffmpeg -version exited with code 1: dyld: Library not loaded: libavdevice.62.dylib');
-    expect(err.remedy).not.toContain('--device');
+    expect(err.remedy).not.toContain('--input');
   });
 });
 

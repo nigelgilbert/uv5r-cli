@@ -42,6 +42,16 @@ afterEach(() => {
 const outJson = () => JSON.parse(stdout.join('').trim()) as Record<string, unknown>;
 const errJson = () => JSON.parse(stderr.join('').trim()) as Record<string, unknown>;
 
+describe('the --input flag', () => {
+  it('passes --input to ffmpeg and reports input', async () => {
+    await cli(['listen', '--seconds', '3', '--input', 'USB In', '--json']);
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ input: 'USB In', seconds: 3 });
+    expect(outJson()).not.toHaveProperty('device');
+    expect(spawn.mock.calls[0]![1]).toContain(':USB In');
+  });
+});
+
 describe('listen --out and --play', () => {
   it('exits 2 naming --out when --play comes without it, before running ffmpeg', async () => {
     await cli(['listen', '--seconds', '3', '--play', '--json']);

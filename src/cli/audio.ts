@@ -2,7 +2,8 @@ import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import { TransportError, UsageError } from '../core/index.ts';
 
 export interface ListenResult {
-  device: string;
+  /** avfoundation audio input the capture came from. */
+  input: string;
   seconds: number;
   /** RMS level of each captured second in dBFS; null marks a second of digital zero. */
   rmsDbfs: (number | null)[];
@@ -199,7 +200,7 @@ export function summarize(device: string, seconds: number, levels: Levels, floor
   const total = window.reduce((sum, i) => sum + (levels.samples[i] ?? RATE), 0);
   const clipped = window.reduce((sum, i) => sum + fullScaleSamples(levels, i), 0);
   return {
-    device,
+    input: device,
     seconds,
     rmsDbfs: rms.map(dbfs),
     zeroSeconds: rms.filter((db) => db === -Infinity).length,
@@ -403,7 +404,7 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
       const suffix = tail ? `: ${tail}` : '';
       if (e || stopped) {
         const how = stopped || !e ? 'killed after a signal to uv5r' : exitHow(e, timeoutMs);
-        reject(new TransportError('audio-process-failed', `ffmpeg ${how} capturing from ${JSON.stringify(device)}${suffix}`, { device, code: e?.code ?? null, signal: e?.signal ?? null }));
+        reject(new TransportError('audio-process-failed', `ffmpeg ${how} capturing from ${JSON.stringify(device)}${suffix}`, { input: device, code: e?.code ?? null, signal: e?.signal ?? null }));
         return;
       }
       const levels = parseAstats(stderr);
@@ -411,7 +412,7 @@ function capture(device: string, seconds: number, floorDbfs: number, out: string
       const captured = wholeSeconds(levels);
       const needed = seconds + 1;
       if (captured < needed) {
-        reject(new TransportError('capture-incomplete', `ffmpeg captured ${captured} of ${needed} seconds from ${JSON.stringify(device)}${suffix}`, { device, captured, requested: needed }));
+        reject(new TransportError('capture-incomplete', `ffmpeg captured ${captured} of ${needed} seconds from ${JSON.stringify(device)}${suffix}`, { input: device, captured, requested: needed }));
         return;
       }
       resolve(summarize(device, seconds, levels, floorDbfs));

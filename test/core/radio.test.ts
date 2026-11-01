@@ -58,9 +58,51 @@ describe('erase', () => {
       kind: 'device-state',
       reason: 'verification-failed',
       message: 'channel 127 record erased; name did not take the erase',
-      detail: { wrote: expect.stringMatching(/^ff( ff){15}$/), read: expect.stringMatching(/^4a 55 4e 4b/) },
+      detail: {
+        failed: ['name'],
+        settings: { name: { desired: '', observed: 'JUNK' } },
+        wrote: expect.stringMatching(/^ff( ff){15}$/),
+        read: expect.stringMatching(/^4a 55 4e 4b/),
+      },
     });
     expect(radio.eeprom.subarray(127 * 16, 128 * 16).every((b) => b === 0xff)).toBe(true);
+  });
+  it('names each record field that reads back after an ignored erase', async () => {
+    const radio = new FakeRadio();
+    await tune(radio, 127, { rxHz: 435_725_000, name: 'JUNK' });
+    radio.dropSession();
+    radio.writesIgnoredBelow = 127 * 16;
+    radio.writesIgnoredAbove = 128 * 16;
+    await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
+      message: 'channel 127 did not take the erase',
+      detail: {
+        failed: ['rxHz', 'txHz', 'txTone', 'rxTone', 'bandwidth', 'power'],
+        settings: { rxHz: { desired: null, observed: 435_725_000 }, power: { desired: null, observed: 'high' } },
+      },
+    });
+  });
+  it('lists no field when an ignored erase leaves a malformed record', async () => {
+    const radio = new FakeRadio();
+    const mem = encodeChannel({ rxHz: 162_550_000 });
+    mem.set([0xff, 0x00, 0x00, 0x00], 4);
+    radio.eeprom.set(mem, 127 * 16);
+    radio.writesIgnoredBelow = 127 * 16;
+    radio.writesIgnoredAbove = 128 * 16;
+    await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
+      detail: { failed: [], settings: {}, wrote: expect.stringMatching(/^ff( ff){15}$/), read: hex(mem) },
+    });
+  });
+  it('lists no field when an ignored name erase leaves bytes past the name', async () => {
+    const radio = new FakeRadio();
+    const name = new Uint8Array(16).fill(0xff);
+    name[15] = 0x00;
+    radio.eeprom.set(name, 0x1000 + 127 * 16);
+    radio.writesIgnoredBelow = 0x1000 + 127 * 16;
+    radio.writesIgnoredAbove = 0x1000 + 128 * 16;
+    await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
+      message: 'channel 127 record erased; name did not take the erase',
+      detail: { failed: [], settings: {}, wrote: expect.stringMatching(/^ff( ff){15}$/), read: hex(name) },
+    });
   });
   it('throws the timeout unchanged when the name read-back times out after the record erase verified', async () => {
     const radio = new FakeRadio();
@@ -756,6 +798,21 @@ describe('channels', () => {
       reason: 'verification-failed',
       message: 'channel 5 did not take the write',
       remedy: 'read channel 5, then rerun the write',
+      detail: {
+        failed: ['rxHz', 'txHz', 'txTone', 'rxTone', 'bandwidth', 'power'],
+        settings: { rxHz: { desired: 154_680_000, observed: null }, txTone: { desired: 'none', observed: null } },
+      },
+    });
+  });
+  it('names only the fields that read back wrong', async () => {
+    const radio = new FakeRadio();
+    radio.eeprom.set(encodeChannel({ rxHz: 154_680_000, txTone: parseTone('82.5') }), 5 * 16);
+    radio.writesIgnoredBelow = 5 * 16;
+    radio.writesIgnoredAbove = 6 * 16;
+    const s = new Session(radio);
+    await s.start();
+    await expect(writeChannel(s, 5, { rxHz: 154_680_000 })).rejects.toMatchObject({
+      detail: { failed: ['txTone'], settings: { txTone: { desired: 'none', observed: '82.5' } } },
     });
   });
   it('reports an acked but ignored name write as a verification failure after the record write', async () => {
@@ -771,9 +828,25 @@ describe('channels', () => {
       message: 'channel 5 record written; name did not take the write',
       remedy: 'read channel 5; rerun the write to fix the name',
       retry: 'after-remedy',
+      failed: ['name'],
+      settings: { name: { desired: 'SHERIFF', observed: '' } },
     });
     expect((err as BaofengError).detail).not.toHaveProperty('recordWritten');
     expect(radio.writes).toEqual([5 * 16, 0x1000 + 5 * 16]);
+  });
+  it('lists no field when an ignored name write leaves the same name with different padding', async () => {
+    const radio = new FakeRadio();
+    const name = encodeName('TEST');
+    name[15] = 0x00;
+    radio.eeprom.set(name, 0x1000 + 5 * 16);
+    radio.writesIgnoredBelow = 0x1000 + 5 * 16;
+    radio.writesIgnoredAbove = 0x1000 + 6 * 16;
+    const s = new Session(radio);
+    await s.start();
+    await expect(writeChannel(s, 5, { rxHz: 154_680_000, name: 'TEST' })).rejects.toMatchObject({
+      message: 'channel 5 record written; name did not take the write',
+      detail: { failed: [], settings: {}, wrote: hex(encodeName('TEST')), read: hex(name) },
+    });
   });
   it('throws the timeout unchanged when the name read-back times out after the record verified', async () => {
     const radio = new FakeRadio();
@@ -799,11 +872,11 @@ describe('channels', () => {
   it('builds the channel payload with the documented keys in order', () => {
     const ch = decodeChannel(encodeChannel({ rxHz: 146_820_000, txHz: 146_220_000, txTone: parseTone('82.5') }), encodeName('RPT'))!;
     const payload = channelPayload(3, ch);
-    expect(Object.keys(payload)).toEqual(['channel', 'rxMhz', 'txMhz', 'txTone', 'rxTone', 'bandwidth', 'power', 'name']);
+    expect(Object.keys(payload)).toEqual(['channel', 'rxHz', 'txHz', 'txTone', 'rxTone', 'bandwidth', 'power', 'name']);
     expect(payload).toEqual({
       channel: 3,
-      rxMhz: '146.82',
-      txMhz: '146.22',
+      rxHz: 146_820_000,
+      txHz: 146_220_000,
       txTone: '82.5',
       rxTone: 'none',
       bandwidth: 'wide',
@@ -829,7 +902,7 @@ describe('channels', () => {
     await s.start();
     expect(await readChannel(s, 6)).toBeUndefined();
   });
-  it('reports a TX-inhibited record with a null txMhz', async () => {
+  it('reports a TX-inhibited record with a null txHz', async () => {
     const radio = new FakeRadio();
     const mem = encodeChannel({ rxHz: 162_550_000 });
     mem.set([0xff, 0xff, 0xff, 0xff], 4);
@@ -839,7 +912,7 @@ describe('channels', () => {
     await s.start();
     const ch = await readChannel(s, 7);
     expect(ch).toMatchObject({ rxHz: 162_550_000, txHz: null, name: 'WX' });
-    expect(channelPayload(7, ch)).toMatchObject({ channel: 7, rxMhz: '162.55', txMhz: null, name: 'WX' });
+    expect(channelPayload(7, ch)).toMatchObject({ channel: 7, rxHz: 162_550_000, txHz: null, name: 'WX' });
   });
 });
 
@@ -912,7 +985,7 @@ describe('status', () => {
       beep: 'on',
       abr: 5,
     });
-    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxMhz', 'name', 'note']) expect(st).not.toHaveProperty(key);
+    for (const key of ['channelA', 'channelB', 'channel', 'empty', 'rxHz', 'name', 'note']) expect(st).not.toHaveProperty(key);
   });
   it('reads the settings block from the page values despite the 16-byte read alias', async () => {
     const radio = new FakeRadio();
@@ -1066,7 +1139,7 @@ describe('keyWhile', () => {
       { maxMs: 5000 },
       new EventEmitter(),
     ).catch((e: unknown) => e);
-    expect((err as TransportError).toJSON()).toEqual({ reason: 'audio-process-failed', message: 'ffmpeg exited with code 1', remedy: 'reseat the AIOC', retry: 'after-remedy', seconds: 0, assertedAtMs: expect.any(Number), releasedAtMs: expect.any(Number) });
+    expect((err as TransportError).toJSON()).toEqual({ type: 'error', kind: 'transport', reason: 'audio-process-failed', message: 'ffmpeg exited with code 1', remedy: 'reseat the AIOC', retry: 'after-remedy', seconds: 0, assertedAtMs: expect.any(Number), releasedAtMs: expect.any(Number) });
     expect(radio.pttLog).toEqual([true, false]);
   });
 

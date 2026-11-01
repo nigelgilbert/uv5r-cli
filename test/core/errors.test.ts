@@ -10,6 +10,7 @@ import {
   UnexpectedError,
   UsageError,
   withDetail,
+  type ErrorReason,
 } from '../../src/core/errors.ts';
 
 const REASON_ENUM = [
@@ -56,11 +57,29 @@ describe('error reasons', () => {
     ['DeviceStateError', new DeviceStateError('verification-failed', 'channel 5 did not take the write'), 'verification-failed'],
     ['BusyError', new BusyError('cannot open /dev/x: busy'), 'device-busy'],
     ['UnexpectedError', new UnexpectedError('boom'), 'unexpected-error'],
-  ] as const)('gives a %s a reason, a remedy and a retry value in toJSON', (_name, err, reason) => {
+  ] as const)('gives a %s a type, kind, reason, remedy and retry value in toJSON', (_name, err, reason) => {
     const body = err.toJSON();
-    expect(body).toMatchObject({ reason, message: err.message, remedy: REASONS[reason].remedy, retry: REASONS[reason].retry });
+    expect(body).toMatchObject({ type: 'error', kind: REASONS[reason].kind, reason, message: err.message, remedy: REASONS[reason].remedy, retry: REASONS[reason].retry });
     expect(REASON_ENUM).toContain(body.reason);
-    expect(body).not.toHaveProperty('kind');
+  });
+
+  it.each(Object.keys(REASONS) as ErrorReason[])('serializes %s with type error and its kind', (reason) => {
+    const body = JSON.parse(JSON.stringify(new BaofengError(reason, 'failed'))) as Record<string, unknown>;
+    expect(Object.keys(body).slice(0, 6)).toEqual(['type', 'kind', 'reason', 'message', 'remedy', 'retry']);
+    expect(body).toMatchObject({ type: 'error', kind: REASONS[reason].kind, reason });
+  });
+
+  it('keeps the canonical fields when a detail field shares a name', () => {
+    const err = new UsageError('bad flag', { type: 'flag', kind: 'other', reason: 'x', message: 'y', remedy: 'z', retry: 'once', flag: 'seconds' });
+    expect(err.toJSON()).toEqual({
+      type: 'error',
+      kind: 'usage',
+      reason: 'invalid-argument',
+      message: 'bad flag',
+      remedy: REASONS['invalid-argument'].remedy,
+      retry: REASONS['invalid-argument'].retry,
+      flag: 'seconds',
+    });
   });
 
   it('gives a UsageError invalid-argument by default and the reason it is passed', () => {
@@ -89,6 +108,8 @@ describe('error reasons', () => {
   it('takes a remedy and retry value for one site and keeps the detail fields', () => {
     const err = new DeviceStateError('verification-failed', 'channel 5 record written; name did not take the write', { wrote: 'aa', read: 'ff' }, { remedy: 'read channel 5', retry: 'no' });
     expect(err.toJSON()).toEqual({
+      type: 'error',
+      kind: 'device-state',
       reason: 'verification-failed',
       message: 'channel 5 record written; name did not take the write',
       remedy: 'read channel 5',
@@ -104,6 +125,6 @@ describe('error reasons', () => {
     expect(err.toJSON()).toMatchObject({ reason: 'serial-timeout', addr: 0, slot: 3 });
     const wrapped = withDetail(new RangeError('boom'), { slot: 3 });
     expect(wrapped).toBeInstanceOf(BaofengError);
-    expect(wrapped.toJSON()).toEqual({ reason: 'unexpected-error', message: 'boom', remedy: REASONS['unexpected-error'].remedy, retry: 'no', slot: 3 });
+    expect(wrapped.toJSON()).toEqual({ type: 'error', kind: 'unexpected', reason: 'unexpected-error', message: 'boom', remedy: REASONS['unexpected-error'].remedy, retry: 'no', slot: 3 });
   });
 });

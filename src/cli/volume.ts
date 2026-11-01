@@ -72,7 +72,7 @@ export type WithPort = (fn: (t: Transport) => Promise<void>) => Promise<void>;
 
 export interface VolumeOptions {
   /** avfoundation audio input to capture from. */
-  device: string;
+  input: string;
   /** Magic every clone session opens with; 291 when absent. */
   magic?: Magic;
   /** Source of the key signals. */
@@ -100,7 +100,7 @@ function withSquelch(err: unknown, kept: number): BaofengError {
  * failure the earlier error is the one thrown.
  */
 export async function readVolume(withPort: WithPort, options: VolumeOptions): Promise<VolumeReading> {
-  const { device, magic, signals = process } = options;
+  const { input, magic, signals = process } = options;
   let signal: NodeJS.Signals | undefined;
   let wake = () => {};
   const stopped = new Promise<void>((resolve) => (wake = resolve));
@@ -131,7 +131,7 @@ export async function readVolume(withPort: WithPort, options: VolumeOptions): Pr
           { magic },
         );
         if (block !== undefined && !signal) await verifySettingsInFreshSession(t, block, { magic });
-        if (!signal) heard = await listen(device, VOLUME_SECONDS, DEFAULT_FLOOR_DBFS, { stop: stopped });
+        if (!signal) heard = await listen(input, VOLUME_SECONDS, DEFAULT_FLOOR_DBFS, { stop: stopped });
       } catch (err) {
         // Drop an error after a signal, as the killed capture raises one.
         if (!signal) failure = err;

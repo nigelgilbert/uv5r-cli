@@ -40,7 +40,7 @@ Arrive somewhere new and have the repeaters programmed before you unpack.
 Run your camp over the air. Switch the lights, ask for the forecast,
 read back GPS coordinates, or record tests for your handhelds.
 
-Stand up an emergency alert station in one line.  Command robots by talking to them.
+Stand up an emergency alert station in one line.
 
 ## What you need
 
@@ -83,32 +83,18 @@ Plug in the AIOC, turn the radio on and set the volume knob to about half.
    name and reads both back. The radio applies the write about 3 s after the command ends.
 7. Run `uv5r listen --seconds 5 --out rx.wav --play` to record 5 s and play it on your Mac.
 
-`--channel N` writes memory slot N. The radio receives slot N after the reload when it is in MR mode with N selected on the active display line. The display may show a name or a frequency. The CLI cannot read the display.
+`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.
 
-## Use it with LLMs
-
-Open your agent in this repo and tell it what to do:
-
-```text
-Listen on the radio. Whenever you hear a transmission, reply "pong".
-```
-
-Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow the rules. 🙂
-
-## Things that bite
-
-- The radio speaker is silent while the AIOC is plugged in. Listen through `listen --play` or WAVs.
-- The receiver is deaf during a clone session. Run one verb at a time.
-- The `check` examples and `sweep` overwrite slot 0. Nothing restores it.
-- Leave the serial port alone. No `cat`, `screen` or `stty` on it.
-- `key`, `say` and `id` transmit on whatever channel the display shows.
+`uv5r help` prints the operating rules: one verb at a time, the deaf receiver during a clone
+session, the muted speaker, and slot 0 as the scratch slot that `check` and `sweep` overwrite.
 
 ## Transmit
 
-You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C. Each transmission ends with the callsign from uv5r.json. A stock UV-5R is not certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and control operator.
+You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. Each one ends with the uv5r.json callsign. Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.
 
 Run `cp uv5r.example.json uv5r.json` and put your callsign in it. The CLI reads `--config FILE`
-first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root.
+first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root. `uv5r help say` lists the other
+config fields with their defaults and ranges.
 
 Turn off VOX (voice-operated transmit) and run `uv5r say --rehearse "bench check, over"`. It
 plays the WAV through your Mac's speakers with the port closed and radiates nothing. Then check
@@ -168,13 +154,10 @@ Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` 
 ## Output and errors
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. Piped, `hear`
-prints NDJSON, one object per line. A failed command prints nothing on stdout. In JSON mode
-it prints one error object on stderr with `reason`, `message`, `remedy` and `retry`. On a
-terminal it prints the message and remedy as text.
-
-Exit 0 is ok, 1 an unexpected error, 2 bad usage, 3 a transport or dependency failure, 4 a
-serial timeout, 5 a radio state problem and 6 a busy serial port. A signal exits 128 plus its
-number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md](docs/errors.md).
+prints NDJSON, one object per line. JSON results give frequencies as integer Hz in `rxHz`,
+`txHz` and `requestedHz`. Text prints MHz. A failed command prints nothing on stdout and one
+error object on stderr, or the message and remedy as text on a terminal.
+[docs/errors.md](docs/errors.md) lists the error fields, exit codes and signal behaviour.
 
 ## Troubleshooting
 
@@ -183,7 +166,7 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 | exit 5 `squelch-open` | squelch is 0 | `uv5r settings squelch 3` |
 | exit 5 `audio-inactive` | VFO mode, wrong slot, knob down, plug short or quiet frequency | MR mode, slot 0, knob up, reseat the plug, another NOAA frequency |
 | exit 5 `session-unavailable` | the radio did not answer the magic | `uv5r identify`; when it prints a `pin` line, put it before every command |
-| levels read digital zero | the terminal lacks microphone access | grant it in Privacy & Security, Microphone |
+| levels read digital zero | the terminal lacks microphone access, or `--input` names another input | grant it in Privacy & Security, Microphone; pass `--input "AIOC Audio"` |
 | levels sit near -66 dBFS | the knob is down or the plug is short of its contact | knob up, push the plug home |
 | warning `input clips` | the knob is too high | `uv5r volume` until `ok` |
 | silence from the speaker | the AIOC mutes it | `listen --play`, or play the WAVs |
@@ -199,10 +182,8 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 | `UV5R_MAGIC=NAME` | Open clone sessions with `291` (default), `ORIG`, `UV82`, `A58` or `UV5G`; another name exits 2 |
 | `UV5R_CONFIG=FILE` | Station config path; `--config` overrides it |
 | `UV5R_TARGET=PATH` | Serial device path, or `fake` for the fake radio; `--target` overrides it. Default: the AIOC found by USB id 1209:7388 |
-| `UV5R_FAKE_STATE=FILE` | State file of the fake radio; `--target fake` exits 2 without it |
-| `TINYSA_SIM_PTT=FILE` | PTT file the fake radio writes on each key for the tinySA sim; unset skips it |
-| `BENCH_RUN_ID=ID` | `run_id` in the PTT file; `null` when unset |
-| `UV5R_FAKE_FAULT=FAULT` | One fake radio fault: `tune-delay:MS`, `name-not-taken`, `tune-wrong-freq`, `ptt-control-failed` or `hang` |
+
+[docs/development.md](docs/development.md) lists the fake radio's variables.
 
 ## Plan fields
 
@@ -212,7 +193,7 @@ entry field except `notes` maps onto one `tune` flag. `uv5r load PLAN.json` writ
 plan in one clone session. `tone` is the transmit tone and `rxTone` the receive
 tone. Both take the `--tone` forms: `82.5`, `D606N` or `D023I`. `checkMhz` is the frequency
 `sweep` checks slot 0 with. It takes the band and 10 Hz rules of `rxMhz`. `load` validates it
-and writes nothing for it.
+and writes nothing for it. Plan frequencies are in MHz; `load` converts them to Hz.
 
 | Field | `tune` flag |
 |---|---|
@@ -230,7 +211,10 @@ and writes nothing for it.
 ## For agents
 
 Load `.claude/skills/uv5r/SKILL.md` to drive the radio and `.claude/skills/channel-plan/SKILL.md`
-to build a plan. `uv5r help --json` carries the rules, error reasons, exit codes and every verb.
+to build a plan. Read `uv5r help --json` once per session for the rules, error format, exit codes and a
+short entry per verb. Read `uv5r help VERB --json` before the first run of a verb. Its `device` block
+says whether the verb opens the port, runs a clone session, writes, when the write applies
+(`appliesAfterMs`) and whether a failure can leave part of it (`partialWrite`).
 
 ## Further reading
 
@@ -238,7 +222,7 @@ to build a plan. `uv5r help --json` carries the rules, error reasons, exit codes
 - [docs/transmit.md](docs/transmit.md): `say`, `id`, the transmit pipeline and station config.
 - [docs/errors.md](docs/errors.md): error fields, signals, PTT watchdogs and slot 0 after a sweep.
 - [docs/protocol.md](docs/protocol.md): the clone protocol, magics, idents and `identify`.
-- [docs/development.md](docs/development.md): bench files, layering and the fake radio.
+- [docs/development.md](docs/development.md): golden fixtures, layering and the fake radio.
 
 ## Development
 

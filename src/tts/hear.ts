@@ -20,8 +20,8 @@ const STALL_SLACK_SECONDS = 10;
 const MAX_SEGMENT_SECONDS = MAX_FRAMES / FRAMES_PER_SECOND;
 
 export interface HearOptions {
-  /** Input device name the summary reports. */
-  device: string;
+  /** avfoundation audio input the summary reports. */
+  input: string;
   floorDbfs: number;
   hangSeconds: number;
   /** Return after the first transmission or the timeout. */
@@ -69,7 +69,7 @@ export interface SummaryLine {
   transmissions: number;
   /** Seconds from capture ready to the end, rounded to 0.1. */
   seconds: number;
-  device: string;
+  input: string;
   /** Count of warning lines. */
   warnings: number;
   interrupted?: NodeJS.Signals;
@@ -319,7 +319,7 @@ export async function runHear(monitor: Monitor, transcribe: Transcribe, now: () 
     rmSync(scratch, { recursive: true, force: true });
   }
   if (failure) throw failure;
-  const summary: SummaryLine = { type: 'summary', transmissions, seconds: round((now() - readyAt) / 1000, 1), device: opts.device, warnings };
+  const summary: SummaryLine = { type: 'summary', transmissions, seconds: round((now() - readyAt) / 1000, 1), input: opts.input, warnings };
   if (interrupted) summary.interrupted = interrupted;
   if (opts.once) summary.timedOut = !heard && !interrupted;
   onLine(summary);
