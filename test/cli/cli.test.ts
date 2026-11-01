@@ -28,7 +28,7 @@ const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pat
  * Refresh them after a help text change with `node src/cli/main.ts help VERB --json | wc -c`.
  */
 const HELP_BYTES: { catalog: number; verbs: Record<string, number> } = {
-  catalog: 4036,
+  catalog: 4086,
   verbs: {
     status: 1115,
     identify: 2027,

@@ -131,7 +131,7 @@ const RULES = {
 };
 
 const OUTPUT_RULE =
-  'JSON when piped or with --json, else text; hear prints NDJSON. A failed command prints its error on stderr and no result.';
+  'JSON when piped or with --json, else text; hear prints NDJSON. A failed command prints its error on stderr and no result; hear keeps lines printed before it.';
 
 /** What each exit code means; `help errors` lists the reasons under each kind. */
 const EXIT_CODES: Record<string, string> = {
@@ -142,7 +142,7 @@ const EXIT_CODES: Record<string, string> = {
   '4': 'timeout',
   '5': 'device-state',
   '6': 'busy',
-  '128+signal': 'a signal; help VERB says what prints',
+  '128+signal': 'a signal; help VERB says what prints, else nothing',
 };
 
 /** The errors section of `help --json`: the error format and the retry values. */
