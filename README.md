@@ -108,7 +108,10 @@ Set up [Transcribe](#transcribe) and your callsign first.  Be careful and follow
 You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C. Each transmission ends with the callsign from uv5r.json. A stock UV-5R is not certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and control operator.
 
 Run `cp uv5r.example.json uv5r.json` and put your callsign in it. The CLI reads `--config FILE`
-first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root.
+first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root. The config also sets the `say`
+voice, `leadMs` of silence before the speech (500 for repeaters), `tailMs` of PTT hold after
+it and the `maxSeconds` cap. [docs/transmit.md](docs/transmit.md#station-config) lists the
+defaults and ranges.
 
 Turn off VOX (voice-operated transmit) and run `uv5r say --rehearse "bench check, over"`. It
 plays the WAV through your Mac's speakers with the port closed and radiates nothing. Then check

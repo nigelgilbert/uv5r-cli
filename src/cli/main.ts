@@ -73,6 +73,7 @@ import { COARSE_STEP_DB, judgeVolume, readVolume, TARGET_HIGH_DBFS, TARGET_LOW_D
 import { nextSeq, NOISE_PHRASES, QUEUE_LIMIT, runHear, type HearLine } from '../tts/hear.ts';
 import { idSentence } from '../tts/phonetic.ts';
 import { defaultSpeechDeps, ID_OWED_REMEDY, speakUtterance, type SpeakOptions, type SpeakResult, type SpeechDeps } from '../tts/speak.ts';
+import { DEFAULT_LEAD_MS, DEFAULT_MAX_SECONDS, DEFAULT_TAIL_MS, DEFAULT_VOICE, MAX_PAD_MS, MAX_UTTERANCE_SECONDS } from '../tts/station.ts';
 import { DEFAULT_MODEL, modelName, repoPath, VAD_MODEL } from '../tts/stt.ts';
 
 /** Open the transport for a target path, or for the discovered AIOC when the path is undefined; `verb` names the verb that asks. */
@@ -97,13 +98,6 @@ const MAX_LISTEN_SECONDS = 600;
 const MIN_FLOOR_DBFS = -100;
 const MAX_FLOOR_DBFS = 0;
 const DEFAULT_AUDIO_DEVICE = 'AIOC Audio';
-const DEFAULT_VOICE = 'Samantha';
-const DEFAULT_LEAD_MS = 300;
-const DEFAULT_TAIL_MS = 400;
-const MAX_PAD_MS = 5000;
-const DEFAULT_MAX_SECONDS = 30;
-/** Cap on --max-seconds, under the UV-5R default TOT of 60 s. */
-const MAX_UTTERANCE_SECONDS = 55;
 const MAX_CLEAR_SECONDS = 30;
 const DEFAULT_HANG_SECONDS = 1.5;
 const MAX_HANG_SECONDS = 10;
@@ -171,7 +165,7 @@ const ERROR_GUIDANCE =
   'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +
   'On SIGINT, SIGTERM, SIGHUP or SIGTSTP once key, say, id or sweep has opened the port, the verb prints its result on stdout with interrupted and no error, and exits 128 plus the signal number. ' +
   'say and id without --rehearse do the same for a signal before the port opens, with pttAsserted false. ' +
-  `A say or id result after a signal adds idOwed. idOwed true means the player ran past --lead without finishing the ID, and its remedy reads: ${ID_OWED_REMEDY}. ` +
+  `A say or id result after a signal adds idOwed. idOwed true means the player ran past leadMs without finishing the ID, and its remedy reads: ${ID_OWED_REMEDY}. ` +
   'A player failure while say or id is keyed exits 3 with audio-process-failed and retry no, and adds pttAsserted, released and playedSeconds. ' +
   'A failed PTT release after the signal exits 3 with interrupted in the error. ' +
   'On one of those signals hear stops capture, closes the open segment, prints a backlog warning for each waiting segment, lets the segment in inference finish and print, prints the summary with interrupted and exits 128 plus the signal number. ' +
@@ -211,17 +205,28 @@ const FLOOR_FLAG: FlagDoc = {
   help: `a second is active when its RMS is above DBFS, ${MIN_FLOOR_DBFS}..${MAX_FLOOR_DBFS}`,
 };
 
-const VOICE_FLAG: FlagDoc = { name: 'voice', value: 'NAME', default: DEFAULT_VOICE, help: 'macOS say voice; say -v ? lists them' };
 const OUTPUT_DEVICE_FLAG: FlagDoc = {
   name: 'output',
   value: 'NAME',
   default: `config outputDevice, else ${DEFAULT_AUDIO_DEVICE}`,
   help: 'audiotoolbox output by name or UID; the index is resolved on every run',
 };
-const LEAD_FLAG: FlagDoc = { name: 'lead', value: 'MS', default: DEFAULT_LEAD_MS, help: `silence before the speech while PTT rises, 0..${MAX_PAD_MS}; use 500 for repeaters` };
-const TAIL_FLAG: FlagDoc = { name: 'tail', value: 'MS', default: DEFAULT_TAIL_MS, help: `PTT hold after the player exits, 0..${MAX_PAD_MS}` };
 const CONFIG_FLAG: FlagDoc = { name: 'config', value: 'FILE', default: 'UV5R_CONFIG, else uv5r.json at the repo root', help: 'station config with the callsign' };
-const TRANSMIT_FLAGS = [VOICE_FLAG, OUTPUT_DEVICE_FLAG, LEAD_FLAG, TAIL_FLAG, CONFIG_FLAG];
+const TRANSMIT_FLAGS = [OUTPUT_DEVICE_FLAG, { ...CONFIG_FLAG, help: 'station config with the callsign and the fields below' }];
+
+/** Station config fields say and id read beside the callsign, as help lists them under fields. */
+const TRANSMIT_FIELDS = {
+  voice: `macOS say voice, default ${DEFAULT_VOICE}; say -v ? lists them`,
+  leadMs: `silence before the speech while PTT rises, 0..${MAX_PAD_MS} ms, default ${DEFAULT_LEAD_MS}; use 500 for repeaters`,
+  tailMs: `PTT hold after the player exits, 0..${MAX_PAD_MS} ms, default ${DEFAULT_TAIL_MS}`,
+  maxSeconds: `cap on the padded WAV plus tailMs, 0 < S <= ${MAX_UTTERANCE_SECONDS}, default ${DEFAULT_MAX_SECONDS}; lower it on a radio with a TOT under 60 s`,
+};
+/** Flags say and id dropped for station config fields. */
+const DROPPED_TRANSMIT = {
+  voice: 'voice in the station config',
+  lead: 'leadMs in the station config',
+  tail: 'tailMs in the station config',
+};
 
 /** What replaces --device on the verbs that capture audio. */
 const DROPPED_DEVICE = { device: '--input NAME' };
@@ -245,12 +250,14 @@ const TRANSMIT_READY = [
 const TRANSMIT_SIGNALS =
   'Ctrl-C, Ctrl-Z, SIGTERM or SIGHUP before PTT rises keys nothing; the result adds interrupted with pttAsserted false and idOwed false. ' +
   'Once keyed, the same signals drop PTT, stop the player and add interrupted and idOwed to the result. Both exit 128 plus the signal number. ' +
-  `idOwed true means the player ran past --lead without finishing the ID; ${ID_OWED_REMEDY}.`;
+  `idOwed true means the player ran past leadMs without finishing the ID; ${ID_OWED_REMEDY}.`;
 const TRANSMIT_EXITS = [
   { code: 2, when: 'station-unconfigured with no callsign in the config, before synthesis' },
   { code: 3, when: 'speech-engine-failed when say fails or writes digital zero, or audio-device-unavailable when the output is absent, both before the port opens' },
   { code: 3, when: 'audio-process-failed with retry no when the player fails while keyed; the error adds pttAsserted, released, playedSeconds and idOwed' },
 ];
+/** The station config values a say or id result reports. */
+const TRANSMIT_RESULT = { voice: DEFAULT_VOICE, leadMs: DEFAULT_LEAD_MS, tailMs: DEFAULT_TAIL_MS, maxSeconds: DEFAULT_MAX_SECONDS };
 const ID_EXAMPLE = 'This is Kilo, Juliett, Seven, Alfa, Bravo, Charlie';
 
 const HEAR_SUMMARY = { type: 'summary', transmissions: 1, seconds: 14.6, input: DEFAULT_AUDIO_DEVICE, warnings: 1, timedOut: false };
@@ -486,7 +493,6 @@ const verbs: Record<string, Verb> = {
     args: [{ name: 'TEXT', help: 'text to speak; say -- TEXT passes text that starts with --' }],
     flags: [
       ...TRANSMIT_FLAGS,
-      { name: 'max-seconds', value: 'S', default: DEFAULT_MAX_SECONDS, help: `cap on the padded WAV plus --tail, 0 < S <= ${MAX_UTTERANCE_SECONDS}; lower it on a radio with a TOT under 60 s` },
       {
         name: 'clear',
         value: 'S',
@@ -498,14 +504,14 @@ const verbs: Record<string, Verb> = {
       ...COMMON_FLAGS,
     ],
     effects: [
-      'Read the station config. No callsign exits 2 with station-unconfigured before synthesis.',
+      'Read the station config. No callsign exits 2 with station-unconfigured before synthesis. voice, leadMs, tailMs and maxSeconds come from it; a value outside its range exits 2 with invalid-argument naming the field.',
       'Append the ID sentence and synthesize with macOS say at 48 kHz.',
-      'Filter and pad in one ffmpeg pass: 300 Hz high-pass, 3 kHz low-pass, limiter, --lead of leading silence and 0.3 s of trailing silence.',
-      'Measure peak and RMS over the whole WAV. Digital zero exits 3 with speech-engine-failed. The padded WAV plus --tail past --max-seconds exits 2 with utterance-too-long.',
+      'Filter and pad in one ffmpeg pass: 300 Hz high-pass, 3 kHz low-pass, limiter, leadMs of leading silence and 0.3 s of trailing silence.',
+      'Measure peak and RMS over the whole WAV. Digital zero exits 3 with speech-engine-failed. The padded WAV plus tailMs past maxSeconds exits 2 with utterance-too-long.',
       'Resolve the output index from the audiotoolbox device list. An absent device exits 3 with audio-device-unavailable.',
       `With --clear S, listen S seconds first. A 20 ms frame above ${DEFAULT_FLOOR_DBFS} dBFS exits 5 with channel-busy.`,
       'Every check runs before the port opens. say opens no clone session.',
-      'Raise PTT, play the WAV, hold PTT for --tail after the player exits, then release.',
+      'Raise PTT, play the WAV, hold PTT for tailMs after the player exits, then release.',
       'identified is true when the player exits 0, since the ID ends the WAV.',
       TRANSMIT_SIGNALS,
       'With --rehearse, run the steps up to the measurement, then play through the system default output with afplay and the port closed. The result adds rehearsed with pttAsserted false.',
@@ -521,16 +527,19 @@ const verbs: Record<string, Verb> = {
       peakDbfs: -0.9,
       rmsDbfs: -17.2,
       device: DEFAULT_AUDIO_DEVICE,
+      ...TRANSMIT_RESULT,
       pttAsserted: true,
       released: true,
     },
     exits: [
       TRANSMIT_EXITS[0]!,
-      { code: 2, when: 'utterance-too-long when the padded WAV plus --tail passes --max-seconds, before the port opens' },
+      { code: 2, when: 'utterance-too-long when the padded WAV plus tailMs passes maxSeconds, before the port opens' },
       ...TRANSMIT_EXITS.slice(1),
       { code: 5, when: 'channel-busy when --clear hears activity, before PTT' },
     ],
+    fields: TRANSMIT_FIELDS,
     positionals: Infinity,
+    dropped: { ...DROPPED_TRANSMIT, 'max-seconds': 'maxSeconds in the station config' },
     run: sayVerb,
   },
   id: {
@@ -540,7 +549,7 @@ const verbs: Record<string, Verb> = {
     flags: [...TRANSMIT_FLAGS, ...COMMON_FLAGS],
     effects: [
       `Speak the ID sentence for the config callsign, as in ${ID_EXAMPLE}, through the say transmit path.`,
-      `Run the say checks with --max-seconds ${DEFAULT_MAX_SECONDS} and no clear check.`,
+      'Run the say checks with the station config fields and no clear check.',
       TRANSMIT_SIGNALS,
       'UV5R_MAGIC has no effect.',
     ],
@@ -554,11 +563,14 @@ const verbs: Record<string, Verb> = {
       peakDbfs: -0.9,
       rmsDbfs: -17.8,
       device: DEFAULT_AUDIO_DEVICE,
+      ...TRANSMIT_RESULT,
       pttAsserted: true,
       released: true,
     },
     exits: TRANSMIT_EXITS,
+    fields: TRANSMIT_FIELDS,
     positionals: 0,
+    dropped: DROPPED_TRANSMIT,
     run: idVerb,
   },
   dump: {
@@ -1189,18 +1201,8 @@ async function keyVerb(args: Invocation): Promise<number> {
   return EXIT.ok;
 }
 
-/** Return a millisecond flag, or its default, and throw UsageError outside 0..MAX_PAD_MS. */
-function msFlag(flags: Map<string, string | true>, name: string, fallback: number): number {
-  const ms = numberFlag(flags, name) ?? fallback;
-  if (ms < 0 || ms > MAX_PAD_MS) throw new UsageError(`--${name} takes 0..${MAX_PAD_MS} ms; got ${ms}`, { flag: name });
-  return ms;
-}
-
-/** Read the flags say and id share and the station config; a config with no callsign throws station-unconfigured. */
-function transmitOptions(args: Invocation): Omit<SpeakOptions, 'text' | 'maxSeconds' | 'clearSeconds'> {
-  const voice = stringFlag(args.flags, 'voice') ?? DEFAULT_VOICE;
-  const leadMs = msFlag(args.flags, 'lead', DEFAULT_LEAD_MS);
-  const tailMs = msFlag(args.flags, 'tail', DEFAULT_TAIL_MS);
+/** Read --output and the station config that say and id share; a config with no callsign throws station-unconfigured. */
+function transmitOptions(args: Invocation): Omit<SpeakOptions, 'text' | 'clearSeconds'> {
   const { path, required } = resolveConfigPath(stringFlag(args.flags, 'config'), process.env, args.deps.defaultConfig);
   const station = readStation(path, { required });
   if (station.callsign === undefined) {
@@ -1208,11 +1210,12 @@ function transmitOptions(args: Invocation): Omit<SpeakOptions, 'text' | 'maxSeco
   }
   return {
     callsign: station.callsign,
-    voice,
+    voice: station.voice ?? DEFAULT_VOICE,
     output: stringFlag(args.flags, 'output') ?? station.outputDevice ?? DEFAULT_AUDIO_DEVICE,
     input: station.inputDevice ?? DEFAULT_AUDIO_DEVICE,
-    leadMs,
-    tailMs,
+    leadMs: station.leadMs ?? DEFAULT_LEAD_MS,
+    tailMs: station.tailMs ?? DEFAULT_TAIL_MS,
+    maxSeconds: station.maxSeconds ?? DEFAULT_MAX_SECONDS,
   };
 }
 
@@ -1241,22 +1244,18 @@ async function sayVerb(args: Invocation): Promise<number> {
   checkFlags('say', args.flags, flagNames('say'));
   const text = args.positionals.join(' ').trim();
   if (!text) throw new UsageError('say needs TEXT, as in: say "bench check, over"; pass say -- TEXT for text that starts with --');
-  const maxSeconds = numberFlag(args.flags, 'max-seconds') ?? DEFAULT_MAX_SECONDS;
-  if (maxSeconds <= 0 || maxSeconds > MAX_UTTERANCE_SECONDS) {
-    throw new UsageError(`--max-seconds takes 0 < S <= ${MAX_UTTERANCE_SECONDS}; got ${maxSeconds}`, { flag: 'max-seconds' });
-  }
   const clearSeconds = numberFlag(args.flags, 'clear') ?? 0;
   if (clearSeconds < 0 || clearSeconds > MAX_CLEAR_SECONDS) throw new UsageError(`--clear takes 0..${MAX_CLEAR_SECONDS} seconds; got ${clearSeconds}`, { flag: 'clear' });
   const out = stringFlag(args.flags, 'out');
   if (out === '-') throw new UsageError('--out takes a file path; got "-", as in: say "bench check" --out tx.wav', { flag: 'out' });
   const rehearse = args.flags.get('rehearse') === true;
-  return transmit(args, { ...transmitOptions(args), text, maxSeconds, clearSeconds, out, rehearse });
+  return transmit(args, { ...transmitOptions(args), text, clearSeconds, out, rehearse });
 }
 
 async function idVerb(args: Invocation): Promise<number> {
   checkFlags('id', args.flags, flagNames('id'));
   const options = transmitOptions(args);
-  return transmit(args, { ...options, text: idSentence(options.callsign), idOnly: true, maxSeconds: DEFAULT_MAX_SECONDS, clearSeconds: 0 });
+  return transmit(args, { ...options, text: idSentence(options.callsign), idOnly: true, clearSeconds: 0 });
 }
 
 /** Name a dump file from the local time, as in uv5r-2026-10-12T14-03-09.img. */

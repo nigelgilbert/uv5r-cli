@@ -33,7 +33,7 @@ signal number. SIGTSTP exits 146 on macOS and 148 on Linux.
 `say` without `--rehearse`, and `id`, do the same for a signal before the port opens, with
 `pttAsserted: false`.
 
-A `say` or `id` result after a signal adds `idOwed`. `true` means the player ran past `--lead`
+A `say` or `id` result after a signal adds `idOwed`. `true` means the player ran past `leadMs`
 without finishing the ID. Identify by voice or run `uv5r id`.
 
 A failed PTT release after the signal exits 3 with `interrupted` in the error.

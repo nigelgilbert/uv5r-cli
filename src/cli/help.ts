@@ -101,6 +101,7 @@ export function verbText(name: string, doc: VerbDoc): string {
   };
   const bullets = (items: string[]) => items.map((s) => `  - ${s}`);
   const codeWidth = Math.max(0, ...doc.exits.map((e) => String(e.code).length));
+  const fieldWidth = Math.max(8, ...Object.keys(doc.fields ?? {}).map((k) => k.length));
   return [
     `uv5r ${name}: ${doc.summary}`,
     '',
@@ -110,7 +111,7 @@ export function verbText(name: string, doc: VerbDoc): string {
     '',
     'flags:',
     ...doc.flags.map((f) => `  ${flagCol(f).padEnd(width)}  ${f.help}${flagNote(f)}`),
-    ...(doc.fields ? ['', 'fields:', ...Object.entries(doc.fields).map(([k, v]) => `  ${k.padEnd(8)} ${v}`)] : []),
+    ...(doc.fields ? ['', 'fields:', ...Object.entries(doc.fields).map(([k, v]) => `  ${k.padEnd(fieldWidth)} ${v}`)] : []),
     '',
     'effects:',
     ...bullets(doc.effects),

@@ -4,12 +4,17 @@ import { parseStation } from '../../src/tts/station.ts';
 
 describe('parseStation', () => {
   it('reads every field', () => {
-    expect(parseStation({ callsign: 'KJ7ABC', outputDevice: 'AIOC Audio', inputDevice: 'AIOC Audio', model: 'models/ggml-base.en-q5_1.bin' })).toEqual({
+    const json = {
       callsign: 'KJ7ABC',
       outputDevice: 'AIOC Audio',
       inputDevice: 'AIOC Audio',
       model: 'models/ggml-base.en-q5_1.bin',
-    });
+      voice: 'Samantha',
+      leadMs: 300,
+      tailMs: 400,
+      maxSeconds: 30,
+    };
+    expect(parseStation(json)).toEqual(json);
   });
 
   it('returns an empty station for an empty object', () => {
@@ -17,7 +22,15 @@ describe('parseStation', () => {
   });
 
   it('ignores unknown keys', () => {
-    expect(parseStation({ callsign: 'KJ7ABC', grid: 'DN45', voice: 3 })).toEqual({ callsign: 'KJ7ABC' });
+    expect(parseStation({ callsign: 'KJ7ABC', grid: 'DN45', lead: 3 })).toEqual({ callsign: 'KJ7ABC' });
+  });
+
+  it('takes the range ends of leadMs, tailMs and maxSeconds', () => {
+    expect(parseStation({ leadMs: 0, tailMs: 5000, maxSeconds: 55 })).toEqual({ leadMs: 0, tailMs: 5000, maxSeconds: 55 });
+  });
+
+  it('says the range of an out-of-range number field', () => {
+    expect(() => parseStation({ maxSeconds: 90 })).toThrow('station maxSeconds: takes 0 < S <= 55 seconds; got 90');
   });
 
   it('uppercases the callsign', () => {
@@ -29,6 +42,13 @@ describe('parseStation', () => {
     [{ outputDevice: true }, 'outputDevice'],
     [{ inputDevice: null }, 'inputDevice'],
     [{ model: ['a'] }, 'model'],
+    [{ voice: 3 }, 'voice'],
+    [{ leadMs: '300' }, 'leadMs'],
+    [{ leadMs: 5001 }, 'leadMs'],
+    [{ tailMs: -1 }, 'tailMs'],
+    [{ tailMs: null }, 'tailMs'],
+    [{ maxSeconds: 0 }, 'maxSeconds'],
+    [{ maxSeconds: 90 }, 'maxSeconds'],
     [{ callsign: 'KJ7/ABC' }, 'callsign'],
     [{ callsign: '' }, 'callsign'],
   ])('rejects %j naming %s', (json, field) => {

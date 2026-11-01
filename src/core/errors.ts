@@ -101,7 +101,7 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   'speech-engine-failed': {
     kind: 'transport',
     means: 'say or whisper-cli failed, or say wrote digital zero',
-    remedy: 'pass a --voice that say -v ? lists, then rerun the command',
+    remedy: 'set voice in the station config to one that say -v ? lists, then rerun the command',
     retry: 'after-remedy',
   },
   'audio-device-unavailable': {
@@ -178,8 +178,8 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   },
   'utterance-too-long': {
     kind: 'usage',
-    means: 'the padded WAV plus --tail runs past --max-seconds',
-    remedy: 'shorten the text, then rerun the command',
+    means: 'the padded WAV plus tailMs runs past maxSeconds',
+    remedy: 'shorten the text or raise maxSeconds in the station config, then rerun the command',
     retry: 'after-remedy',
   },
   'device-busy': {

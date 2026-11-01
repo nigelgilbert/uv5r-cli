@@ -12,7 +12,7 @@ import { FRAMES_PER_SECOND, frameLevels } from './segment.ts';
 import { whisperTranscriber, type Transcribe, type WhisperOptions } from './stt.ts';
 import { condition, synthesize } from './tts.ts';
 
-/** Milliseconds keyWhile allows past the padded WAV and --tail for the player to start. */
+/** Milliseconds keyWhile allows past the padded WAV and tailMs for the player to start. */
 const PLAYER_START_MS = 5000;
 
 /** Seconds past --clear S after which the clear check stops a capture that delivers too few frames. */
@@ -91,7 +91,15 @@ export interface SpeakOptions {
   rehearse?: boolean;
 }
 
-export interface SpeakResult {
+/** The station config values a result reports. */
+interface Pacing {
+  voice: string;
+  leadMs: number;
+  tailMs: number;
+  maxSeconds: number;
+}
+
+export interface SpeakResult extends Pacing {
   text: string;
   spoken: string;
   /** True when the player exited 0 before any stop, so the ID at the end of the WAV went out. */
@@ -104,7 +112,7 @@ export interface SpeakResult {
   pttAsserted: boolean;
   released: boolean;
   interrupted?: NodeJS.Signals;
-  /** Set on a signal; true when the player ran past --lead and the ID did not finish. */
+  /** Set on a signal; true when the player ran past leadMs and the ID did not finish. */
   idOwed?: boolean;
   /** ID_OWED_REMEDY when idOwed is true. */
   remedy?: string;
@@ -220,6 +228,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     await deps.condition(raw, wav, options.leadMs);
     const levels = await deps.measureWav(wav);
     const measured = { peakDbfs: round(levels.peakDbfs), rmsDbfs: round(levels.rmsDbfs) };
+    const pacing: Pacing = { voice: options.voice, leadMs: options.leadMs, tailMs: options.tailMs, maxSeconds: options.maxSeconds };
     let kept: { out?: string } = {};
     const unkeyed = (signal: NodeJS.Signals): SpeakResult => ({
       text: options.text,
@@ -228,6 +237,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
       seconds: 0,
       ...measured,
       device: options.output,
+      ...pacing,
       pttAsserted: false,
       released: true,
       interrupted: signal,
@@ -241,7 +251,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
     const keyedSeconds = levels.seconds + options.tailMs / 1000;
     if (keyedSeconds > options.maxSeconds) {
       throw new UsageError(
-        `the utterance runs ${round(keyedSeconds)} s with --tail, past --max-seconds ${options.maxSeconds}`,
+        `the utterance runs ${round(keyedSeconds)} s with tailMs, past maxSeconds ${options.maxSeconds}`,
         { seconds: round(keyedSeconds), maxSeconds: options.maxSeconds },
         {},
         'utterance-too-long',
@@ -262,7 +272,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         if (err instanceof BaofengError) err.attach({}, { remedy: 'check the system output, then rerun say --rehearse', retry: 'after-remedy' });
         throw err;
       }
-      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, device: REHEARSE_DEVICE, pttAsserted: false, released: true, rehearsed: true, ...kept };
+      return { text: options.text, spoken, identified: false, seconds: round(levels.seconds), ...measured, device: REHEARSE_DEVICE, ...pacing, pttAsserted: false, released: true, rehearsed: true, ...kept };
     }
     const index = await deps.resolveOutput(options.output);
     if (options.clearSeconds > 0 && !signalled) {
@@ -327,7 +337,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
         idOwed ? { remedy: ID_OWED_REMEDY, retry: 'no' } : { retry: 'no' },
       );
     }
-    const result: SpeakResult = { text: options.text, spoken, identified, seconds: held.seconds, ...measured, device: options.output, pttAsserted: held.pttAsserted, released: held.released, ...kept };
+    const result: SpeakResult = { text: options.text, spoken, identified, seconds: held.seconds, ...measured, device: options.output, ...pacing, pttAsserted: held.pttAsserted, released: held.released, ...kept };
     if (held.interrupted) {
       result.interrupted = held.interrupted;
       result.idOwed = owed();
