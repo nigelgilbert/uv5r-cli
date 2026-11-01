@@ -92,6 +92,18 @@ describe('erase', () => {
       detail: { failed: ['raw'], settings: { raw: { desired: expect.stringMatching(/^ff( ff){15}$/), observed: hex(mem) } } },
     });
   });
+  it('names raw when an ignored name erase leaves bytes past the name', async () => {
+    const radio = new FakeRadio();
+    const name = new Uint8Array(16).fill(0xff);
+    name[15] = 0x00;
+    radio.eeprom.set(name, 0x1000 + 127 * 16);
+    radio.writesIgnoredBelow = 0x1000 + 127 * 16;
+    radio.writesIgnoredAbove = 0x1000 + 128 * 16;
+    await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
+      message: 'channel 127 record erased; name did not take the erase',
+      detail: { failed: ['raw'], settings: { raw: { desired: expect.stringMatching(/^ff( ff){15}$/), observed: hex(name) } } },
+    });
+  });
   it('throws the timeout unchanged when the name read-back times out after the record erase verified', async () => {
     const radio = new FakeRadio();
     await tune(radio, 127, { rxHz: 435_725_000, name: 'JUNK' });
@@ -821,6 +833,20 @@ describe('channels', () => {
     });
     expect((err as BaofengError).detail).not.toHaveProperty('recordWritten');
     expect(radio.writes).toEqual([5 * 16, 0x1000 + 5 * 16]);
+  });
+  it('names raw when an ignored name write leaves the same name with different padding', async () => {
+    const radio = new FakeRadio();
+    const name = encodeName('TEST');
+    name[15] = 0x00;
+    radio.eeprom.set(name, 0x1000 + 5 * 16);
+    radio.writesIgnoredBelow = 0x1000 + 5 * 16;
+    radio.writesIgnoredAbove = 0x1000 + 6 * 16;
+    const s = new Session(radio);
+    await s.start();
+    await expect(writeChannel(s, 5, { rxHz: 154_680_000, name: 'TEST' })).rejects.toMatchObject({
+      message: 'channel 5 record written; name did not take the write',
+      detail: { failed: ['raw'], settings: { raw: { desired: hex(encodeName('TEST')), observed: hex(name) } } },
+    });
   });
   it('throws the timeout unchanged when the name read-back times out after the record verified', async () => {
     const radio = new FakeRadio();

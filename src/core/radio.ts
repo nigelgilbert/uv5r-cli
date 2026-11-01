@@ -101,9 +101,9 @@ function recordMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail
   return verificationDetail(recordFields(wrote), recordFields(read), wrote, read);
 }
 
-/** Report a name record that read back wrong as the `name` field. */
+/** Compare a written name record with its read-back by decoded name, or as `raw` when only the padding differs. */
 function nameMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail {
-  return { failed: ['name'], settings: { name: { desired: decodeName(wrote), observed: decodeName(read) } }, wrote: hex(wrote), read: hex(read) };
+  return verificationDetail({ name: decodeName(wrote) }, { name: decodeName(read) }, wrote, read);
 }
 
 /** Bytes of ident before main memory in a CHIRP image. */
