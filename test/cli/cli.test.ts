@@ -24,11 +24,12 @@ const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 /**
- * Measured bytes of `uv5r help --json` and each `uv5r help VERB --json`, trailing newline included.
+ * Measured bytes of `uv5r help --json`, `uv5r help errors --json` and each `uv5r help VERB --json`, trailing newline included.
  * Refresh them after a help text change with `node src/cli/main.ts help VERB --json | wc -c`.
  */
-const HELP_BYTES: { catalog: number; verbs: Record<string, number> } = {
+const HELP_BYTES: { catalog: number; errors: number; verbs: Record<string, number> } = {
   catalog: 4086,
+  errors: 4596,
   verbs: {
     status: 1115,
     identify: 2027,
@@ -189,7 +190,7 @@ describe('cli exit status', () => {
   it('sets exitCode 3 on a transport error and leaves process.exit alone', async () => {
     await cli(['status', '--json'], opener());
     expect(process.exitCode).toBe(3);
-    expect(errJson().reason).toBe('device-unavailable');
+    expect(errJson()).toMatchObject({ type: 'error', kind: 'transport', reason: 'device-unavailable' });
     expect(exit).not.toHaveBeenCalled();
   });
 });
@@ -308,6 +309,23 @@ describe('help', () => {
       const help = JSON.parse(out) as { flags: Array<{ flag: string }> };
       expect(entry.flags, verb).toEqual(help.flags.map((f) => f.flag));
     }
+    stdout = [];
+    await cli(['help', 'errors', '--json']);
+    expect(Math.abs(Buffer.byteLength(stdout.join('')) - HELP_BYTES.errors), 'errors').toBeLessThanOrEqual(HELP_BYTES_TOLERANCE);
+  });
+
+  it("every verb's help carries the per-verb fields", async () => {
+    const keys = ['schemaVersion', 'verb', 'summary', 'usage', 'example', 'args', 'flags', 'effects', 'preconditions', 'device', 'result', 'exits', 'exitsNote'];
+    const extra: Record<string, string> = { say: 'fields', id: 'fields', settings: 'fields', hear: 'lines' };
+    for (const verb of Object.keys(HELP_BYTES.verbs)) {
+      stdout = [];
+      const help = await helpJson(verb);
+      for (const key of keys) expect(help, verb).toHaveProperty(key);
+      if (extra[verb]) expect(help, verb).toHaveProperty(extra[verb]!);
+    }
+    stdout = [];
+    const catalog = await helpJson();
+    for (const [verb, entry] of Object.entries(catalog.verbs)) expect(Object.keys(entry as object).sort(), verb).toEqual(['flags', 'summary', 'usage']);
   });
 
   it('gives every verb a device block that matches what the verb does to the port and the radio', async () => {
@@ -725,6 +743,20 @@ describe('read output', () => {
     expect(stdout.join('')).toBe(`ch 5: malformed record ${[...mem].map((b) => b.toString(16).padStart(2, '0')).join(' ')}\n`);
   });
 
+  it('prints a channel record in MHz on a terminal', async () => {
+    const radio = new FakeRadio();
+    radio.eeprom.set(encodeChannel({ rxHz: 446_006_250 }), 5 * 16);
+    await onTerminal(() => cli(['read', '5'], opener(radio)));
+    expect(process.exitCode).toBe(0);
+    expect(stdout.join('')).toContain('ch 5: rx 446.00625 tx 446.00625 ');
+  });
+
+  it('prints the tuned record in MHz on a terminal', async () => {
+    await onTerminal(() => cli(['tune', '446.00625', '--channel', '5'], opener(new FakeRadio())));
+    expect(process.exitCode).toBe(0);
+    expect(stdout.join('')).toContain('ch 5: rx 446.00625 tx 446.00625 ');
+  });
+
   it('reports an erased slot as empty', async () => {
     await cli(['read', '5', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
@@ -734,6 +766,9 @@ describe('read output', () => {
   it('names the malformed shape in help read', async () => {
     await cli(['help', 'read', '--json']);
     expect(stdout.join('')).toContain('\\"malformed\\": true, \\"raw\\": HEX');
+    const { result } = outJson() as { result: Record<string, unknown> };
+    expect(result).toMatchObject({ rxHz: expect.any(Number), txHz: expect.any(Number) });
+    expect(result).not.toHaveProperty('rxMhz');
   });
 });
 
@@ -1135,7 +1170,7 @@ describe('key output', () => {
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     const err = errJson();
-    expect(err).toMatchObject({ reason: 'device-unavailable', remedy: REASONS['device-unavailable'].remedy, retry: 'after-remedy' });
+    expect(err).toMatchObject({ type: 'error', kind: 'transport', reason: 'device-unavailable', remedy: REASONS['device-unavailable'].remedy, retry: 'after-remedy' });
     expect(err).not.toHaveProperty('pttAsserted');
     expect(err).not.toHaveProperty('released');
     expect(err).not.toHaveProperty('phase');
@@ -1380,6 +1415,8 @@ describe('load', () => {
       remedy: 'read channel 5, then rerun the write',
       retry: 'after-remedy',
       slot: 5,
+      failed: expect.any(Array),
+      settings: expect.any(Object),
     });
     expect(errJson()).not.toHaveProperty('written');
     expect(errJson()).not.toHaveProperty('recordWritten');
@@ -1410,6 +1447,8 @@ describe('load', () => {
       message: 'channel 3 record written; name did not take the write',
       remedy: 'read channel 3; rerun the write to fix the name',
       slot: 3,
+      failed: ['name'],
+      settings: { name: { desired: 'NOAA 3', observed: '' } },
     });
     expect(err).not.toHaveProperty('recordWritten');
     expect(err).not.toHaveProperty('written');
