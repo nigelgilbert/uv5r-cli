@@ -240,10 +240,11 @@ describe('help', () => {
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
     expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep', 'volume']);
     const flag = (verb: string, name: string) => help.verbs[verb].flags.find((f: { flag: string }) => f.flag === name);
-    expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--device', '--json', '--target']);
+    expect(help.verbs.check.flags.map((f: { flag: string }) => f.flag)).toEqual(['--channel', '--input', '--json', '--target']);
     expect(flag('sweep', '--seconds').default).toBe(30);
     expect(flag('listen', '--floor').default).toBe(-50);
-    expect(flag('listen', '--device').default).toBe('AIOC Audio');
+    expect(flag('listen', '--input').default).toBe('AIOC Audio');
+    for (const verb of Object.values(help.verbs) as Array<{ flags: Array<{ flag: string }> }>) expect(verb.flags.map((f) => f.flag)).not.toContain('--device');
     for (const verb of Object.values(help.verbs) as Array<Record<string, unknown>>) {
       for (const key of ['usage', 'flags', 'effects', 'preconditions', 'writesToRadio', 'result', 'exits', 'exitsNote']) expect(verb).toHaveProperty(key);
     }

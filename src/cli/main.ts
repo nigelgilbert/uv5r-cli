@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { accessSync, closeSync, constants as fsConstants, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { checkFlags, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
+import { checkFlags as checkFlagNames, checkPositionals, numberFlag, parseArgs, parseDecimal, stringFlag, type ParsedArgs } from './args.ts';
 import { DEFAULT_FLOOR_DBFS, checkFfmpeg, listen } from './audio.ts';
 import { CHECK_SECONDS, checkChannel } from './check.ts';
 import { readStation, resolveConfigPath } from './config.ts';
@@ -87,6 +87,8 @@ interface Invocation extends ParsedArgs {
 interface Verb extends VerbDoc {
   /** Most positionals the verb takes after its name. */
   positionals: number;
+  /** Flags the verb dropped, each mapped to what replaces it; a dropped flag exits 2 naming the replacement. */
+  dropped?: Record<string, string>;
   run: (args: Invocation) => Promise<number>;
 }
 
@@ -197,9 +199,9 @@ const RX_TONE_FLAG: FlagDoc = { name: 'rx-tone', value: 'HZ', default: 'none', h
 const NARROW_FLAG: FlagDoc = { name: 'narrow', help: '12.5 kHz bandwidth; wide without it' };
 const LOW_POWER_FLAG: FlagDoc = { name: 'low-power', help: 'low TX power' };
 const NAME_FLAG: FlagDoc = { name: 'name', value: 'TEXT', default: 'the frequency', help: 'channel name: printable ASCII, uppercased, cut to 7 characters' };
-const DEVICE_FLAG: FlagDoc = { name: 'device', value: 'NAME', default: DEFAULT_AUDIO_DEVICE, help: 'avfoundation audio input by name or index' };
-const CAPTURE_DEVICE_FLAG: FlagDoc = {
-  ...DEVICE_FLAG,
+const INPUT_FLAG: FlagDoc = { name: 'input', value: 'NAME', default: DEFAULT_AUDIO_DEVICE, help: 'avfoundation audio input by name or index' };
+const CAPTURE_INPUT_FLAG: FlagDoc = {
+  ...INPUT_FLAG,
   help: 'avfoundation audio input by name or index; name the AIOC input, since any input with sound above the floor passes the check',
 };
 const FLOOR_FLAG: FlagDoc = {
@@ -221,12 +223,15 @@ const TAIL_FLAG: FlagDoc = { name: 'tail', value: 'MS', default: DEFAULT_TAIL_MS
 const CONFIG_FLAG: FlagDoc = { name: 'config', value: 'FILE', default: 'UV5R_CONFIG, else uv5r.json at the repo root', help: 'station config with the callsign' };
 const TRANSMIT_FLAGS = [VOICE_FLAG, OUTPUT_DEVICE_FLAG, LEAD_FLAG, TAIL_FLAG, CONFIG_FLAG];
 
+/** What replaces --device on the verbs that capture audio. */
+const DROPPED_DEVICE = { device: '--input NAME' };
+
 const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'receive frequency in MHz (154.680), Hz (154680000) or exponent form, in 136-174 or 400-520 MHz, in 10 Hz steps' };
 const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
 
 const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
 const AUDIO_READY = 'ffmpeg is on PATH and the terminal has microphone access.';
-const CAPTURE_READY = ['--device names the AIOC input.', 'Squelch is above 0; uv5r status reports it.'];
+const CAPTURE_READY = ['--input names the AIOC input.', 'Squelch is above 0; uv5r status reports it.'];
 const FFMPEG_FIRST = 'Run ffmpeg -version before the port opens. A missing or failing ffmpeg exits 3 with nothing written.';
 const APPLIES = `The radio reloads and applies the write about ${APPLIES_AFTER_SECONDS} s after the command ends.`;
 
@@ -248,7 +253,7 @@ const TRANSMIT_EXITS = [
 ];
 const ID_EXAMPLE = 'This is Kilo, Juliett, Seven, Alfa, Bravo, Charlie';
 
-const HEAR_SUMMARY = { type: 'summary', transmissions: 1, seconds: 14.6, device: DEFAULT_AUDIO_DEVICE, warnings: 1, timedOut: false };
+const HEAR_SUMMARY = { type: 'summary', transmissions: 1, seconds: 14.6, input: DEFAULT_AUDIO_DEVICE, warnings: 1, timedOut: false };
 const HEAR_LINES = [
   { type: 'warning', warning: 'kerchunk', start: '2026-10-25T14:03:02.180Z', seconds: 0.62, text: null, wav: 'rx/seg-000041.wav' },
   {
@@ -270,7 +275,7 @@ const HEAR_LINES = [
 const CHANNEL_RECORD = { rxMhz: '154.68', txMhz: '154.68', txTone: '82.5', rxTone: 'none', bandwidth: 'wide', power: 'high', name: '154.68' };
 const SETTINGS_EXAMPLE = { squelch: 3, save: 3, abr: 5, beep: 'on', timeout: 3, voice: 'eng', mdfa: 'freq', mdfb: 'freq' };
 const LISTEN_EXAMPLE = {
-  device: DEFAULT_AUDIO_DEVICE,
+  input: DEFAULT_AUDIO_DEVICE,
   seconds: 5,
   rmsDbfs: [-21.3, -24.8, -19.6, -30.2, -22.7],
   zeroSeconds: 0,
@@ -378,7 +383,7 @@ const verbs: Record<string, Verb> = {
     summary: 'Write a receive-only frequency into slot N, wait for the reload and listen; exit 5 unless 80% of the seconds are active',
     example: 'uv5r check 162.400 --channel 0',
     args: [FREQ_ARG],
-    flags: [CHANNEL_FLAG, CAPTURE_DEVICE_FLAG, ...COMMON_FLAGS],
+    flags: [CHANNEL_FLAG, CAPTURE_INPUT_FLAG, ...COMMON_FLAGS],
     effects: [
       FFMPEG_FIRST,
       'Read the squelch setting. Squelch 0 exits 5 with squelch-open before the write.',
@@ -397,6 +402,7 @@ const verbs: Record<string, Verb> = {
       { code: 5, when: 'squelch 0, before the write; or fewer than 80% of the seconds active, where the message lists the causes and the error carries the result fields' },
     ],
     positionals: 1,
+    dropped: DROPPED_DEVICE,
     run: checkVerb,
   },
   load: {
@@ -618,7 +624,7 @@ const verbs: Record<string, Verb> = {
     args: [],
     flags: [
       { name: 'seconds', value: 'S', required: true, help: `capture time, whole number 1..${MAX_LISTEN_SECONDS}` },
-      DEVICE_FLAG,
+      INPUT_FLAG,
       FLOOR_FLAG,
       { name: 'out', value: 'FILE', help: 'write the capture as a 48 kHz mono WAV and report out; overwrites FILE' },
       { name: 'play', help: 'play the --out file through afplay after the capture; needs --out' },
@@ -634,6 +640,7 @@ const verbs: Record<string, Verb> = {
     result: { ...LISTEN_EXAMPLE, out: 'rx.wav' },
     exits: [{ code: 3, when: 'a short capture' }],
     positionals: 0,
+    dropped: DROPPED_DEVICE,
     run: listenVerb,
   },
   hear: {
@@ -641,7 +648,7 @@ const verbs: Record<string, Verb> = {
     example: 'uv5r hear --once --timeout 60 --out-dir rx',
     args: [],
     flags: [
-      { ...DEVICE_FLAG, default: `config inputDevice, else ${DEFAULT_AUDIO_DEVICE}` },
+      { ...INPUT_FLAG, default: `config inputDevice, else ${DEFAULT_AUDIO_DEVICE}` },
       {
         name: 'floor',
         value: 'DBFS',
@@ -656,7 +663,7 @@ const verbs: Record<string, Verb> = {
       ...OUTPUT_FLAGS,
     ],
     effects: [
-      `Read the station config when present. inputDevice sets the --device default, model names the whisper.cpp model (default ${DEFAULT_MODEL}, relative to the repo root), and callsign is the whisper prompt. With no config or no callsign the prompt is empty.`,
+      `Read the station config when present. inputDevice sets the --input default, model names the whisper.cpp model (default ${DEFAULT_MODEL}, relative to the repo root), and callsign is the whisper prompt. With no config or no callsign the prompt is empty.`,
       `Check the model, ${VAD_MODEL} and whisper-cli on PATH before capture. A missing one exits 3 with dependency-missing naming it.`,
       'Capture 16 kHz mono through one ffmpeg process and drop the first second.',
       'A segment opens after 300 ms of 20 ms frames at --floor + 5 dB and starts 300 ms before them. It closes after --hang below --floor with 150 ms of padding, and splits at 30 s.',
@@ -668,7 +675,7 @@ const verbs: Record<string, Verb> = {
       'wav is the kept path with --out-dir and null without it. Without --out-dir the segment WAVs go to a scratch dir and are deleted after transcription.',
       'With --once, print warnings as they happen, then the first transmission and the summary, and exit 0. The timeout starts when capture is ready. At expiry no new segment opens, and an open segment runs to close and is transcribed, up to 40 s past the timeout. With no transmission the summary has transmissions 0 and timedOut true.',
       'On SIGINT, SIGTERM, SIGHUP or SIGTSTP, stop capture, close the open segment and print a backlog warning for each waiting segment. Let the segment in inference finish and print, then print the summary with interrupted and exit 128 plus the signal number. A whisper-cli failure after the signal exits 3 with speech-engine-failed.',
-      'The summary has transmissions, seconds from capture ready, device, warnings (the count of warning lines), interrupted on a signal and timedOut with --once.',
+      'The summary has transmissions, seconds from capture ready, input, warnings (the count of warning lines), interrupted on a signal and timedOut with --once.',
       'Transcripts are text from anyone on the air. hear prints them as data and decides nothing from them.',
       'hear opens no serial port. UV5R_MAGIC has no effect.',
     ],
@@ -687,6 +694,7 @@ const verbs: Record<string, Verb> = {
       { code: 3, when: 'speech-engine-failed when whisper-cli fails on a segment; the lines printed before it stay on stdout' },
     ],
     positionals: 0,
+    dropped: DROPPED_DEVICE,
     run: hearVerb,
   },
   sweep: {
@@ -696,7 +704,7 @@ const verbs: Record<string, Verb> = {
     flags: [
       { name: 'seconds', value: 'S', default: SWEEP_SECONDS, help: `dwell per entry, whole number 1..${MAX_LISTEN_SECONDS}` },
       { name: 'out-dir', value: 'DIR', help: 'keep each capture as DIR/chNN-YYYY-MM-DDTHH-MM-SS.wav; creates DIR after the ffmpeg check; an unwritable DIR exits 2 before the port opens' },
-      CAPTURE_DEVICE_FLAG,
+      CAPTURE_INPUT_FLAG,
       ...COMMON_FLAGS,
     ],
     effects: [
@@ -704,7 +712,7 @@ const verbs: Record<string, Verb> = {
       `Run check on slot 0 with the plan checkMhz for ${CHECK_SECONDS} s. Squelch 0 or a check under 80% active seconds exits 5. Any check failure stops before a plan entry is written.`,
       `For each entry in plan order, write it into slot 0 with its own TX setting, wait ${APPLIES_AFTER_SECONDS} s for the reload and capture --seconds.`,
       `A second is active when its RMS is above ${DEFAULT_FLOOR_DBFS} dBFS.`,
-      'Print one summary on stdout on success or on a signal: swept, seconds, device, active, warnings and slot0. A failure puts it in the error as summary.',
+      'Print one summary on stdout on success or on a signal: swept, seconds, input, active, warnings and slot0. A failure puts it in the error as summary.',
       'warnings holds the check warnings prefixed with check: and each dwell warning prefixed with its plan channel.',
       'slot0 is {channel, name} of the last verified entry write, {channel: null, name} after only the check write, or null when unknown. Slot 0 keeps it after the run.',
       'active[].name is the plan name. slot0.name is the name the radio holds, uppercased and cut to 7 characters. Match the two on channel.',
@@ -716,7 +724,7 @@ const verbs: Record<string, Verb> = {
     result: {
       swept: 7,
       seconds: SWEEP_SECONDS,
-      device: DEFAULT_AUDIO_DEVICE,
+      input: DEFAULT_AUDIO_DEVICE,
       active: [{ channel: 1, slot: 0, name: 'NOAA', requestedMhz: '162.4', activeSeconds: 30 }],
       warnings: [],
       slot0: { channel: 7, name: 'SHERIFF' },
@@ -727,13 +735,14 @@ const verbs: Record<string, Verb> = {
       { code: 3, when: 'a capture that cannot be renamed into DIR mid-run, after slot 0 is written; the error names part and carries summary' },
     ],
     positionals: 1,
+    dropped: DROPPED_DEVICE,
     run: sweepVerb,
   },
   volume: {
     summary: 'Read open-squelch static and print which way to turn the volume knob, with the sentence to relay to the human',
     example: 'uv5r volume',
     args: [],
-    flags: [DEVICE_FLAG, ...COMMON_FLAGS],
+    flags: [INPUT_FLAG, ...COMMON_FLAGS],
     effects: [
       FFMPEG_FIRST,
       'Read the squelch setting and keep it. When it is above 0, write squelch 0 in the same clone session, wait for the reload and read the block back in a fresh session.',
@@ -750,7 +759,7 @@ const verbs: Record<string, Verb> = {
     preconditions: [
       RADIO_READY,
       AUDIO_READY,
-      '--device names the AIOC input.',
+      '--input names the AIOC input.',
       'The radio is on a quiet channel. A carrier during the capture reads as signal level and hides the static.',
       'Open squelch shows the human nothing on the display, so name the channel the display shows before running.',
       'The macOS input volume of AIOC Audio is at 100 percent. The AIOC applies a lower input volume as a digital scale after the ADC, which hides clipping and makes static read low. volume cannot read that setting.',
@@ -763,6 +772,7 @@ const verbs: Record<string, Verb> = {
       { code: 5, when: 'a refused squelch write or a failed read-back, including the restore' },
     ],
     positionals: 0,
+    dropped: DROPPED_DEVICE,
     run: volumeVerb,
   },
 };
@@ -770,6 +780,16 @@ const verbs: Record<string, Verb> = {
 const BOOLEAN_FLAGS = new Set(['help', 'version', ...Object.values(verbs).flatMap((v) => v.flags.filter((f) => !f.value).map((f) => f.name))]);
 /** Flags `uv5r` takes with no verb. */
 const TOP_FLAGS = ['help', 'version', 'json'];
+
+/** Throw UsageError naming the replacement of a flag `verb` dropped, then on any flag outside `allowed`. */
+function checkFlags(verb: string, flags: Map<string, string | true>, allowed: readonly string[]): void {
+  const dropped = isVerb(verb) ? (verbs[verb]!.dropped ?? {}) : {};
+  for (const name of flags.keys()) {
+    const replacement = dropped[name];
+    if (replacement !== undefined) throw new UsageError(`uv5r ${verb}: --${name} is now ${replacement}`, { flag: name });
+  }
+  checkFlagNames(verb, flags, allowed);
+}
 
 /** Return the flags `verb` takes, as the verbs table lists them. */
 function flagNames(verb: string): string[] {
@@ -1078,10 +1098,10 @@ async function checkVerb(args: Invocation): Promise<number> {
   checkChannelNumber(n);
   // Pass no flags so the spec takes the defaults: no RX tone, wide, high power, named by frequency.
   const spec = channelSpec(freq, new Map());
-  const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  const input = stringFlag(args.flags, 'input') ?? DEFAULT_AUDIO_DEVICE;
   const magic = selectedMagic();
   await checkFfmpeg();
-  const result = await withTransport(args, (t) => checkChannel(t, n, spec, { device, magic }));
+  const result = await withTransport(args, (t) => checkChannel(t, n, spec, { input, magic }));
   print(args, result, () =>
     [
       `slot ${result.slot}: requested ${result.requestedMhz}`,
@@ -1359,19 +1379,19 @@ async function listenVerb(args: Invocation): Promise<number> {
   if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
     throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
   }
-  const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  const input = stringFlag(args.flags, 'input') ?? DEFAULT_AUDIO_DEVICE;
   const floor = floorFlag(args.flags, 'uv5r listen --seconds 5');
   const out = stringFlag(args.flags, 'out');
   // Reject stdout, since capture drops ffmpeg's stdout and no file would hold the WAV.
   if (out === '-') throw new UsageError('--out takes a file path; got "-", as in: listen --seconds 5 --out rx.wav', { flag: 'out' });
   const play = args.flags.get('play') === true;
   if (play && out === undefined) throw new UsageError('--play needs --out FILE, as in: listen --seconds 5 --out rx.wav --play');
-  const result = await listen(device, seconds, floor, { out, play });
+  const result = await listen(input, seconds, floor, { out, play });
   // Print null levels as zero, since null marks digital zero.
   const level = (db: number | null) => (db === null ? 'zero' : `${db} dBFS`);
   print(args, result, () =>
     [
-      `device     ${result.device}`,
+      `input      ${result.input}`,
       `seconds    ${result.seconds}, after dropping the first captured second`,
       `zero secs  ${result.zeroSeconds}`,
       `mean rms   ${level(result.meanRmsDbfs)}`,
@@ -1394,7 +1414,7 @@ function slot0Text(slot0: Slot0 | null): string {
 function sweepText(s: SweepSummary): string {
   return [
     `swept      ${s.swept} entries, ${s.seconds} s each${s.interrupted ? `; interrupted by ${s.interrupted}` : ''}`,
-    `device     ${s.device}`,
+    `input      ${s.input}`,
     ...s.active.map((a) => `active     ch ${a.channel} ${a.name} requested ${a.requestedMhz}: ${a.activeSeconds} s${a.out === undefined ? '' : ` ${a.out}`}`),
     ...s.warnings.map((w) => `warning    ${w}`),
     `slot 0     ${slot0Text(s.slot0)}`,
@@ -1425,7 +1445,7 @@ function hearLineText(line: HearLine): string {
     case 'summary': {
       const end = [...(line.interrupted ? [`interrupted by ${line.interrupted}`] : []), ...(line.timedOut ? ['timed out'] : [])];
       const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
-      return `heard   ${count(line.transmissions, 'transmission')} in ${line.seconds} s on ${line.device}, ${count(line.warnings, 'warning')}${end.length ? `; ${end.join('; ')}` : ''}`;
+      return `heard   ${count(line.transmissions, 'transmission')} in ${line.seconds} s on ${line.input}, ${count(line.warnings, 'warning')}${end.length ? `; ${end.join('; ')}` : ''}`;
     }
   }
 }
@@ -1444,7 +1464,7 @@ async function hearVerb(args: Invocation): Promise<number> {
   const outDir = stringFlag(args.flags, 'out-dir');
   const { path, required } = resolveConfigPath(stringFlag(args.flags, 'config'), process.env, args.deps.defaultConfig);
   const station = readStation(path, { required });
-  const device = stringFlag(args.flags, 'device') ?? station.inputDevice ?? DEFAULT_AUDIO_DEVICE;
+  const input = stringFlag(args.flags, 'input') ?? station.inputDevice ?? DEFAULT_AUDIO_DEVICE;
   const model = repoPath(station.model ?? DEFAULT_MODEL);
   const transcribe = args.deps.transcriber({ model, vadModel: repoPath(VAD_MODEL), prompt: station.callsign ?? '' });
   let firstSeq = 1;
@@ -1454,12 +1474,12 @@ async function hearVerb(args: Invocation): Promise<number> {
   }
   const json = wantsJson(args.flags);
   const summary = await runHear(
-    args.deps.monitor(device),
+    args.deps.monitor(input),
     transcribe,
     () => performance.timeOrigin + args.deps.now(),
     (line) => process.stdout.write(`${json ? JSON.stringify(line) : hearLineText(line)}\n`),
     args.deps.signals,
-    { device, floorDbfs, hangSeconds, once, timeoutSeconds, outDir, model: modelName(model), firstSeq },
+    { input, floorDbfs, hangSeconds, once, timeoutSeconds, outDir, model: modelName(model), firstSeq },
   );
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;
 }
@@ -1468,7 +1488,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
   checkFlags('sweep', args.flags, flagNames('sweep'));
   const progress = newProgress();
   let seconds = SWEEP_SECONDS;
-  let device = DEFAULT_AUDIO_DEVICE;
+  let input = DEFAULT_AUDIO_DEVICE;
   let transportAsked = false;
   let summary: SweepSummary;
   try {
@@ -1478,7 +1498,7 @@ async function sweepVerb(args: Invocation): Promise<number> {
     if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_LISTEN_SECONDS) {
       throw new UsageError(`--seconds takes a whole number 1..${MAX_LISTEN_SECONDS}; got ${seconds}`);
     }
-    device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+    input = stringFlag(args.flags, 'input') ?? DEFAULT_AUDIO_DEVICE;
     const outDir = stringFlag(args.flags, 'out-dir');
     const plan = readPlan(file);
     if (plan.checkHz === undefined) {
@@ -1491,12 +1511,12 @@ async function sweepVerb(args: Invocation): Promise<number> {
     const magic = selectedMagic();
     await checkFfmpeg();
     if (outDir !== undefined) prepareOutDir(outDir);
-    const options = { device, seconds, outDir };
+    const options = { input, seconds, outDir };
     transportAsked = true;
-    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { device, magic }), options, progress));
+    summary = await withTransport(args, (t) => runSweep(plan.entries, slotZero(t, checkSpec, { input, magic }), options, progress));
   } catch (err) {
     // Add the finished dwells and slot 0 to the error once the port was asked for.
-    throw withDetail(err, transportAsked ? { summary: summarize(progress, { seconds, device }) } : {});
+    throw withDetail(err, transportAsked ? { summary: summarize(progress, { seconds, input }) } : {});
   }
   print(args, summary, () => sweepText(summary));
   return summary.interrupted ? signalExitCode(summary.interrupted) : EXIT.ok;
@@ -1509,10 +1529,10 @@ function volumeText(r: VolumeResult): string {
 
 async function volumeVerb(args: Invocation): Promise<number> {
   checkFlags('volume', args.flags, flagNames('volume'));
-  const device = stringFlag(args.flags, 'device') ?? DEFAULT_AUDIO_DEVICE;
+  const input = stringFlag(args.flags, 'input') ?? DEFAULT_AUDIO_DEVICE;
   const magic = selectedMagic();
   await checkFfmpeg();
-  const reading = await readVolume((fn) => withTransport(args, fn), { device, magic, signals: args.deps.signals });
+  const reading = await readVolume((fn) => withTransport(args, fn), { input, magic, signals: args.deps.signals });
   if ('interrupted' in reading) return signalExitCode(reading.interrupted);
   const result = judgeVolume(reading.heard);
   print(args, result, () => volumeText(result));

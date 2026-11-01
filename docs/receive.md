@@ -8,6 +8,10 @@ How `listen` and `hear` capture receive audio from the AIOC, what the levels mea
 the terminal until you grant it in System Settings, Privacy & Security, Microphone. Denied
 access gives digital zero.
 
+`check`, `listen`, `hear`, `sweep` and `volume` capture from `AIOC Audio`. Pass `--input NAME`
+with another avfoundation input name or index. `hear` reads `inputDevice` from the station
+config before the default. The result and any capture error report the input as `input`.
+
 The AIOC's bare ADC floor at 1x gain reads about -66 dBFS. Open-squelch static reads above
 -30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug is short
 of its contact.

@@ -140,7 +140,7 @@ describe('startMonitor', () => {
       kind: 'transport',
       reason: 'audio-process-failed',
       message: expect.stringMatching(/^ffmpeg exited with code 1 capturing from "AIOC Audio": .*Input\/output error$/),
-      detail: { device: 'AIOC Audio', code: 1, signal: null },
+      detail: { input: 'AIOC Audio', code: 1, signal: null },
     };
     await expect(monitor.ready).rejects.toMatchObject(expected);
     await expect(frames.next()).rejects.toMatchObject(expected);

@@ -25,7 +25,7 @@ const SWEEP_SLOT = 0;
 
 export interface DwellOptions {
   /** avfoundation audio input to capture from. */
-  device: string;
+  input: string;
   /** Whole seconds to capture per entry. */
   seconds: number;
   /** Directory that takes one WAV per dwell; undefined keeps no capture. */
@@ -68,7 +68,7 @@ export interface SweepSummary {
   swept: number;
   seconds: number;
   /** avfoundation audio input the check and every dwell captured from. */
-  device: string;
+  input: string;
   active: ActiveEntry[];
   /** Warnings from the check, prefixed with check:, then from every dwell, prefixed with its plan channel. */
   warnings: string[];
@@ -130,7 +130,7 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
   const part = out === undefined ? undefined : `${out}.part`;
   let heard: ListenResult;
   try {
-    heard = await listen(options.device, options.seconds, DEFAULT_FLOOR_DBFS, { out: part, stop });
+    heard = await listen(options.input, options.seconds, DEFAULT_FLOOR_DBFS, { out: part, stop });
   } catch (err) {
     // Remove the part file and keep the capture error when the removal fails.
     if (part !== undefined) {
@@ -171,7 +171,7 @@ export async function dwell(entry: PlanEntry, options: DwellOptions, stop?: Prom
  * sets it to the record read back once the write verifies. An error in the check carries `requestedMhz`.
  * Every session opens with `options.magic`, 291 when absent.
  */
-export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device: string; magic?: Magic }): SweepSteps {
+export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { input: string; magic?: Magic }): SweepSteps {
   const write = async (progress: SweepProgress, channel: number | null, spec: ChannelSpec, first?: (s: Session) => Promise<void>) => {
     progress.slot0 = null;
     const written = await withSession(t, async (s) => {
@@ -187,7 +187,7 @@ export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device
         await write(progress, null, spec, (s) => refuseOpenSquelch(s, SWEEP_SLOT));
         await settle(stop.stopped);
         if (stop.signal) return;
-        const heard = await listen(options.device, CHECK_SECONDS, DEFAULT_FLOOR_DBFS, { stop: stop.stopped });
+        const heard = await listen(options.input, CHECK_SECONDS, DEFAULT_FLOOR_DBFS, { stop: stop.stopped });
         progress.checkWarnings = heard.warnings;
         judgeCheck(SWEEP_SLOT, spec, heard);
       } catch (err) {
@@ -202,12 +202,12 @@ export function slotZero(t: Transport, checkSpec: ChannelSpec, options: { device
 }
 
 /** Summarize the check warnings, the finished dwells and slot 0 in `progress`, naming `interrupted` when a signal ended the loop. */
-export function summarize(progress: SweepProgress, options: { seconds: number; device: string }, interrupted?: NodeJS.Signals): SweepSummary {
+export function summarize(progress: SweepProgress, options: { seconds: number; input: string }, interrupted?: NodeJS.Signals): SweepSummary {
   const records = progress.dwells;
   const summary: SweepSummary = {
     swept: records.length,
     seconds: options.seconds,
-    device: options.device,
+    input: options.input,
     active: records
       .filter((r) => r.activeSeconds > 0)
       .map(({ channel, slot, name, requestedMhz, activeSeconds, out }) => ({ channel, slot, name, requestedMhz, activeSeconds, ...(out === undefined ? {} : { out }) })),

@@ -49,7 +49,7 @@ function opener(radio: FakeRadio): OpenTransport & { calls: number } {
 /** Build a listen result with the given per-second activity. */
 function heard(active: boolean[]): ListenResult {
   return {
-    device: 'AIOC Audio',
+    input: 'AIOC Audio',
     seconds: active.length,
     rmsDbfs: active.map((on) => (on ? -20 : -66)),
     zeroSeconds: 0,
@@ -116,7 +116,7 @@ describe('check', () => {
 
   it('passes --device to listen with 5 s at -50 dBFS', async () => {
     listenMock.mockResolvedValue(heard([true, true, true, true, true]));
-    await run(['check', '162.400', '--channel', '3', '--device', '1', '--json'], opener(new FakeRadio()));
+    await run(['check', '162.400', '--channel', '3', '--input', '1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     expect(listenMock).toHaveBeenCalledWith('1', 5, -50);
     expect(outJson()).toMatchObject({ slot: 3, requestedMhz: '162.4', activeSeconds: 5 });
@@ -198,7 +198,7 @@ describe('check', () => {
 
   it('adds slot and requestedMhz to a capture error after the write', async () => {
     const radio = new FakeRadio();
-    listenMock.mockRejectedValue(new TransportError('capture-incomplete', 'ffmpeg captured 3 of 6 seconds from "AIOC Audio"', { device: 'AIOC Audio', captured: 3, requested: 6 }));
+    listenMock.mockRejectedValue(new TransportError('capture-incomplete', 'ffmpeg captured 3 of 6 seconds from "AIOC Audio"', { input: 'AIOC Audio', captured: 3, requested: 6 }));
     await run(['check', '162.400', '--channel', '4', '--json'], opener(radio));
     expect(process.exitCode).toBe(3);
     expect(errJson()).toMatchObject({ reason: 'capture-incomplete', slot: 4, requestedMhz: '162.4', captured: 3, requested: 6 });
@@ -208,8 +208,8 @@ describe('check', () => {
   it('names the AIOC input and squelch above 0 in help check', async () => {
     await cli(['help', 'check', '--json']);
     const help = JSON.parse(stdout.join('')) as { preconditions: string[]; flags: { flag: string; help: string }[] };
-    expect(help.preconditions).toEqual(expect.arrayContaining(['--device names the AIOC input.', 'Squelch is above 0; uv5r status reports it.']));
-    expect(help.flags.find((f) => f.flag === '--device')!.help).toContain('name the AIOC input');
+    expect(help.preconditions).toEqual(expect.arrayContaining(['--input names the AIOC input.', 'Squelch is above 0; uv5r status reports it.']));
+    expect(help.flags.find((f) => f.flag === '--input')!.help).toContain('name the AIOC input');
   });
 
   it('prints the check example in help check', async () => {

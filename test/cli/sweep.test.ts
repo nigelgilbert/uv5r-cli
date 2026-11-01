@@ -59,7 +59,7 @@ function opener(radio: FakeRadio): OpenTransport & { calls: number } {
 function heard(seconds: number, activeSeconds: number, warnings: string[] = []): ListenResult {
   const active = Array.from({ length: seconds }, (_, i) => i < activeSeconds);
   return {
-    device: 'AIOC Audio',
+    input: 'AIOC Audio',
     seconds,
     rmsDbfs: active.map((on) => (on ? -20 : -66)),
     zeroSeconds: 0,
@@ -155,7 +155,7 @@ describe('sweep', () => {
     expect(outJson()).toEqual({
       swept: 7,
       seconds: 30,
-      device: 'AIOC Audio',
+      input: 'AIOC Audio',
       active: [
         { channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 },
         { channel: 3, slot: 0, name: 'NOAA 3', requestedMhz: '162.55', activeSeconds: 1 },
@@ -209,10 +209,10 @@ describe('sweep', () => {
       channel: null,
       requestedMhz: '162.4',
       activeSeconds: active,
-      summary: { swept: 0, seconds: 2, device: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' } },
+      summary: { swept: 0, seconds: 2, input: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' } },
     });
     expect(errJson()).not.toHaveProperty('written');
-    expect(errJson().summary).toEqual({ swept: 0, seconds: 2, device: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' } });
+    expect(errJson().summary).toEqual({ swept: 0, seconds: 2, input: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' } });
     expect(errJson().message).toContain('VFO mode, another slot selected, volume knob down, plug unseated, quiet frequency');
     expect(stdout).toEqual([]);
   });
@@ -364,7 +364,7 @@ describe('sweep', () => {
     await run([...SWEEP, '--json'], opener(radio));
     expect(process.exitCode).toBe(130);
     expect(radio.writes).toEqual([0x0000, 0x1000]);
-    expect(outJson()).toEqual({ swept: 0, seconds: 2, device: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' }, interrupted: 'SIGINT' });
+    expect(outJson()).toEqual({ swept: 0, seconds: 2, input: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' }, interrupted: 'SIGINT' });
   });
 
   it('prints nothing on stdout and the error with the summary and slot0 on stderr when a dwell fails', async () => {
@@ -408,7 +408,7 @@ describe('sweep', () => {
     expect(errJson()).toEqual({
       reason: 'audio-process-failed',
       message: 'ffmpeg exited 1 capturing from "AIOC Audio"',
-      remedy: 'check that --device names the AIOC input and the terminal has microphone access',
+      remedy: 'check that --input names the AIOC input and the terminal has microphone access',
       retry: 'after-remedy',
       phase: 'dwell',
       slot: 0,
@@ -417,7 +417,7 @@ describe('sweep', () => {
       summary: {
         swept: 1,
         seconds: 2,
-        device: 'AIOC Audio',
+        input: 'AIOC Audio',
         active: [{ channel: 1, slot: 0, name: 'NOAA 1', requestedMhz: '162.4', activeSeconds: 2 }],
         warnings: [],
         slot0: { channel: 2, name: 'NOAA 2' },
@@ -544,19 +544,19 @@ describe('sweep', () => {
 
   it('reports --device in the summary', async () => {
     listenMock.mockImplementation(async (_device, seconds) => heard(seconds, seconds));
-    await run([...SWEEP, '--device', '1', '--json'], opener(new FakeRadio()));
+    await run([...SWEEP, '--input', '1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     expect(listenMock.mock.calls.every((c) => c[0] === '1')).toBe(true);
-    expect(outJson()).toMatchObject({ device: '1' });
+    expect(outJson()).toMatchObject({ input: '1' });
   });
 
   it('names the AIOC input, squelch above 0 and the two channel names in help sweep', async () => {
     await cli(['help', 'sweep', '--json']);
     const help = JSON.parse(stdout.join('')) as { preconditions: string[]; effects: string[]; flags: { flag: string; help: string }[]; result: object };
-    expect(help.preconditions).toEqual(expect.arrayContaining(['--device names the AIOC input.', 'Squelch is above 0; uv5r status reports it.']));
-    expect(help.flags.find((f) => f.flag === '--device')!.help).toContain('name the AIOC input');
+    expect(help.preconditions).toEqual(expect.arrayContaining(['--input names the AIOC input.', 'Squelch is above 0; uv5r status reports it.']));
+    expect(help.flags.find((f) => f.flag === '--input')!.help).toContain('name the AIOC input');
     expect(help.effects).toContain('active[].name is the plan name. slot0.name is the name the radio holds, uppercased and cut to 7 characters. Match the two on channel.');
-    expect(help.result).toMatchObject({ device: 'AIOC Audio' });
+    expect(help.result).toMatchObject({ input: 'AIOC Audio' });
   });
 
   it('describes the one sweep mode in help sweep', async () => {
@@ -578,7 +578,7 @@ describe('sweep', () => {
 
 describe('runSweep', () => {
   const entries = readPlan(EXAMPLE_PLAN).entries;
-  const options = { device: 'AIOC Audio', seconds: 2 };
+  const options = { input: 'AIOC Audio', seconds: 2 };
   const idle: SweepSteps = { check: async () => {}, prepare: async () => {} };
 
   it('stops after the dwell in progress when a signal arrives and removes its handlers', async () => {
@@ -606,7 +606,7 @@ describe('runSweep', () => {
       },
     };
     const summary = await runSweep(entries, steps, options, newProgress(), signals);
-    expect(summary).toEqual({ swept: 0, seconds: 2, device: 'AIOC Audio', active: [], warnings: [], slot0: null, interrupted: 'SIGHUP' });
+    expect(summary).toEqual({ swept: 0, seconds: 2, input: 'AIOC Audio', active: [], warnings: [], slot0: null, interrupted: 'SIGHUP' });
     expect(listenMock).not.toHaveBeenCalled();
   });
 
@@ -618,7 +618,7 @@ describe('runSweep', () => {
       throw new TransportError('audio-process-failed', 'ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"');
     });
     const summary = await runSweep(entries, idle, options, newProgress(), signals);
-    expect(summary).toEqual({ swept: 0, seconds: 2, device: 'AIOC Audio', active: [], warnings: [], slot0: null, interrupted: 'SIGTERM' });
+    expect(summary).toEqual({ swept: 0, seconds: 2, input: 'AIOC Audio', active: [], warnings: [], slot0: null, interrupted: 'SIGTERM' });
     expect(listenMock).toHaveBeenCalledTimes(1);
     expect(listenMock.mock.calls[0]![3]).toMatchObject({ stop: expect.any(Promise) });
   });
@@ -630,9 +630,9 @@ describe('runSweep', () => {
       await opts!.stop;
       throw new TransportError('audio-process-failed', 'ffmpeg killed after a signal to uv5r capturing from "AIOC Audio"');
     });
-    const done = runSweep(entries, slotZero(new FakeRadio(), { rxHz: 162_400_000 }, { device: 'AIOC Audio' }), options, newProgress(), signals);
+    const done = runSweep(entries, slotZero(new FakeRadio(), { rxHz: 162_400_000 }, { input: 'AIOC Audio' }), options, newProgress(), signals);
     await vi.runAllTimersAsync();
-    expect(await done).toEqual({ swept: 0, seconds: 2, device: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' }, interrupted: 'SIGTERM' });
+    expect(await done).toEqual({ swept: 0, seconds: 2, input: 'AIOC Audio', active: [], warnings: [], slot0: { channel: null, name: '162.4' }, interrupted: 'SIGTERM' });
     expect(listenMock).toHaveBeenCalledTimes(1);
     expect(listenMock.mock.calls[0]![3]).toMatchObject({ stop: expect.any(Promise) });
   });
@@ -641,7 +641,7 @@ describe('runSweep', () => {
     const signals = new EventEmitter();
     listenMock.mockImplementation(async (_device, seconds) => heard(seconds, seconds));
     const progress = newProgress();
-    const done = runSweep(entries, slotZero(new FakeRadio(), { rxHz: 162_400_000 }, { device: 'AIOC Audio' }), options, progress, signals);
+    const done = runSweep(entries, slotZero(new FakeRadio(), { rxHz: 162_400_000 }, { input: 'AIOC Audio' }), options, progress, signals);
     for (let i = 0; i < 1000 && progress.slot0?.channel !== entries[0]!.channel; i++) await vi.advanceTimersByTimeAsync(10);
     expect(vi.getTimerCount()).toBe(1);
     const signalAt = Date.now();
@@ -689,7 +689,7 @@ describe('runSweep', () => {
 
 describe('dwell', () => {
   const entry = readPlan(EXAMPLE_PLAN).entries[0]!;
-  const options = { device: 'AIOC Audio', seconds: 2 };
+  const options = { input: 'AIOC Audio', seconds: 2 };
 
   it('captures to a part file and renames it to the captureName', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'uv5r-'));

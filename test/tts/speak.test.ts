@@ -124,7 +124,7 @@ describe('speakUtterance', () => {
     const withPort = port();
     const monitor = fakeMonitor([pcmFrame(-80), pcmFrame(-20), pcmFrame(-80)]);
     const err = await failure(speakUtterance({ ...OPTIONS, clearSeconds: 1 }, fakeSpeechDeps({ monitor: () => monitor }), withPort));
-    expect(err.toJSON()).toMatchObject({ reason: 'channel-busy', device: 'AIOC Audio' });
+    expect(err.toJSON()).toMatchObject({ reason: 'channel-busy', input: 'AIOC Audio' });
     expect(err.kind).toBe('device-state');
     expect(withPort.opens).toBe(0);
     expect(monitor.stops()).toBeGreaterThan(0);

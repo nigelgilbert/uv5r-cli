@@ -20,7 +20,7 @@ const CHECK_ACTIVE_SHARE = 0.8;
 
 export interface CheckOptions {
   /** avfoundation audio input to capture from. */
-  device: string;
+  input: string;
   /** Magic the clone session opens with; 291 when absent. */
   magic?: Magic;
 }
@@ -87,7 +87,7 @@ export async function checkChannel(t: Transport, n: number, spec: ChannelSpec, o
   await settle();
   let heard: ListenResult;
   try {
-    heard = await listen(options.device, CHECK_SECONDS, DEFAULT_FLOOR_DBFS);
+    heard = await listen(options.input, CHECK_SECONDS, DEFAULT_FLOOR_DBFS);
   } catch (err) {
     throw withDetail(err, { slot: n, requestedMhz: formatMhz(spec.rxHz) });
   }

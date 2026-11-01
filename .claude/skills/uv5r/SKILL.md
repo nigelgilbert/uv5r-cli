@@ -18,6 +18,7 @@ Read `uv5r help --json` once at the start of a session for the operating rules, 
 - Write a plan to its own slots with one `uv5r load PLAN.json`. Write public-safety listening channels with `--rx-only`.
 - Run `uv5r sweep channels.json --seconds 30 --out-dir rx` after the human sets MR mode and selects slot 0.
 - On `input clips`, run the `volume` loop.
+- The audio verbs capture from `AIOC Audio`. When the AIOC input has another name, pass `--input NAME` to `check`, `listen`, `hear`, `sweep` and `volume`.
 
 ## Ask the human
 

@@ -18,6 +18,7 @@ level beside them. Act on `reason`, `remedy` and `retry`.
   or the `checkMhz` frequency during the check).
 - `summary.slot0` says whether a write landed.
 - A failed check also carries the check result fields.
+- An audio capture error adds `input`, the avfoundation input it captured from.
 - A `key`, `say` or `id` error adds `assertedAtMs` and `releasedAtMs` for each PTT change that
   resolved.
 - A `volume` error from the squelch write, the read-back, the capture or the restore, after it

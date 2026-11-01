@@ -32,7 +32,7 @@ function start(opts: Partial<HearOptions> = {}, transcribe = fakeTranscribe()) {
   const signals = new EventEmitter();
   const lines: HearLine[] = [];
   const done = runHear(monitor, transcribe, clock.now, (line) => lines.push(line), signals, {
-    device: 'AIOC Audio',
+    input: 'AIOC Audio',
     floorDbfs: -50,
     hangSeconds: 0.8,
     once: false,
@@ -80,7 +80,7 @@ describe('runHear', () => {
     expect(Object.keys(line!)).toEqual(['type', 'seq', 'start', 'seconds', 'rmsDbfs', 'peakDbfs', 'text', 'engine', 'model', 'inferMs', 'wav']);
     // The opening run starts at frame 100; the segment starts 15 pre-roll frames earlier, at 85.
     expect(line).toMatchObject({ seq: 1, start: '2026-10-25T14:00:01.720Z', text: 'bench this is kilo juliett seven status over', engine: 'whisper.cpp', model: 'ggml-base.en-q5_1', inferMs: 640, wav: null });
-    expect(summary).toEqual({ type: 'summary', transmissions: 1, seconds: 3.9, device: 'AIOC Audio', warnings: 0, interrupted: 'SIGINT' });
+    expect(summary).toEqual({ type: 'summary', transmissions: 1, seconds: 3.9, input: 'AIOC Audio', warnings: 0, interrupted: 'SIGINT' });
     expect(h.lines.at(-1)).toEqual(summary);
   });
 
@@ -242,14 +242,14 @@ describe('runHear --once', () => {
     vi.setSystemTime(BASE);
     const monitor = new FakeMonitor();
     const lines: HearLine[] = [];
-    const opts: HearOptions = { device: 'AIOC Audio', floorDbfs: -50, hangSeconds: 0.8, once: true, timeoutSeconds: 60, model: 'ggml-base.en-q5_1' };
+    const opts: HearOptions = { input: 'AIOC Audio', floorDbfs: -50, hangSeconds: 0.8, once: true, timeoutSeconds: 60, model: 'ggml-base.en-q5_1' };
     const done = runHear(monitor, fakeTranscribe(), Date.now, (line) => lines.push(line), new EventEmitter(), opts);
     let ended = false;
     void done.then(() => (ended = true));
     await vi.advanceTimersByTimeAsync(59_999);
     expect(ended).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(await done).toEqual({ type: 'summary', transmissions: 0, seconds: 60, device: 'AIOC Audio', warnings: 0, timedOut: true });
+    expect(await done).toEqual({ type: 'summary', transmissions: 0, seconds: 60, input: 'AIOC Audio', warnings: 0, timedOut: true });
     expect(monitor.stops).toBeGreaterThan(0);
   });
 
@@ -258,7 +258,7 @@ describe('runHear --once', () => {
     await h.monitor.feed(silentFrames(60), TX);
     const summary = await h.done;
     expect(h.transcribe.calls).toEqual([]);
-    expect(h.lines).toEqual([{ type: 'summary', transmissions: 0, seconds: 1, device: 'AIOC Audio', warnings: 0, timedOut: true }]);
+    expect(h.lines).toEqual([{ type: 'summary', transmissions: 0, seconds: 1, input: 'AIOC Audio', warnings: 0, timedOut: true }]);
     expect(summary.timedOut).toBe(true);
   });
 

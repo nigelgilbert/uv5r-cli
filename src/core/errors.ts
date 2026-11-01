@@ -83,13 +83,13 @@ export const REASONS: Record<ErrorReason, ReasonDoc> = {
   'audio-process-failed': {
     kind: 'transport',
     means: 'ffmpeg or afplay exited with an error, timed out or stopped on a signal',
-    remedy: 'check that --device names the AIOC input and the terminal has microphone access',
+    remedy: 'check that --input names the AIOC input and the terminal has microphone access',
     retry: 'after-remedy',
   },
   'capture-incomplete': {
     kind: 'transport',
     means: 'ffmpeg returned fewer whole seconds than requested plus the first second the CLI drops; captured and requested count that second',
-    remedy: 'rerun the command; check that --device names the AIOC input if it fails again',
+    remedy: 'rerun the command; check that --input names the AIOC input if it fails again',
     retry: 'once',
   },
   'file-write-failed': {

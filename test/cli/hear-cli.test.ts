@@ -106,7 +106,7 @@ describe('hear', () => {
     const out = lines();
     expect(out.map((l) => l.type)).toEqual(['transmission', 'summary']);
     expect(out[0]).toMatchObject({ seq: 1, model: 'ggml-small.en', engine: 'whisper.cpp', wav: null });
-    expect(out[1]).toEqual({ type: 'summary', transmissions: 1, seconds: 2.5, device: 'USB Input', warnings: 0, timedOut: false });
+    expect(out[1]).toEqual({ type: 'summary', transmissions: 1, seconds: 2.5, input: 'USB Input', warnings: 0, timedOut: false });
   });
 
   it('defaults the device to AIOC Audio, the model to base.en-q5_1 and the prompt to empty with no callsign', async () => {
@@ -120,7 +120,7 @@ describe('hear', () => {
 
   it('passes --device over the config inputDevice', async () => {
     const h = hearDeps();
-    const done = cli(['hear', '--once', '--device', 'AIOC Audio', '--config', STATION, '--json'], noPort, h.deps);
+    const done = cli(['hear', '--once', '--input', 'AIOC Audio', '--config', STATION, '--json'], noPort, h.deps);
     await h.monitor.feed(TX);
     await done;
     expect(h.devices).toEqual(['AIOC Audio']);
@@ -143,7 +143,7 @@ describe('hear', () => {
     await h.monitor.feed(silentFrames(60));
     await done;
     expect(process.exitCode).toBe(0);
-    expect(lines()).toEqual([{ type: 'summary', transmissions: 0, seconds: 1, device: 'USB Input', warnings: 0, timedOut: true }]);
+    expect(lines()).toEqual([{ type: 'summary', transmissions: 0, seconds: 1, input: 'USB Input', warnings: 0, timedOut: true }]);
   });
 
   it('keeps segment WAVs in --out-dir and continues seq past the highest one there', async () => {
@@ -184,7 +184,7 @@ describe('hear', () => {
     h.deps.signals.emit('SIGTSTP');
     await done;
     expect(process.exitCode).toBe(signalExitCode('SIGTSTP'));
-    expect(lines()).toEqual([{ type: 'summary', transmissions: 0, seconds: 0.2, device: 'USB Input', warnings: 0, interrupted: 'SIGTSTP' }]);
+    expect(lines()).toEqual([{ type: 'summary', transmissions: 0, seconds: 0.2, input: 'USB Input', warnings: 0, interrupted: 'SIGTSTP' }]);
   });
 
   it('keeps the lines printed before a whisper-cli failure and exits 3 with the error on stderr', async () => {
@@ -241,7 +241,7 @@ describe('hear', () => {
     expect(help.schemaVersion).toBe(2);
     expect(help.lines.map((l: { type: string }) => l.type)).toEqual(['warning', 'transmission', 'summary']);
     expect(help.result).toEqual(help.lines.at(-1));
-    expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--device', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config', '--json']);
+    expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--input', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config', '--json']);
     expect(help.writesToRadio).toEqual({ writes: false, note: 'opens no serial port' });
   });
 });

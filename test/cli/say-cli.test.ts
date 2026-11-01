@@ -158,7 +158,7 @@ describe('say', () => {
     });
     await cli(['say', 'hello', '--config', config({ callsign: 'KJ7ABC', inputDevice: 'USB In' }), '--clear', '1', '--json'], open, deps);
     expect(process.exitCode).toBe(5);
-    expect(errJson()).toMatchObject({ reason: 'channel-busy', device: 'USB In' });
+    expect(errJson()).toMatchObject({ reason: 'channel-busy', input: 'USB In' });
     expect(devices).toEqual(['USB In']);
     expect(open.calls).toBe(0);
   });

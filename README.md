@@ -183,7 +183,7 @@ number. Ctrl-C lowers PTT; a failed release exits 3. Details in [docs/errors.md]
 | exit 5 `squelch-open` | squelch is 0 | `uv5r settings squelch 3` |
 | exit 5 `audio-inactive` | VFO mode, wrong slot, knob down, plug short or quiet frequency | MR mode, slot 0, knob up, reseat the plug, another NOAA frequency |
 | exit 5 `session-unavailable` | the radio did not answer the magic | `uv5r identify`; when it prints a `pin` line, put it before every command |
-| levels read digital zero | the terminal lacks microphone access | grant it in Privacy & Security, Microphone |
+| levels read digital zero | the terminal lacks microphone access, or `--input` names another input | grant it in Privacy & Security, Microphone; pass `--input "AIOC Audio"` |
 | levels sit near -66 dBFS | the knob is down or the plug is short of its contact | knob up, push the plug home |
 | warning `input clips` | the knob is too high | `uv5r volume` until `ok` |
 | silence from the speaker | the AIOC mutes it | `listen --play`, or play the WAVs |

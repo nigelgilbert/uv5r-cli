@@ -84,7 +84,7 @@ or a key of the wrong type, exits 2 with `invalid-argument`. No callsign exits 2
 
 - `callsign` takes letters and digits.
 - `outputDevice` sets the `--output` default. It defaults to `AIOC Audio`.
-- `inputDevice` sets the device `say --clear` and `hear` listen on. It defaults to `AIOC Audio`.
+- `inputDevice` sets the device `say --clear` and `hear` listen on. It defaults to `AIOC Audio`. `hear --input` overrides it.
 - `model` names the whisper.cpp model relative to the repo root,
   `models/ggml-base.en-q5_1.bin` by default.
 

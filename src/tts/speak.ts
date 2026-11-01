@@ -169,11 +169,11 @@ export async function checkClear(monitor: Monitor, device: string, seconds: numb
   }
   if (loudest > DEFAULT_FLOOR_DBFS) {
     throw new DeviceStateError('channel-busy', `heard ${round(loudest)} dBFS on ${JSON.stringify(device)} during the ${seconds} s clear check, above ${DEFAULT_FLOOR_DBFS} dBFS`, {
-      device,
+      input: device,
       rmsDbfs: round(loudest),
     });
   }
-  if (got < needed) throw new TransportError('capture-incomplete', `the clear check captured ${got} of ${needed} frames from ${JSON.stringify(device)}`, { device, captured: got, requested: needed });
+  if (got < needed) throw new TransportError('capture-incomplete', `the clear check captured ${got} of ${needed} frames from ${JSON.stringify(device)}`, { input: device, captured: got, requested: needed });
 }
 
 /**
