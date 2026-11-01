@@ -281,15 +281,32 @@ const LISTEN_EXAMPLE = {
   activeSeconds: 5,
   warnings: [],
 };
-/** Return the device block of one verb. */
-function device(opensPort: boolean, cloneSession: boolean, writesToRadio: boolean, appliesAfterMs: number, partialWrite: boolean, note: string): DeviceDoc {
-  return { opensPort, cloneSession, writesToRadio, appliesAfterMs, partialWrite, note };
-}
 /** Milliseconds after exit before the radio applies a write the last session made. */
 const APPLIES_MS = SETTLE_MS;
-const READS_ONLY = device(true, true, false, 0, false, 'reads only');
-const PTT_ONLY = device(true, false, false, 0, false, 'raises PTT; transmits on a TX channel');
-const AUDIO_ONLY = device(false, false, false, 0, false, 'audio only');
+const READS_ONLY: DeviceDoc = {
+  opensPort: true,
+  cloneSession: true,
+  writesToRadio: false,
+  appliesAfterMs: 0,
+  partialWrite: false,
+  note: 'reads only',
+};
+const PTT_ONLY: DeviceDoc = {
+  opensPort: true,
+  cloneSession: false,
+  writesToRadio: false,
+  appliesAfterMs: 0,
+  partialWrite: false,
+  note: 'raises PTT; transmits on a TX channel',
+};
+const AUDIO_ONLY: DeviceDoc = {
+  opensPort: false,
+  cloneSession: false,
+  writesToRadio: false,
+  appliesAfterMs: 0,
+  partialWrite: false,
+  note: 'audio only',
+};
 
 const verbs: Record<string, Verb> = {
   status: {
@@ -372,7 +389,14 @@ const verbs: Record<string, Verb> = {
       'Keep BCL, PTT-ID, S-code and scan of an existing record. An empty slot gets BCL off, PTT-ID 0, S-code 0, scan on.',
     ],
     preconditions: [RADIO_READY, CHANNEL_PRECONDITION, 'Follow the checkFirst rule before tuning slot 0.'],
-    device: device(true, true, true, APPLIES_MS, false, 'record and name of slot N'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: APPLIES_MS,
+      partialWrite: false,
+      note: 'record and name of slot N',
+    },
     result: { channel: 5, ...CHANNEL_RECORD, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
     exits: [VERIFY_EXIT],
     positionals: 1,
@@ -391,7 +415,14 @@ const verbs: Record<string, Verb> = {
       'Slot N keeps the record after the write, also after a capture failure.',
     ],
     preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot N.', 'FREQ carries audio here, such as NOAA.'],
-    device: device(true, true, true, 0, false, 'a receive-only record in slot N, applied before the capture; nothing restores the old one'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: 0,
+      partialWrite: false,
+      note: 'a receive-only record in slot N, applied before the capture; nothing restores the old one',
+    },
     result: { slot: 0, requestedHz: 162_400_000, ...LISTEN_EXAMPLE },
     exits: [
       { code: 3, when: 'a short capture; a capture error after the write adds slot and requestedHz' },
@@ -413,7 +444,14 @@ const verbs: Record<string, Verb> = {
       'Write each entry to its slot in one clone session and read each back. Other slots keep their records.',
     ],
     preconditions: [RADIO_READY],
-    device: device(true, true, true, APPLIES_MS, true, 'record and name of each plan slot; a failure keeps earlier slots'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: APPLIES_MS,
+      partialWrite: true,
+      note: 'record and name of each plan slot; a failure keeps earlier slots',
+    },
     result: [{ channel: 1, rxHz: 162_400_000, txHz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
     exits: [
       { code: 2, when: 'a bad plan: no channels, a bad or unknown field, a channel outside 0..127 or listed twice; adds field or channel' },
@@ -446,7 +484,14 @@ const verbs: Record<string, Verb> = {
     flags: COMMON_FLAGS,
     effects: ['Write 0xFF over the record and name of slot N and read both back.'],
     preconditions: [RADIO_READY],
-    device: device(true, true, true, APPLIES_MS, false, '0xFF over record and name of slot N'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: APPLIES_MS,
+      partialWrite: false,
+      note: '0xFF over record and name of slot N',
+    },
     result: { channel: 127, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
     exits: [VERIFY_EXIT],
     positionals: 1,
@@ -555,7 +600,7 @@ const verbs: Record<string, Verb> = {
       'Read the full image in CHIRP layout in one clone session, about 14 s, and write it to FILE.',
     ],
     preconditions: [RADIO_READY],
-    device: device(true, true, false, 0, false, 'reads only; writes FILE'),
+    device: { ...READS_ONLY, note: 'reads only; writes FILE' },
     result: { out: 'radio.img', bytes: 6472, firmware: 'HN5RV011', family: 'uv5r', magic: '291' },
     exits: [
       { code: 2, when: 'FILE not writable, before the port opens' },
@@ -575,7 +620,14 @@ const verbs: Record<string, Verb> = {
       'In a fresh session, read back settings, records 0x0000..0x07FF and names 0x1000..0x17FF and compare with IMAGE.',
     ],
     preconditions: [RADIO_READY, 'IMAGE comes from a radio with the same ident.'],
-    device: device(true, true, true, 0, true, 'channels, names and settings from IMAGE, read back after the reload'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: 0,
+      partialWrite: true,
+      note: 'channels, names and settings from IMAGE, read back after the reload',
+    },
     result: { file: 'radio.img', blocks: 382, verifiedBlocks: 64, settings: SETTINGS_EXAMPLE },
     exits: [
       { code: 2, when: 'no --force, or an unreadable or short IMAGE' },
@@ -596,7 +648,14 @@ const verbs: Record<string, Verb> = {
       'Squelch applies as soon as the session ends.',
     ],
     preconditions: [RADIO_READY],
-    device: device(true, true, true, APPLIES_MS, false, 'the settings block with FIELD VALUE pairs; with none it reads only and applies after 0 ms'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: APPLIES_MS,
+      partialWrite: false,
+      note: 'the settings block with FIELD VALUE pairs; with none it reads only and applies after 0 ms',
+    },
     result: SETTINGS_EXAMPLE,
     exits: [VERIFY_EXIT],
     fields: Object.fromEntries(SETTING_NAMES.map((name) => [name, settingValues(name)])),
@@ -690,7 +749,14 @@ const verbs: Record<string, Verb> = {
       'A signal stops the capture, prints the summary with interrupted and exits 128 plus the signal.',
     ],
     preconditions: [RADIO_READY, AUDIO_READY, ...CAPTURE_READY, 'The human has set MR mode and selected slot 0.', 'checkMhz carries audio here.'],
-    device: device(true, true, true, 0, false, 'slot 0 per check and entry, applied before each capture; the last write stays'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: 0,
+      partialWrite: false,
+      note: 'slot 0 per check and entry, applied before each capture; the last write stays',
+    },
     result: {
       swept: 7,
       seconds: SWEEP_SECONDS,
@@ -731,7 +797,14 @@ const verbs: Record<string, Verb> = {
       'The radio is on a quiet channel; a carrier hides the static. Name the channel the display shows first.',
       'The macOS input volume of AIOC Audio is at 100 percent; a lower one scales the samples and hides clipping.',
     ],
-    device: device(true, true, true, 0, false, 'squelch 0 for the capture, then the kept squelch'),
+    device: {
+      opensPort: true,
+      cloneSession: true,
+      writesToRadio: true,
+      appliesAfterMs: 0,
+      partialWrite: false,
+      note: 'squelch 0 for the capture, then the kept squelch',
+    },
     result: { state: 'too-loud', rmsDbfs: -10.4, instruction: VOLUME_INSTRUCTIONS.farAbove },
     exits: [
       { code: 0, when: 'every state' },
