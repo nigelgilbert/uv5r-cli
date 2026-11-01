@@ -24,12 +24,11 @@ const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 /**
- * Measured bytes of `uv5r help --json`, `uv5r help errors --json` and each `uv5r help VERB --json`, trailing newline included.
+ * Measured bytes of `uv5r help --json` and each `uv5r help VERB --json`, trailing newline included.
  * Refresh them after a help text change with `node src/cli/main.ts help VERB --json | wc -c`.
  */
-const HELP_BYTES: { catalog: number; errors: number; verbs: Record<string, number> } = {
+const HELP_BYTES: { catalog: number; verbs: Record<string, number> } = {
   catalog: 4086,
-  errors: 4596,
   verbs: {
     status: 1115,
     identify: 2027,
@@ -72,32 +71,6 @@ const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
   sweep: [true, true, true, 0, true],
   volume: [true, true, true, 0, true],
 };
-const REASON_ENUM = [
-  'device-unavailable',
-  'serial-io-failed',
-  'ptt-control-failed',
-  'dependency-missing',
-  'audio-process-failed',
-  'capture-incomplete',
-  'file-write-failed',
-  'speech-engine-failed',
-  'audio-device-unavailable',
-  'session-unavailable',
-  'protocol-reply-invalid',
-  'radio-unsupported',
-  'write-unacknowledged',
-  'verification-failed',
-  'image-incompatible',
-  'audio-inactive',
-  'squelch-open',
-  'channel-busy',
-  'invalid-argument',
-  'station-unconfigured',
-  'utterance-too-long',
-  'device-busy',
-  'serial-timeout',
-  'unexpected-error',
-];
 
 let stdout: string[];
 let stderr: string[];
@@ -243,24 +216,6 @@ describe('help', () => {
     expect(check.exits[2].when).toContain('audio-inactive under 80% active');
   });
 
-  it('lists radio-unsupported with exit 5 and retry no in help errors', async () => {
-    const help = await helpJson('errors');
-    expect(help.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(help.reasons['radio-unsupported']).toEqual({
-      exit: 5,
-      retry: 'no',
-      means: 'the radio on the cable answered a magic of another family',
-      remedy: REASONS['radio-unsupported'].remedy,
-    });
-    expect(Object.keys(help.reasons)).toEqual(REASON_ENUM);
-    for (const [reason, doc] of Object.entries(help.reasons) as Array<[keyof typeof REASONS, Record<string, unknown>]>) {
-      expect(doc).toEqual({ exit: expect.any(Number), retry: REASONS[reason].retry, means: REASONS[reason].means, remedy: REASONS[reason].remedy });
-    }
-    stdout = [];
-    await onTerminal(() => cli(['help', 'errors']));
-    expect(stdout.join('')).toContain('radio-unsupported (exit 5, retry no): the radio on the cable answered a magic of another family\n  remedy: ');
-  });
-
   it('prints help VERB with no exit section when the global table covers the verb', async () => {
     await onTerminal(() => cli(['help', 'status']));
     expect(stdout.join('')).not.toContain('exit codes');
@@ -284,7 +239,6 @@ describe('help', () => {
     });
     expect(Object.keys(help.exitCodes)).toEqual(['0', '1', '2', '3', '4', '5', '6', '128+signal']);
     expect(help.errors.format).toContain('type "error", kind, reason, message, remedy, retry');
-    expect(help.errors.format).toContain('help errors --json');
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
     expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep', 'volume']);
@@ -309,9 +263,6 @@ describe('help', () => {
       const help = JSON.parse(out) as { flags: Array<{ flag: string }> };
       expect(entry.flags, verb).toEqual(help.flags.map((f) => f.flag));
     }
-    stdout = [];
-    await cli(['help', 'errors', '--json']);
-    expect(Math.abs(Buffer.byteLength(stdout.join('')) - HELP_BYTES.errors), 'errors').toBeLessThanOrEqual(HELP_BYTES_TOLERANCE);
   });
 
   it("every verb's help carries the per-verb fields", async () => {

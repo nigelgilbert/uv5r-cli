@@ -166,7 +166,7 @@ channel-plan skill for your location. `channels.json` is gitignored.
 | `hear` | Transcribe each received transmission | no |
 | `sweep` | Check slot 0, then dwell on each plan entry in slot 0 | slot 0 |
 
-Run `uv5r help VERB` for flags, defaults, results and exit cases, and `uv5r help errors` for each error reason, with `--json` for JSON.
+Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` for JSON.
 
 ## Output and errors
 

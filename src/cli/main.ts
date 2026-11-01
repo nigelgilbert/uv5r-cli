@@ -133,7 +133,7 @@ const RULES = {
 const OUTPUT_RULE =
   'JSON when piped or with --json, else text; hear prints NDJSON. A failed command prints its error on stderr and no result; hear keeps lines printed before it.';
 
-/** What each exit code means; `help errors` lists the reasons under each kind. */
+/** What each exit code means. */
 const EXIT_CODES: Record<string, string> = {
   '0': 'ok',
   '1': 'unexpected',
@@ -147,30 +147,9 @@ const EXIT_CODES: Record<string, string> = {
 
 /** The errors section of `help --json`: the error format and the retry values. */
 const ERRORS_HELP = {
-  format:
-    'One JSON object on stderr: type "error", kind, reason, message, remedy, retry and detail fields; kind sets the exit code. ' +
-    'help errors --json lists the reasons.',
+  format: 'One JSON object on stderr: type "error", kind, reason, message, remedy, retry and detail fields; kind sets the exit code.',
   retry: RETRY,
 };
-
-/** The `help errors` topic: each reason with its exit code, meaning, remedy and retry. */
-function errorsJson(): Record<string, unknown> {
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    topic: 'errors',
-    reasons: Object.fromEntries(
-      Object.entries(REASONS).map(([reason, doc]) => [reason, { exit: exitCodeFor(doc.kind), retry: doc.retry, means: doc.means, remedy: doc.remedy }]),
-    ),
-  };
-}
-
-function errorsText(): string {
-  return [
-    'error reasons: exit code, retry, meaning and remedy',
-    '',
-    ...Object.entries(REASONS).map(([reason, doc]) => `${reason} (exit ${exitCodeFor(doc.kind)}, retry ${doc.retry}): ${doc.means}\n  remedy: ${doc.remedy}`),
-  ].join('\n');
-}
 
 const TARGET_FLAG: FlagDoc = {
   name: 'target',
@@ -861,7 +840,7 @@ function helpText(): string {
     ...Object.entries(verbs).map(([name, v]) => `  ${name.padEnd(width)}  ${v.summary}`),
     `  ${'help'.padEnd(width)}  Print this overview; help VERB prints one verb`,
     '',
-    'run uv5r help VERB for flags, effects, a result example and exit notes; uv5r help errors lists every error reason',
+    'run uv5r help VERB for flags, effects, a result example and exit notes',
     'run uv5r help --json or uv5r help VERB --json for JSON; uv5r --version prints the version',
     '',
     'rules:',
@@ -893,15 +872,11 @@ function helpJson(): Record<string, unknown> {
   };
 }
 
-/** Help subjects beside the verbs. */
-const HELP_TOPICS = ['errors'];
-
-/** Print the overview, one verb's entry or a topic; JSON when piped or with --json. */
+/** Print the overview or one verb's entry; JSON when piped or with --json. */
 function printHelp(flags: Map<string, string | true>, subject: string | undefined): void {
   const json = wantsJson(flags);
   let out: string;
   if (subject === undefined) out = json ? JSON.stringify(helpJson()) : helpText();
-  else if (subject === 'errors') out = json ? JSON.stringify(errorsJson()) : errorsText();
   else {
     const doc = verbs[subject]!;
     out = json ? JSON.stringify({ schemaVersion: SCHEMA_VERSION, ...verbJson(subject, doc) }) : verbText(subject, doc);
@@ -1593,7 +1568,7 @@ async function main(args: Invocation): Promise<number> {
     checkFlags('help', args.flags, ['help', 'json']);
     checkPositionals('help', args.positionals, 1, 'uv5r help VERB');
     const subject = args.positionals[0];
-    if (subject !== undefined && !isVerb(subject) && !HELP_TOPICS.includes(subject)) throw unknownVerb('unknown help subject', subject);
+    if (subject !== undefined && !isVerb(subject)) throw unknownVerb('unknown help subject', subject);
     printHelp(args.flags, subject);
     return EXIT.ok;
   }
