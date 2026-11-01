@@ -110,10 +110,18 @@ const MIN_IMAGE_BYTES = IMAGE_HEADER + Math.max(...RESTORE_RANGES.map(([, end]) 
 export const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
 
+/** The station ID sentence for `key`, which the transmit rule and the key help share. */
+const KEY_ID_RULE =
+  '`key` sends a carrier and no ID; send the callsign after it with `uv5r id` or by voice, at the end of the transmission and every ten minutes.';
+
 /** The control-operator rule for the transmit verbs; help and README.md carry it word for word. */
 export const TRANSMIT_RULE =
-  'You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. Each one ends with the uv5r.json callsign. ' +
-  'Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.';
+  'You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. `say` and `id` end with the uv5r.json callsign. ' +
+  `${KEY_ID_RULE} Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.`;
+
+/** How a frequency argument reads; help and README.md carry it word for word. */
+export const FREQUENCY_RULE =
+  'A frequency is MHz when below 1000, else Hz. 144.684, 144684000 and 144.684e6 are the same value. Results are Hz integers.';
 
 /** Operating rules `help` prints for an agent that reads no other doc. */
 const RULES = {
@@ -121,6 +129,7 @@ const RULES = {
     'Slot 0 is the scratch slot. Once per session, before tuning it, run `uv5r check 162.400 --channel 0` with a local NOAA frequency; ' +
     'on exit 5 ask the human for MR mode on slot 0.',
   channel: CHANNEL_RULE,
+  frequency: FREQUENCY_RULE,
   oneVerb: 'Run one verb at a time; leave the serial port to uv5r.',
   clone: 'The receiver is deaf during a clone session (device.cloneSession); back-to-back ones take 3 s more.',
   speaker: 'The speaker is silent with the AIOC in; play WAVs from listen, sweep or hear for the human.',
@@ -152,7 +161,7 @@ const ERRORS_HELP = {
 const TARGET_FLAG: FlagDoc = {
   name: 'target',
   value: 'PATH',
-  help: 'serial device, or fake',
+  help: 'serial device, or fake; fake reads and writes the state file UV5R_FAKE_STATE names',
   default: 'UV5R_TARGET, else the AIOC',
 };
 const JSON_FLAG: FlagDoc = { name: 'json', help: 'print JSON' };
@@ -187,7 +196,7 @@ const TRANSMIT_FIELDS = {
   tailMs: `PTT hold after the player, 0..${MAX_PAD_MS}, default ${DEFAULT_TAIL_MS}`,
   maxSeconds: `WAV plus tail cap, 0 < S <= ${MAX_UTTERANCE_SECONDS}, default ${DEFAULT_MAX_SECONDS}`,
 };
-const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'MHz (154.680) or Hz, 136-174 or 400-520 MHz, 10 Hz steps' };
+const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'MHz below 1000, else Hz; 136-174 or 400-520 MHz, 10 Hz steps' };
 const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
 
 const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
@@ -341,12 +350,12 @@ const verbs: Record<string, Verb> = {
     args: [FREQ_ARG],
     flags: [
       CHANNEL_FLAG,
-      { name: 'offset', value: 'MHZ', default: 0, help: 'signed repeater offset, as in -0.6' },
+      { name: 'offset', value: 'FREQ', default: 0, group: 'tx', help: 'signed repeater offset, as in -0.6' },
       { name: 'tone', value: 'HZ', default: 'none', help: 'TX tone: CTCSS (82.5), DCS (D023, D023I) or none' },
       RX_TONE_FLAG,
       NARROW_FLAG,
       LOW_POWER_FLAG,
-      { name: 'rx-only', help: 'no TX frequency; conflicts with --offset' },
+      { name: 'rx-only', group: 'tx', help: 'no TX frequency; conflicts with --offset' },
       NAME_FLAG,
       ...COMMON_FLAGS,
     ],
@@ -472,6 +481,7 @@ const verbs: Record<string, Verb> = {
       'assertedAtMs and releasedAtMs are Date.now() as each DTR set resolves; an error omits the stamp of a failed set.',
       'Transmit on the channel the display shows. A receive-only slot radiates nothing.',
       'A signal once the port is open releases PTT, adds interrupted and exits 128 plus the signal.',
+      KEY_ID_RULE,
     ],
     preconditions: [RADIO_READY, 'Ask the human what the display shows.', 'Key only when the human asked, on a frequency they may use.'],
     device: PTT_ONLY,
@@ -977,12 +987,18 @@ function print(args: ParsedArgs, json: object, text: () => string): void {
   else process.stdout.write(`${text()}\n`);
 }
 
+/** Parse a signed `--offset` by the frequency rule on its magnitude: below 1000 is MHz, else Hz. */
+function parseOffset(text: string): number {
+  const n = parseDecimal(text, '--offset');
+  return checkTenHz(Math.abs(n) < 1000 ? n * 1_000_000 : n, `--offset ${text}`);
+}
+
 function channelSpec(freqText: string, flags: Map<string, string | true>): ChannelSpec {
   const rxHz = parseFrequency(freqText);
   const rxOnly = Boolean(flags.get('rx-only'));
   const offsetText = stringFlag(flags, 'offset');
   if (rxOnly && offsetText !== undefined) throw new UsageError('--rx-only and --offset conflict; a receive-only channel has no TX frequency');
-  const offsetHz = offsetText === undefined ? 0 : checkTenHz(parseDecimal(offsetText, '--offset') * 1_000_000, `--offset ${offsetText}`);
+  const offsetHz = offsetText === undefined ? 0 : parseOffset(offsetText);
   const txHz = rxOnly ? undefined : rxHz + offsetHz;
   checkBand(rxHz);
   if (txHz !== undefined) checkBand(txHz);
@@ -1065,7 +1081,7 @@ async function identifyVerb(args: Invocation): Promise<number> {
 async function tuneVerb(args: Invocation): Promise<number> {
   checkFlags('tune', args.flags, flagNames('tune'));
   const freq = args.positionals[0];
-  if (!freq) throw new UsageError('tune needs a frequency in MHz, as in: tune 154.680 --channel 5');
+  if (!freq) throw new UsageError('tune needs a frequency, MHz below 1000, else Hz, as in: tune 154.680 --channel 5');
   if (!args.flags.has('channel')) throw new UsageError('tune needs --channel N, the memory slot to write, as in: tune 154.680 --channel 0; run uv5r help tune for the channel rule');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
@@ -1085,7 +1101,7 @@ async function checkVerb(args: Invocation): Promise<number> {
   }
   checkFlags('check', args.flags, flagNames('check'));
   const freq = args.positionals[0];
-  if (!freq) throw new UsageError('check needs a frequency in MHz, as in: check 162.400 --channel 0');
+  if (!freq) throw new UsageError('check needs a frequency, MHz below 1000, else Hz, as in: check 162.400 --channel 0');
   if (!args.flags.has('channel')) throw new UsageError('check needs --channel N, as in: check 162.400 --channel 0');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);

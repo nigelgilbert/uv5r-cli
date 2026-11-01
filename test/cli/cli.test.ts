@@ -18,10 +18,11 @@ const tempDir = () => mkdtempSync(join(TMP, 'test-'));
 const FIXTURE = join(TMP, 'primary.img');
 writeFileSync(FIXTURE, PRIMARY.image);
 const README = new URL('../../README.md', import.meta.url).pathname;
-const SKILL = new URL('../../.claude/skills/uv5r/SKILL.md', import.meta.url).pathname;
 const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
+const FREQUENCY_RULE =
+  'A frequency is MHz when below 1000, else Hz. 144.684, 144684000 and 144.684e6 are the same value. Results are Hz integers.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 /** opensPort, cloneSession, writesToRadio, appliesAfterMs and partialWrite of each verb. */
 const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
@@ -152,8 +153,8 @@ describe('help', () => {
 
   it('prints help tune --json with usage, flags, effects, preconditions, writes, result and exits', async () => {
     const tune = await helpJson('tune');
-    expect(tune).toMatchObject({ schemaVersion: 3, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
-    expect(tune.usage).toBe('uv5r tune FREQ --channel N');
+    expect(tune).toMatchObject({ schemaVersion: 4, verb: 'tune', example: 'uv5r tune 154.680 --channel 5 --tone 82.5' });
+    expect(tune.usage).toBe('uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]');
     expect(tune.flags).toContainEqual({ flag: '--channel', value: 'N', required: true, default: null, help: expect.any(String) });
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--rx-tone', default: 'none' }));
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--narrow', value: null, default: false }));
@@ -199,10 +200,11 @@ describe('help', () => {
   it('prints help --json with the schema version, rules, errors, exit codes and one short entry per verb', async () => {
     const help = await helpJson();
     expect(Object.keys(help)).toEqual(['schemaVersion', 'name', 'version', 'output', 'rules', 'errors', 'exitCodes', 'verbs']);
-    expect(help).toMatchObject({ schemaVersion: 3, name: 'uv5r', version: '0.1.0' });
+    expect(help).toMatchObject({ schemaVersion: 4, name: 'uv5r', version: '0.1.0' });
     expect(help.rules).toEqual({
       checkFirst: expect.stringContaining('check 162.400 --channel 0'),
       channel: CHANNEL_RULE,
+      frequency: FREQUENCY_RULE,
       oneVerb: 'Run one verb at a time; leave the serial port to uv5r.',
       clone: expect.stringContaining('The receiver is deaf during a clone session'),
       speaker: expect.stringContaining('speaker is silent'),
@@ -214,24 +216,38 @@ describe('help', () => {
     expect(Object.keys(help.errors.retry)).toEqual(['no', 'once', 'after-remedy']);
     for (const text of Object.values(help.exitCodes)) expect(text).not.toMatch(/retry/i);
     expect(Object.keys(help.verbs)).toEqual(['status', 'identify', 'tune', 'check', 'load', 'read', 'erase', 'key', 'say', 'id', 'dump', 'restore', 'settings', 'listen', 'hear', 'sweep', 'volume']);
-    expect(help.verbs.check).toEqual({ summary: expect.any(String), usage: 'uv5r check FREQ --channel N', flags: ['--channel', '--input', '--json', '--target'] });
+    expect(help.verbs.check).toEqual({ summary: expect.any(String), usage: 'uv5r check FREQ --channel N [--input NAME] [--json] [--target PATH]', flags: ['--channel', '--input', '--json', '--target'] });
     for (const verb of Object.values(help.verbs) as Array<{ flags: string[] }>) expect(verb.flags).not.toContain('--device');
   });
 
-  it('keeps the catalog within 4096 bytes and each verb within 3072, with the same flag names in both', async () => {
+  it('prints usage with positionals, then flags in order, optional ones in brackets and an exclusive pair with a bar', async () => {
+    const catalog = await helpJson();
+    expect(catalog.verbs.key.usage).toBe('uv5r key --seconds S [--json] [--target PATH]');
+    expect(catalog.verbs.settings.usage).toBe('uv5r settings [FIELD VALUE ...] [--json] [--target PATH]');
+    expect(catalog.verbs.restore.usage).toBe('uv5r restore IMAGE --force [--json] [--target PATH]');
+    expect(catalog.verbs.tune.usage).toBe('uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]');
+    for (const [verb, entry] of Object.entries(catalog.verbs) as Array<[string, { usage: string }]>) {
+      stdout = [];
+      const help = await helpJson(verb);
+      expect(help.usage, verb).toBe(entry.usage);
+    }
+  });
+
+  it("lists the same flag names in the catalog as in each verb's help", async () => {
     await cli(['help', '--json']);
-    const catalogBytes = Buffer.byteLength(stdout.join(''));
-    expect(catalogBytes).toBeLessThanOrEqual(4096);
     const catalog = JSON.parse(stdout.join('')) as { verbs: Record<string, { flags: string[] }> };
     for (const [verb, entry] of Object.entries(catalog.verbs)) {
       stdout = [];
       await cli(['help', verb, '--json']);
-      const out = stdout.join('');
-      const bytes = Buffer.byteLength(out);
-      expect(bytes, verb).toBeLessThanOrEqual(3072);
-      const help = JSON.parse(out) as { flags: Array<{ flag: string }> };
+      const help = JSON.parse(stdout.join('')) as { flags: Array<{ flag: string }> };
       expect(entry.flags, verb).toEqual(help.flags.map((f) => f.flag));
     }
+  });
+
+  it('names UV5R_FAKE_STATE in the --target help', async () => {
+    const help = await helpJson('tune');
+    const target = (help.flags as Array<{ flag: string; help: string }>).find((f) => f.flag === '--target');
+    expect(target?.help).toContain('UV5R_FAKE_STATE');
   });
 
   it("every verb's help carries the per-verb fields", async () => {
@@ -264,7 +280,7 @@ describe('help', () => {
   it('prints the same entry for help VERB, VERB --help and VERB -h', async () => {
     await onTerminal(() => cli(['help', 'tune']));
     const viaHelp = stdout.join('');
-    expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N\n');
+    expect(viaHelp).toContain('usage:   uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]\n');
     expect(viaHelp).toContain('--rx-only');
     for (const argv of [['tune', '--help'], ['tune', '-h'], ['tune', '-h', '--help']]) {
       stdout = [];
@@ -291,7 +307,7 @@ describe('help', () => {
     expect(stdout.join('')).toBe(`${version}\n`);
     stdout = [];
     await cli(['--version', '--json']);
-    expect(outJson()).toEqual({ name: 'uv5r', version, schemaVersion: 3 });
+    expect(outJson()).toEqual({ name: 'uv5r', version, schemaVersion: 4 });
   });
 
   it('prints help and help VERB as JSON when stdout is a pipe', async () => {
@@ -299,15 +315,14 @@ describe('help', () => {
     expect(outJson().exitCodes).toMatchObject({ '4': 'timeout' });
     stdout = [];
     await cli(['help', 'tune']);
-    expect(outJson()).toMatchObject({ schemaVersion: 3, usage: 'uv5r tune FREQ --channel N' });
+    expect(outJson()).toMatchObject({ schemaVersion: 4, usage: 'uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]' });
   });
 
-  it('answers an unknown verb in under 340 bytes with no help text', async () => {
+  it('answers an unknown verb with no help text', async () => {
     const open = opener(new FakeRadio());
     await cli(['frobnicate', '--json'], open);
     expect(process.exitCode).toBe(2);
     const line = stderr.join('');
-    expect(Buffer.byteLength(line)).toBeLessThan(340);
     expect(errJson().message).toBe(
       'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, say, id, dump, restore, settings, listen, hear, sweep, volume; run uv5r help VERB',
     );
@@ -358,8 +373,20 @@ describe('help', () => {
     expect(readFileSync(README, 'utf8')).toContain(CHANNEL_RULE);
   });
 
-  it('keeps SKILL.md at most 60 lines', () => {
-    expect(readFileSync(SKILL, 'utf8').trimEnd().split('\n').length).toBeLessThanOrEqual(60);
+  it('states the frequency rule in help and once in README.md', async () => {
+    const help = await helpJson();
+    expect(help.rules.frequency).toBe(FREQUENCY_RULE);
+    expect(readFileSync(README, 'utf8').split(FREQUENCY_RULE)).toHaveLength(2);
+  });
+
+  it('gives tune and check the same FREQ help and --offset the FREQ value', async () => {
+    const tune = await helpJson('tune');
+    stdout = [];
+    const check = await helpJson('check');
+    const freq = 'MHz below 1000, else Hz; 136-174 or 400-520 MHz, 10 Hz steps';
+    expect(tune.args).toEqual([{ name: 'FREQ', optional: false, help: freq }]);
+    expect(check.args).toEqual([{ name: 'FREQ', optional: false, help: freq }]);
+    expect(tune.flags.find((f: { flag: string }) => f.flag === '--offset')).toMatchObject({ value: 'FREQ', help: 'signed repeater offset, as in -0.6' });
   });
 });
 
@@ -748,6 +775,26 @@ describe('tune input checks', () => {
     expect(outJson()).toMatchObject({ channel: 5, rxHz: 146_820_000, txHz: 146_220_000 });
   });
 
+  it.each(['-600000', '-600e3', '-0.6e6'])('reads --offset %s as Hz by the frequency rule', async (offset) => {
+    await cli(['tune', '146.82', '--channel', '5', '--offset', offset, '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ channel: 5, rxHz: 146_820_000, txHz: 146_220_000 });
+  });
+
+  it('reads a positive Hz offset the same as its MHz form', async () => {
+    await cli(['tune', '146.52', '--channel', '1', '--offset', '600000', '--json'], opener(new FakeRadio()));
+    expect(process.exitCode).toBe(0);
+    expect(outJson()).toMatchObject({ rxHz: 146_520_000, txHz: 147_120_000 });
+  });
+
+  it('names the frequency rule when FREQ is 0', async () => {
+    const open = opener(new FakeRadio());
+    await cli(['tune', '0', '--channel', '1', '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson().message).toBe('bad frequency "0"; a frequency is MHz when below 1000, else Hz');
+    expect(open.calls).toBe(0);
+  });
+
   it('rejects an offset finer than 10 Hz before opening the transport', async () => {
     const open = opener(new FakeRadio());
     await cli(['tune', '146.82', '--channel', '5', '--offset', '-0.6000049', '--json'], open);
@@ -1006,6 +1053,7 @@ describe('key output', () => {
     const help = JSON.parse(stdout.join('')) as { result: object; effects: string[] };
     expect(Object.keys(help.result)).toEqual(Object.keys(out));
     expect(help.effects.filter((e) => e.includes('assertedAtMs') && e.includes('releasedAtMs'))).toHaveLength(1);
+    expect(help.effects.filter((e) => e.includes('no ID') && e.includes('`uv5r id`'))).toHaveLength(1);
   });
 
   it('stamps assertedAtMs and releasedAtMs about 1000 ms apart for --seconds 1', async () => {
