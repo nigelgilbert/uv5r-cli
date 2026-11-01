@@ -38,7 +38,7 @@ const HELP_BYTES: { catalog: number; verbs: Record<string, number> } = {
     read: 1022,
     erase: 994,
     key: 1463,
-    say: 3017,
+    say: 3047,
     id: 2288,
     dump: 1299,
     restore: 1505,

@@ -528,7 +528,7 @@ const verbs: Record<string, Verb> = {
         help: `listen S s on inputDevice before keying, max ${MAX_CLEAR_SECONDS}`,
       },
       { name: 'out', value: 'FILE', help: 'keep the conditioned WAV at FILE' },
-      { name: 'rehearse', help: 'play through afplay instead of keying' },
+      { name: 'rehearse', help: 'play through afplay with the port closed; the result adds rehearsed' },
       ...COMMON_FLAGS,
     ],
     effects: [
