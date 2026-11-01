@@ -2,7 +2,7 @@
 
 **Type**: AFK
 
-**Status:** 🔲 Not started
+**Status:** ✅ Done (1f10545)
 
 ## Parent
 
@@ -14,11 +14,11 @@ Each per-verb help object gains a `device` block: `opensPort` (serial port opene
 
 ## Acceptance criteria
 
-- [ ] `uv5r help tune --json | jq .device` has `opensPort: true`, `cloneSession: true`, `appliesAfterMs: 3000`, `partialWrite: false`.
-- [ ] `uv5r help listen --json | jq .device.opensPort` is `false`.
-- [ ] `uv5r help key --json | jq .device.cloneSession` is `false`.
-- [ ] A test asserts every verb has the block and the per-verb budget from #002 holds.
-- [ ] `npm run typecheck` and `npm test` pass.
+- [x] `uv5r help tune --json | jq .device` has `opensPort: true`, `cloneSession: true`, `appliesAfterMs: 3000`, `partialWrite: false`.
+- [x] `uv5r help listen --json | jq .device.opensPort` is `false`.
+- [x] `uv5r help key --json | jq .device.cloneSession` is `false`.
+- [x] A test asserts every verb has the block and the per-verb budget from #002 holds.
+- [x] `npm run typecheck` and `npm test` pass.
 
 ## Blocked by
 
