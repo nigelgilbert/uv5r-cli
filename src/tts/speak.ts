@@ -253,7 +253,7 @@ export async function speakUtterance(options: SpeakOptions, deps: SpeechDeps, wi
       throw new UsageError(
         `the utterance runs ${round(keyedSeconds)} s with tailMs, past maxSeconds ${options.maxSeconds}`,
         { seconds: round(keyedSeconds), maxSeconds: options.maxSeconds },
-        {},
+        options.idOnly ? { remedy: 'raise maxSeconds in the station config, then rerun the command' } : {},
         'utterance-too-long',
       );
     }

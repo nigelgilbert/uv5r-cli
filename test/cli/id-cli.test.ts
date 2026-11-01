@@ -80,6 +80,7 @@ describe('id', () => {
     await cli(['id', '--config', config({ callsign: 'KJ7ABC', maxSeconds: 3 }), '--json'], open, fakeSpeechDeps({ synthesize: fakeSynthesize({ seconds: 3 }) }));
     expect(process.exitCode).toBe(2);
     expect(errJson()).toMatchObject({ reason: 'utterance-too-long', maxSeconds: 3 });
+    expect(errJson().remedy).not.toContain('shorten');
     expect(open.calls).toBe(0);
   });
 
