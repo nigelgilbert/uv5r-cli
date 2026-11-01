@@ -154,10 +154,14 @@ Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` 
 ## Output and errors
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. Piped, `hear`
-prints NDJSON, one object per line. JSON results give frequencies as integer Hz in `rxHz`,
-`txHz` and `requestedHz`. Text prints MHz. A failed command prints nothing on stdout and one
+prints NDJSON, one object per line. A failed command prints nothing on stdout and one
 error object on stderr, or the message and remedy as text on a terminal.
 [docs/errors.md](docs/errors.md) lists the error fields, exit codes and signal behaviour.
+
+A frequency is MHz when below 1000, else Hz. 144.684, 144684000 and 144.684e6 are the same value. Results are Hz integers.
+
+JSON results carry frequencies in `rxHz`, `txHz` and `requestedHz`. Text prints MHz. `--offset`
+takes the same rule with a sign: `-0.6`, `-600000` and `-600e3` are the same offset.
 
 ## Troubleshooting
 

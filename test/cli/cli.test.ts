@@ -21,6 +21,8 @@ const README = new URL('../../README.md', import.meta.url).pathname;
 const PACKAGE = new URL('../../package.json', import.meta.url).pathname;
 const CHANNEL_RULE =
   '`--channel N` writes memory slot N. The radio receives slot N after the reload in MR mode with N selected on the active display line. The CLI cannot read the display.';
+const FREQUENCY_RULE =
+  'A frequency is MHz when below 1000, else Hz. 144.684, 144684000 and 144.684e6 are the same value. Results are Hz integers.';
 const EXAMPLE_PLAN = new URL('../../channels.example.json', import.meta.url).pathname;
 /** opensPort, cloneSession, writesToRadio, appliesAfterMs and partialWrite of each verb. */
 const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
@@ -202,6 +204,7 @@ describe('help', () => {
     expect(help.rules).toEqual({
       checkFirst: expect.stringContaining('check 162.400 --channel 0'),
       channel: CHANNEL_RULE,
+      frequency: FREQUENCY_RULE,
       oneVerb: 'Run one verb at a time; leave the serial port to uv5r.',
       clone: expect.stringContaining('The receiver is deaf during a clone session'),
       speaker: expect.stringContaining('speaker is silent'),
@@ -355,6 +358,22 @@ describe('help', () => {
     const help = await helpJson();
     expect(help.rules.channel).toBe(CHANNEL_RULE);
     expect(readFileSync(README, 'utf8')).toContain(CHANNEL_RULE);
+  });
+
+  it('states the frequency rule in help and once in README.md', async () => {
+    const help = await helpJson();
+    expect(help.rules.frequency).toBe(FREQUENCY_RULE);
+    expect(readFileSync(README, 'utf8').split(FREQUENCY_RULE)).toHaveLength(2);
+  });
+
+  it('gives tune and check the same FREQ help and --offset the FREQ value', async () => {
+    const tune = await helpJson('tune');
+    stdout = [];
+    const check = await helpJson('check');
+    const freq = 'MHz below 1000, else Hz; 136-174 or 400-520 MHz, 10 Hz steps';
+    expect(tune.args).toEqual([{ name: 'FREQ', optional: false, help: freq }]);
+    expect(check.args).toEqual([{ name: 'FREQ', optional: false, help: freq }]);
+    expect(tune.flags.find((f: { flag: string }) => f.flag === '--offset')).toMatchObject({ value: 'FREQ', help: 'signed repeater offset, as in -0.6' });
   });
 });
 
@@ -753,6 +772,14 @@ describe('tune input checks', () => {
     await cli(['tune', '146.52', '--channel', '1', '--offset', '600000', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
     expect(outJson()).toMatchObject({ rxHz: 146_520_000, txHz: 147_120_000 });
+  });
+
+  it('names the frequency rule when FREQ is 0', async () => {
+    const open = opener(new FakeRadio());
+    await cli(['tune', '0', '--channel', '1', '--json'], open);
+    expect(process.exitCode).toBe(2);
+    expect(errJson().message).toBe('bad frequency "0"; a frequency is MHz when below 1000, else Hz');
+    expect(open.calls).toBe(0);
   });
 
   it('rejects an offset finer than 10 Hz before opening the transport', async () => {

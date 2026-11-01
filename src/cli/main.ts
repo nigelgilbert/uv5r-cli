@@ -119,12 +119,17 @@ export const TRANSMIT_RULE =
   'You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. `say` and `id` end with the uv5r.json callsign. ' +
   `${KEY_ID_RULE} Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.`;
 
+/** How a frequency argument reads; help and README.md carry it word for word. */
+export const FREQUENCY_RULE =
+  'A frequency is MHz when below 1000, else Hz. 144.684, 144684000 and 144.684e6 are the same value. Results are Hz integers.';
+
 /** Operating rules `help` prints for an agent that reads no other doc. */
 const RULES = {
   checkFirst:
     'Slot 0 is the scratch slot. Once per session, before tuning it, run `uv5r check 162.400 --channel 0` with a local NOAA frequency; ' +
     'on exit 5 ask the human for MR mode on slot 0.',
   channel: CHANNEL_RULE,
+  frequency: FREQUENCY_RULE,
   oneVerb: 'Run one verb at a time; leave the serial port to uv5r.',
   clone: 'The receiver is deaf during a clone session (device.cloneSession); back-to-back ones take 3 s more.',
   speaker: 'The speaker is silent with the AIOC in; play WAVs from listen, sweep or hear for the human.',
@@ -191,7 +196,7 @@ const TRANSMIT_FIELDS = {
   tailMs: `PTT hold after the player, 0..${MAX_PAD_MS}, default ${DEFAULT_TAIL_MS}`,
   maxSeconds: `WAV plus tail cap, 0 < S <= ${MAX_UTTERANCE_SECONDS}, default ${DEFAULT_MAX_SECONDS}`,
 };
-const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'MHz (154.680) or Hz, 136-174 or 400-520 MHz, 10 Hz steps' };
+const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'MHz below 1000, else Hz; 136-174 or 400-520 MHz, 10 Hz steps' };
 const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
 
 const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
@@ -345,7 +350,7 @@ const verbs: Record<string, Verb> = {
     args: [FREQ_ARG],
     flags: [
       CHANNEL_FLAG,
-      { name: 'offset', value: 'FREQ', default: 0, help: 'signed repeater offset; MHz below 1000, else Hz, as in -0.6' },
+      { name: 'offset', value: 'FREQ', default: 0, help: 'signed repeater offset, as in -0.6' },
       { name: 'tone', value: 'HZ', default: 'none', help: 'TX tone: CTCSS (82.5), DCS (D023, D023I) or none' },
       RX_TONE_FLAG,
       NARROW_FLAG,
