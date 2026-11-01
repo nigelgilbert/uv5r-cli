@@ -166,7 +166,7 @@ describe('volume', () => {
     expect(outJson()).toEqual({ state: 'too-loud', rmsDbfs: -10.4, instruction: 'Turn the volume knob down about a quarter turn, then say done.' });
   });
 
-  it('passes --device to listen', async () => {
+  it('passes --input to listen', async () => {
     listenMock.mockResolvedValue(heard(-25));
     await run(['volume', '--input', '1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);

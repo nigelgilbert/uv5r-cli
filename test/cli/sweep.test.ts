@@ -544,7 +544,7 @@ describe('sweep', () => {
     expect(errJson()).toMatchObject({ reason: 'audio-inactive', summary: { warnings: [`check: ${CLIP_WARNING}`] } });
   });
 
-  it('reports --device in the summary', async () => {
+  it('reports input in the summary', async () => {
     listenMock.mockImplementation(async (_device, seconds) => heard(seconds, seconds));
     await run([...SWEEP, '--input', '1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);

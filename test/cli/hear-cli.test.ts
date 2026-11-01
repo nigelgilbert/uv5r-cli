@@ -118,7 +118,7 @@ describe('hear', () => {
     expect(h.transcriber.calls[0]).toMatchObject({ model: join(REPO_ROOT, 'models/ggml-base.en-q5_1.bin'), prompt: '' });
   });
 
-  it('passes --device over the config inputDevice', async () => {
+  it('passes --input over the config inputDevice', async () => {
     const h = hearDeps();
     const done = cli(['hear', '--once', '--input', 'AIOC Audio', '--config', STATION, '--json'], noPort, h.deps);
     await h.monitor.feed(TX);

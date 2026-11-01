@@ -114,7 +114,7 @@ describe('check', () => {
     expect(process.exitCode).toBe(exit);
   });
 
-  it('passes --device to listen with 5 s at -50 dBFS', async () => {
+  it('passes --input to listen with 5 s at -50 dBFS', async () => {
     listenMock.mockResolvedValue(heard([true, true, true, true, true]));
     await run(['check', '162.400', '--channel', '3', '--input', '1', '--json'], opener(new FakeRadio()));
     expect(process.exitCode).toBe(0);
