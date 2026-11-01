@@ -55,21 +55,21 @@ const HELP_BYTES_TOLERANCE = 64;
 const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
   status: [true, true, false, 0, false],
   identify: [true, true, false, 0, false],
-  tune: [true, true, true, 3000, false],
-  check: [true, true, true, 0, false],
+  tune: [true, true, true, 3000, true],
+  check: [true, true, true, 0, true],
   load: [true, true, true, 3000, true],
   read: [true, true, false, 0, false],
-  erase: [true, true, true, 3000, false],
+  erase: [true, true, true, 3000, true],
   key: [true, false, false, 0, false],
   say: [true, false, false, 0, false],
   id: [true, false, false, 0, false],
   dump: [true, true, false, 0, false],
   restore: [true, true, true, 0, true],
-  settings: [true, true, true, 3000, false],
+  settings: [true, true, true, 0, false],
   listen: [false, false, false, 0, false],
   hear: [false, false, false, 0, false],
-  sweep: [true, true, true, 0, false],
-  volume: [true, true, true, 0, false],
+  sweep: [true, true, true, 0, true],
+  volume: [true, true, true, 0, true],
 };
 const REASON_ENUM = [
   'device-unavailable',
@@ -213,7 +213,7 @@ describe('help', () => {
     expect(tune.flags).toContainEqual(expect.objectContaining({ flag: '--narrow', value: null, default: false }));
     expect(tune.effects.length).toBeGreaterThan(0);
     expect(tune.preconditions).toContain('Follow the channel rule in uv5r help.');
-    expect(tune.device).toEqual({ opensPort: true, cloneSession: true, writesToRadio: true, appliesAfterMs: 3000, partialWrite: false, note: expect.any(String) });
+    expect(tune.device).toEqual({ opensPort: true, cloneSession: true, writesToRadio: true, appliesAfterMs: 3000, partialWrite: true, note: expect.any(String) });
     expect(tune).not.toHaveProperty('writesToRadio');
     expect(tune.result).toMatchObject({ channel: 5, rxHz: 154_680_000, appliesAfterSeconds: 3 });
     expect(tune.exits).toEqual([{ code: 5, when: expect.stringContaining('verification-failed adds failed') }]);
@@ -318,10 +318,10 @@ describe('help', () => {
       expect(help, verb).not.toHaveProperty('writesToRadio');
     }
     stdout = [];
-    expect((await helpJson('settings')).device.note).toContain('with none it reads only and applies after 0 ms');
+    expect((await helpJson('settings')).device.note).toBe('the settings block with FIELD VALUE pairs; reads only with none');
     stdout = [];
     await onTerminal(() => cli(['help', 'tune']));
-    expect(stdout.join('')).toContain('device:\n  opens port     yes\n  clone session  yes\n  writes radio   yes; record and name of slot N\n  applies after  3000 ms\n  partial write  no\n');
+    expect(stdout.join('')).toContain('device:\n  opens port     yes\n  clone session  yes\n  writes radio   yes; record and name of slot N\n  applies after  3000 ms\n  partial write  yes\n');
   });
 
   it('prints the same entry for help VERB, VERB --help and VERB -h', async () => {
