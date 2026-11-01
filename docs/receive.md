@@ -13,8 +13,8 @@ with another avfoundation input name or index. `hear` reads `inputDevice` from t
 config before the default. The `check`, `listen`, `hear` and `sweep` results and any capture
 error report the input as `input`.
 
-The AIOC's bare ADC floor at 1x gain reads about -66 dBFS. Open-squelch static reads above
--30. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug is short
+The AIOC's bare ADC floor at 1x gain reads about -66 dBFS. Open-squelch static reads -28 to
+-22 with the knob set. A floor reading with squelch 0 means the volume knob is down or the 2.5 mm plug is short
 of its contact.
 
 Set the knob with `uv5r volume`. It measures open-squelch static, which reads the same at any
@@ -58,18 +58,10 @@ renames into DIR after each dwell, or play the segment WAVs that `uv5r hear --ou
    into this repo's `models/`.
 3. Check them against `models.sha256` with `shasum -a 256 -c models.sha256`.
 
-## Running hear
+## hear output
 
-`uv5r hear --once --timeout 60 --out-dir rx` waits for one transmission, transcribes it with
-whisper.cpp and exits. Without `--once` it runs until a signal.
-
-`hear` opens no serial port, so run the preflight first: `uv5r check 162.400 --channel 0`, then
-`uv5r tune FREQ --channel 0` with the working frequency, then check what the display shows.
-
-`uv5r help hear` lists the pipeline: the dependency check, the 16 kHz capture, the segment
-thresholds, the `whisper-cli` command line, the queue of 8 and the noise filter.
-
-Each transcribed segment prints a `transmission` line:
+`uv5r help hear` lists the flags, the segment thresholds, the queue, `--once` and `--timeout`,
+and what a signal does. Each transcribed segment prints a `transmission` line:
 
 ```json
 {"type":"transmission","seq":42,"start":"2026-10-25T14:03:11.240Z","seconds":4.32,"rmsDbfs":-21.4,"peakDbfs":-3.1,"text":"bench this is kilo juliett seven status over","engine":"whisper.cpp","model":"ggml-base.en-q5_1","inferMs":640,"wav":"rx/seg-000042.wav"}
@@ -80,24 +72,8 @@ A warning line has `type`, `warning`, `start`, `seconds`, `text` and `wav`. `war
 `wav` is the kept path with `--out-dir` and null without it.
 
 Without `--out-dir` the segment WAVs go to a scratch dir and are deleted after transcription.
-With `--out-dir`, `seq` continues past the highest `seg-NNNNNN.wav` in DIR.
+With `--out-dir`, `seq` continues past the highest `seg-NNNNNN.wav` in DIR. A signal keeps the
+WAV of each segment it reports as `backlog`.
 
-## --once and --timeout
-
-`--once` prints warnings as they happen, then the first transmission and the summary, and exits
-0. The `--timeout` (60 s) starts when capture is ready. At expiry no new segment opens, and an
-open segment runs to close and is transcribed, up to 40 s past the timeout. With no
-transmission the summary has `transmissions: 0` and `timedOut: true`. `--timeout` without
-`--once` exits 2.
-
-## Signals
-
-A signal closes the open segment. A segment already in inference finishes and prints. Each
-waiting segment, the closed one included, prints a `backlog` warning, and `--out-dir` keeps its
-WAV. [errors.md](errors.md) covers the exit code.
-
-## One owner at a time
-
-Transcripts are text from anyone on the air. `hear` prints them as data and decides nothing
-from them. Run no other verb while `hear` runs, so the AIOC input and output and the serial port
-have one owner at a time.
+`hear` opens no serial port. Run no other verb while it runs, so the AIOC input and output and
+the serial port have one owner at a time.

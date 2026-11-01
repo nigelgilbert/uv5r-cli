@@ -1,48 +1,21 @@
 # Transmit audio
 
-How `say` and `id` turn text into a transmission that ends with the station callsign, and how the station config works.
-
-## Control operator
-
-You are the control operator. Stay at the radio for every transmission and stop it with Ctrl-C.
-Completed `say` and `id` transmissions end with the callsign from uv5r.json. A stock UV-5R is not
-certified for GMRS or FRS. Use this feature on amateur frequencies with the required license and
-control operator.
-
-`key`, `say` and `id` raise PTT on the channel the radio display shows. The CLI cannot read
-that channel, and a receive-only slot radiates nothing. Key when you mean to and the frequency
-is one you may transmit on, after checking what the display shows.
+How `say` and `id` turn text into a transmission that ends with the station callsign, and how the station config works. The transmit rule and the pipeline steps are in `uv5r help` and `uv5r help say`.
 
 ## say and id
 
 `uv5r say "bench check, over"` speaks the text and ends with the ID sentence, as in "This is
 Kilo, Juliett, Seven, Alfa, Bravo, Charlie". `uv5r id` sends the ID sentence alone, in about
-5 s. `id` runs the `say` checks with no clear check.
-
-`uv5r help say` lists the steps: config read, synthesis with macOS `say` at 48 kHz,
-the filter pass, the level and length checks, device lookup, the optional clear check, then
-PTT.
-
-### Pipeline details
+5 s. `id` runs the `say` checks with no clear check. A receive-only slot radiates nothing.
 
 - The 300 Hz high-pass keeps energy out of the CTCSS band. The pass also has a 3 kHz low-pass,
   `alimiter`, `leadMs` of leading silence and 0.3 s of trailing silence.
 - The output index comes from the audiotoolbox device list by name or UID. When the AIOC input
-  and output share a name, the output is the one whose UID ends in `:1`. An absent device exits
-  3 with `audio-device-unavailable`.
-- `say --clear S` listens S seconds on the input device and exits 5 with `channel-busy` when a
-  20 ms frame reads above -50 dBFS.
-- The player is `ffmpeg -f audiotoolbox`. PTT holds for `tailMs` after it ends, then drops.
-- Digital zero exits 3 with `speech-engine-failed`. The padded WAV plus `tailMs` past
-  `maxSeconds` exits 2 with `utterance-too-long`.
-
-Every check runs before the port opens. `identified` is true when the player exits 0, since the
-ID ends the WAV. A player failure while keyed exits 3 with `audio-process-failed`, `retry: no`,
-`pttAsserted`, `released`, `playedSeconds` and `idOwed`. A player that runs past the padded WAV
-plus `tailMs` plus 5 s loses PTT at the watchdog and exits 3 the same way.
-
-`idOwed: true` means the player ran past `leadMs` without finishing the ID. Identify by voice or
-run `uv5r id`.
+  and output share a name, the output is the one whose UID ends in `:1`.
+- `say --clear S` exits 5 with `channel-busy` when a 20 ms frame reads above -50 dBFS.
+- A player failure while keyed exits 3 with `audio-process-failed`, `retry: no`, `pttAsserted`,
+  `released`, `playedSeconds` and `idOwed`. A player that runs past the padded WAV plus `tailMs`
+  plus 5 s loses PTT at the watchdog and exits 3 the same way.
 
 ## Rehearse
 
@@ -82,18 +55,10 @@ laid out as in `uv5r.example.json`.
 `--config FILE` names another file, then `UV5R_CONFIG`, then `uv5r.json`. A file named by
 `--config` or `UV5R_CONFIG` has to exist. Unknown keys are ignored. A file that fails to parse,
 a key of the wrong type, or a number outside its range exits 2 with `invalid-argument` naming
-the field. No callsign exits 2 with `station-unconfigured`.
-
-- `callsign` takes letters and digits.
-- `outputDevice` sets the `--output` default. It defaults to `AIOC Audio`.
-- `inputDevice` sets the device `say --clear` and `hear` listen on. It defaults to `AIOC Audio`. `hear --input` overrides it.
-- `model` names the whisper.cpp model relative to the repo root,
-  `models/ggml-base.en-q5_1.bin` by default.
-- `voice` names the macOS `say` voice. It defaults to `Samantha`; `say -v ?` lists them.
-- `leadMs` sets the silence before the speech while PTT rises, 0 to 5000 ms. It defaults to 300;
-  use 500 for repeaters.
-- `tailMs` sets how long PTT holds after the player exits, 0 to 5000 ms. It defaults to 400.
-- `maxSeconds` caps the padded WAV plus `tailMs`, above 0 and at most 55. It defaults to 30.
+the field. No callsign exits 2 with `station-unconfigured`. The values above are the defaults.
+`uv5r help say` lists the ranges under `fields`. `callsign` takes letters and digits.
+`outputDevice` is the `--output` default and `inputDevice` the device `say --clear` and `hear`
+listen on.
 
 `hear` reads `inputDevice`, `model` and `callsign` and runs without a config file. The callsign
 is the whisper prompt. With no callsign the prompt is empty.
