@@ -376,7 +376,7 @@ const verbs: Record<string, Verb> = {
       partialWrite: true,
       note: 'record and name of slot N',
     },
-    result: { channel: 5, ...CHANNEL_RECORD, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
+    result: { channel: 5, ...CHANNEL_RECORD },
     exits: [VERIFY_EXIT],
     positionals: 1,
     run: tuneVerb,
@@ -399,7 +399,7 @@ const verbs: Record<string, Verb> = {
       cloneSession: true,
       writesToRadio: true,
       appliesAfterMs: 0,
-      partialWrite: true,
+      partialWrite: false,
       note: 'a receive-only record in slot N, applied before the capture; nothing restores the old one',
     },
     result: { slot: 0, requestedHz: 162_400_000, ...LISTEN_EXAMPLE },
@@ -431,7 +431,7 @@ const verbs: Record<string, Verb> = {
       partialWrite: true,
       note: 'record and name of each plan slot; a failure keeps earlier slots',
     },
-    result: [{ channel: 1, rxHz: 162_400_000, txHz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA', appliesAfterSeconds: APPLIES_AFTER_SECONDS }],
+    result: [{ channel: 1, rxHz: 162_400_000, txHz: null, txTone: 'none', rxTone: 'none', bandwidth: 'wide', power: 'high', name: 'NOAA' }],
     exits: [
       { code: 2, when: 'a bad plan: no channels, a bad or unknown field, a channel outside 0..127 or listed twice; adds field or channel' },
       { code: 5, when: 'a write error adds slot; earlier slots keep their writes' },
@@ -471,7 +471,7 @@ const verbs: Record<string, Verb> = {
       partialWrite: true,
       note: '0xFF over record and name of slot N',
     },
-    result: { channel: 127, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS },
+    result: { channel: 127, empty: true },
     exits: [VERIFY_EXIT],
     positionals: 1,
     run: eraseVerb,
@@ -733,7 +733,7 @@ const verbs: Record<string, Verb> = {
       cloneSession: true,
       writesToRadio: true,
       appliesAfterMs: 0,
-      partialWrite: true,
+      partialWrite: false,
       note: 'slot 0 per check and entry, applied before each capture; the last write stays',
     },
     result: {
@@ -781,7 +781,7 @@ const verbs: Record<string, Verb> = {
       cloneSession: true,
       writesToRadio: true,
       appliesAfterMs: 0,
-      partialWrite: true,
+      partialWrite: false,
       note: 'squelch 0 for the capture, then the kept squelch',
     },
     result: { state: 'too-loud', rmsDbfs: -10.4, instruction: VOLUME_INSTRUCTIONS.farAbove },
@@ -1104,7 +1104,7 @@ async function tuneVerb(args: Invocation): Promise<number> {
   const spec = channelSpec(freq, args.flags);
   const magic = selectedMagic();
   const written = await withTransport(args, (t) => withSession(t, (s) => writeChannel(s, n, spec), { magic }));
-  const result = { ...channelPayload(n, written), appliesAfterSeconds: APPLIES_AFTER_SECONDS };
+  const result = channelPayload(n, written);
   print(args, result, () => `${channelText(result)}\nwritten; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
 }
@@ -1163,7 +1163,7 @@ async function loadVerb(args: Invocation): Promise<number> {
     // Name the slot that failed.
     throw withDetail(err, slot === undefined ? {} : { slot });
   }
-  const result = records.map((record) => ({ ...record, appliesAfterSeconds: APPLIES_AFTER_SECONDS }));
+  const result = records;
   print(args, result, () => result.map(channelText).join('\n'));
   return EXIT.ok;
 }
@@ -1189,7 +1189,7 @@ async function eraseVerb(args: Invocation): Promise<number> {
   checkChannelNumber(n);
   const magic = selectedMagic();
   await withTransport(args, (t) => withSession(t, (s) => eraseChannel(s, n), { magic }));
-  const result = { channel: n, empty: true, appliesAfterSeconds: APPLIES_AFTER_SECONDS };
+  const result = { channel: n, empty: true };
   print(args, result, () => `channel ${n} erased; the radio applies it about ${APPLIES_AFTER_SECONDS} s after this command ends`);
   return EXIT.ok;
 }

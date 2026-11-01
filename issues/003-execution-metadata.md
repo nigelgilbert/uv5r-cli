@@ -10,7 +10,7 @@
 
 ## What to build
 
-Each per-verb help object gains a `device` block: `opensPort` (serial port opened), `cloneSession` (receiver deaf for the call), `appliesAfterMs` (delay after exit before the radio runs the write, 3000 for `tune`, `load` and `erase`, 0 otherwise) and `partialWrite` (whether a failure can leave bytes half written, true for `load`, `restore`, `tune`, `erase`, `check`, `sweep` and `volume`). `writesToRadio` folds into this block. The harness constant for the tune apply delay then has a source in the help.
+Each per-verb help object gains a `device` block: `opensPort` (serial port opened), `cloneSession` (receiver deaf for the call), `appliesAfterMs` (delay after exit before the radio runs the write, 3000 for `tune`, `load` and `erase`, 0 otherwise) and `partialWrite` (whether a failure can stop a multi-block write partway, true for `load`, `restore`, `tune` and `erase`). `writesToRadio` folds into this block. The harness constant for the tune apply delay then has a source in the help.
 
 ## Acceptance criteria
 

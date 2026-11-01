@@ -56,7 +56,7 @@ const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
   status: [true, true, false, 0, false],
   identify: [true, true, false, 0, false],
   tune: [true, true, true, 3000, true],
-  check: [true, true, true, 0, true],
+  check: [true, true, true, 0, false],
   load: [true, true, true, 3000, true],
   read: [true, true, false, 0, false],
   erase: [true, true, true, 3000, true],
@@ -68,8 +68,8 @@ const DEVICE: Record<string, [boolean, boolean, boolean, number, boolean]> = {
   settings: [true, true, true, 0, false],
   listen: [false, false, false, 0, false],
   hear: [false, false, false, 0, false],
-  sweep: [true, true, true, 0, true],
-  volume: [true, true, true, 0, true],
+  sweep: [true, true, true, 0, false],
+  volume: [true, true, true, 0, false],
 };
 
 let stdout: string[];
@@ -189,7 +189,7 @@ describe('help', () => {
     expect(tune.preconditions).toContain('Follow the channel rule in uv5r help.');
     expect(tune.device).toEqual({ opensPort: true, cloneSession: true, writesToRadio: true, appliesAfterMs: 3000, partialWrite: true, note: expect.any(String) });
     expect(tune).not.toHaveProperty('writesToRadio');
-    expect(tune.result).toMatchObject({ channel: 5, rxHz: 154_680_000, appliesAfterSeconds: 3 });
+    expect(tune.result).toMatchObject({ channel: 5, rxHz: 154_680_000 });
     expect(tune.exits).toEqual([{ code: 5, when: expect.stringContaining('verification-failed adds failed') }]);
   });
 
@@ -1312,14 +1312,13 @@ describe('load', () => {
     const records = JSON.parse(stdout.join('').trim()) as Array<Record<string, unknown>>;
     expect(records).toHaveLength(7);
     expect(records.map((r) => r.channel)).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    expect(records.every((r) => r.appliesAfterSeconds === 3)).toBe(true);
     for (const r of records.slice(0, 3)) {
       expect(r).toMatchObject({ txHz: null });
       expect(Math.floor((r.rxHz as number) / 1_000_000)).toBe(162);
     }
     expect(records[3]).toMatchObject({ channel: 4, rxHz: 146_820_000, txHz: 146_220_000, txTone: '82.5', name: 'BIG SKY' });
     expect(records[6]).toMatchObject({ channel: 7, rxHz: 154_695_000, txHz: null, bandwidth: 'narrow', name: 'SHERIFF' });
-    for (const { appliesAfterSeconds: _, ...record } of records) {
+    for (const record of records) {
       stdout = [];
       radio.dropSession();
       await run(['read', String(record.channel), '--json'], opener(radio));
