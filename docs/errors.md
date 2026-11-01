@@ -8,9 +8,41 @@ In JSON mode a failed command prints nothing on stdout and one error object on s
 `hear` printed before a failure stay on stdout, and the error exits with its reason's code. On a
 terminal the CLI prints the message and a remedy line as text.
 
-The object has `reason`, `message`, `remedy` and `retry`. Each detail field below sits at its top
-level beside them. Act on `reason`, `remedy` and `retry`.
+The object has `type`, `kind`, `reason`, `message`, `remedy` and `retry`. Each detail field below
+sits at its top level after them and cannot replace them. Act on `reason`, `remedy` and `retry`.
 
+```json
+{
+  "type": "error",
+  "kind": "device-state",
+  "reason": "verification-failed",
+  "message": "channel 1 record written; name did not take the write",
+  "remedy": "read channel 1; rerun the write to fix the name",
+  "retry": "after-remedy",
+  "failed": ["name"],
+  "settings": { "name": { "desired": "446.006", "observed": "" } },
+  "wrote": "34 34 36 2e 30 30 36 ff ff ff ff ff ff ff ff ff",
+  "read": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff"
+}
+```
+
+`type` is `"error"`. `kind` follows from `reason` and sets the exit code:
+
+| `kind` | Exit | Reasons |
+|---|---|---|
+| `usage` | 2 | `invalid-argument`, `station-unconfigured`, `utterance-too-long` |
+| `transport` | 3 | `device-unavailable`, `serial-io-failed`, `ptt-control-failed`, `dependency-missing`, `audio-process-failed`, `capture-incomplete`, `file-write-failed`, `speech-engine-failed`, `audio-device-unavailable` |
+| `timeout` | 4 | `serial-timeout` |
+| `device-state` | 5 | `session-unavailable`, `protocol-reply-invalid`, `radio-unsupported`, `write-unacknowledged`, `verification-failed`, `image-incompatible`, `audio-inactive`, `squelch-open`, `channel-busy` |
+| `busy` | 6 | `device-busy` |
+| `unexpected` | 1 | `unexpected-error` |
+
+- A `verification-failed` error from `tune`, `load`, `erase` or `settings` adds `failed`, the
+  fields that read back wrong, and `settings`, a map from each failed field to
+  `{desired, observed}`. `wrote` and `read` hold the bytes as hex. `tune`, `load` and `erase`
+  compare `rxHz`, `txHz`, `txTone`, `rxTone`, `bandwidth` and `power` on the record, then
+  `name`. An erase desires `null` for each record field and `""` for the name. `settings`
+  compares the setting fields. `raw` names bytes that differ outside those fields.
 - A `load` error from a plan entry write adds `slot`.
 - A `sweep` error after the port is requested adds `summary`, the sweep result so far.
 - An error inside the sweep loop adds `phase` (`check`, `entry` or `dwell`), `slot` (0),

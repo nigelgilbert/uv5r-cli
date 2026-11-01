@@ -39,4 +39,5 @@ Read `uv5r help --json` once at the start of a session for the operating rules, 
 ## On a failed command
 
 - Follow the error's `remedy` and `retry`. On `retry: no`, do not rerun; report to the human.
+- On `verification-failed`, `failed` names the fields that read back wrong. `failed: ["name"]` means the record took and only the name did not.
 - After a failed or interrupted `key`, `say` or `id`, report and wait for the human. On `idOwed: true`, tell the human to identify by voice or run `uv5r id`.

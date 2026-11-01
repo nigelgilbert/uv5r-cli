@@ -158,9 +158,12 @@ const EXIT_CODES: Record<string, string> = {
 
 const ERROR_GUIDANCE =
   'A failed command prints one error object on stderr when output is JSON, piped or with --json. ' +
-  'The object has reason, message, remedy and retry, and each detail field below sits at its top level beside them. ' +
+  'The object has type "error", kind, reason, message, remedy and retry, and each detail field below sits at its top level beside them. ' +
   'On a terminal it prints the message and a remedy line as text. ' +
+  'kind is usage, transport, timeout, device-state, busy or unexpected; it follows from reason and sets the exit code. ' +
   'reason names the failure, remedy is one sentence on what to do next, and retry says whether to rerun the command. ' +
+  'A verification-failed error from tune, load, erase or settings adds failed, the fields that read back wrong, and settings, each failed field with desired and observed. ' +
+  'tune, load and erase compare rxHz, txHz, txTone, rxTone, bandwidth, power and name; settings compares the setting fields; raw names bytes outside those fields. ' +
   'A load error from a plan entry write adds slot. A sweep error after the port is requested adds summary, the sweep result so far. ' +
   'An error inside the sweep loop adds phase (check, entry or dwell), slot (0), channel (the plan channel, null during the check) and requestedHz (the entry frequency in Hz, or the checkMhz frequency during the check). ' +
   'summary.slot0 says whether a write landed. A failed check also carries the check result fields. ' +

@@ -129,7 +129,7 @@ describe('cli exit status', () => {
     };
     await cli(['status', '--json'], open);
     expect(process.exitCode).toBe(1);
-    expect(errJson()).toEqual({ reason: 'unexpected-error', message: 'boom', remedy: 'report the message to the human', retry: 'no' });
+    expect(errJson()).toEqual({ type: 'error', kind: 'unexpected', reason: 'unexpected-error', message: 'boom', remedy: 'report the message to the human', retry: 'no' });
   });
 
   it('prints the remedy and retry value under the message as text on a terminal', async () => {
@@ -227,6 +227,9 @@ describe('help', () => {
     expect(Object.keys(help.exitCodes)).toEqual(['0', '1', '2', '3', '4', '5', '6', '128+signal']);
     expect(help.errors.format).toContain('reason');
     expect(help.errors.format).toContain('remedy');
+    expect(help.errors.format).toContain('The object has type "error", kind, reason, message, remedy and retry');
+    expect(help.errors.format).toContain('kind is usage, transport, timeout, device-state, busy or unexpected');
+    expect(help.errors.format).toContain('adds failed, the fields that read back wrong, and settings, each failed field with desired and observed.');
     expect(help.errors.format).toContain('when output is JSON, piped or with --json');
     expect(help.errors.format).toContain('On a terminal it prints the message and a remedy line as text.');
     expect(help.errors.format).toContain(
@@ -290,12 +293,12 @@ describe('help', () => {
     expect(outJson()).toMatchObject({ schemaVersion: 2, usage: expect.stringContaining('uv5r tune FREQ --channel N') });
   });
 
-  it('answers an unknown verb in under 300 bytes with no help text', async () => {
+  it('answers an unknown verb in under 340 bytes with no help text', async () => {
     const open = opener(new FakeRadio());
     await cli(['frobnicate', '--json'], open);
     expect(process.exitCode).toBe(2);
     const line = stderr.join('');
-    expect(Buffer.byteLength(line)).toBeLessThan(300);
+    expect(Buffer.byteLength(line)).toBeLessThan(340);
     expect(errJson().message).toBe(
       'unknown verb "frobnicate"; verbs: status, identify, tune, check, load, read, erase, key, say, id, dump, restore, settings, listen, hear, sweep, volume; run uv5r help VERB',
     );

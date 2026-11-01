@@ -229,10 +229,14 @@ describe('FakeTransport faults', () => {
     expect(value).toMatchObject({ rxHz: 446_006_250, txHz: 446_006_250, lowPower: true, name: '' });
   });
 
-  it('tune-wrong-freq drops the name and leaves another TX frequency for the next read', async () => {
+  it('tune-wrong-freq fails the record read-back on txHz and leaves another TX frequency for the next read', async () => {
     const vars = { ...env, UV5R_FAKE_FAULT: 'tune-wrong-freq' };
     const failed = verb((s) => writeChannel(s, 1, { rxHz: 446_006_250, lowPower: true }), 'tune', vars);
-    await expect(failed).rejects.toMatchObject({ reason: 'verification-failed', message: 'channel 1 record written; name did not take the write' });
+    await expect(failed).rejects.toMatchObject({
+      reason: 'verification-failed',
+      message: 'channel 1 did not take the write',
+      detail: { failed: ['txHz'], settings: { txHz: { desired: 446_006_250, observed: 447_006_250 } } },
+    });
     vi.advanceTimersByTime(FAKE_APPLY_MS);
     const { value } = await verb((s) => readChannel(s, 1), 'read', vars);
     expect(value).toMatchObject({ rxHz: 446_006_250, txHz: 447_006_250 });

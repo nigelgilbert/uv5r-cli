@@ -10,6 +10,7 @@ import {
   channelToJson,
   checkChannelNumber,
   decodeChannel,
+  decodeName,
   decodeSettings,
   encodeChannel,
   encodeName,
@@ -57,6 +58,52 @@ export function channelPayload(n: number, ch: Channel | MalformedRecord | undefi
   // Destructure the first three keys to keep the documented order, which puts txTone before rxTone.
   const { scan: _scan, rxHz, txHz, txTone, ...rest } = channelToJson(ch);
   return { channel: n, rxHz, txHz, txTone, ...rest };
+}
+
+/** A field that read back other than written: the value written and the value read. */
+type FieldMismatch = {
+  desired: unknown;
+  observed: unknown;
+};
+
+/** The detail a verification-failed error carries: the fields that read back wrong, each with its desired and observed value, and the bytes as hex. */
+type VerificationDetail = {
+  failed: string[];
+  settings: Record<string, FieldMismatch>;
+  wrote: string;
+  read: string;
+};
+
+/** Record fields a channel read-back compares, in the order `read` prints them. */
+const RECORD_FIELDS = ['rxHz', 'txHz', 'txTone', 'rxTone', 'bandwidth', 'power'] as const;
+
+/**
+ * List the fields whose values differ between `desired` and `observed`, decoded from the bytes
+ * `wrote` and `read`. When no field differs, list `raw` with the bytes as hex, so the list names
+ * a field whenever the bytes differ.
+ */
+function verificationDetail(desired: Record<string, unknown>, observed: Record<string, unknown>, wrote: Uint8Array, read: Uint8Array): VerificationDetail {
+  const bytes = { wrote: hex(wrote), read: hex(read) };
+  const failed = Object.keys(desired).filter((key) => JSON.stringify(desired[key]) !== JSON.stringify(observed[key] ?? null));
+  if (failed.length === 0) return { failed: ['raw'], settings: { raw: { desired: bytes.wrote, observed: bytes.read } }, ...bytes };
+  return { failed, settings: Object.fromEntries(failed.map((key) => [key, { desired: desired[key], observed: observed[key] ?? null }])), ...bytes };
+}
+
+/** Return the record fields of a 16-byte channel record as `read` prints them; each is null for an erased or malformed record. */
+function recordFields(mem: Uint8Array): Record<string, unknown> {
+  const ch = decodeChannel(mem, new Uint8Array(16).fill(0xff));
+  const json: Partial<ChannelJson> = ch ? channelToJson(ch) : {};
+  return Object.fromEntries(RECORD_FIELDS.map((key) => [key, json[key] ?? null]));
+}
+
+/** Compare a written channel record with its read-back field by field. */
+function recordMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail {
+  return verificationDetail(recordFields(wrote), recordFields(read), wrote, read);
+}
+
+/** Report a name record that read back wrong as the `name` field. */
+function nameMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail {
+  return { failed: ['name'], settings: { name: { desired: decodeName(wrote), observed: decodeName(read) } }, wrote: hex(wrote), read: hex(read) };
 }
 
 /** Bytes of ident before main memory in a CHIRP image. */
@@ -114,7 +161,7 @@ export async function verifySettingsBlock(s: Session, expected: Uint8Array): Pro
     throw new DeviceStateError(
       'verification-failed',
       'settings block did not take the write',
-      { wrote: hex(expected), read: hex(back) },
+      verificationDetail(decodeSettings(expected), decodeSettings(back), expected, back),
       { remedy: 'run uv5r settings to read the block, then rerun the write' },
     );
   }
@@ -403,7 +450,7 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} did not take the write`,
-      { wrote: hex(mem), read: hex(back) },
+      recordMismatch(mem, back),
       { remedy: `read channel ${n}, then rerun the write` },
     );
   }
@@ -412,7 +459,7 @@ export async function writeChannel(s: Session, n: number, spec: ChannelSpec): Pr
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} record written; name did not take the write`,
-      { wrote: hex(name), read: hex(nameBack) },
+      nameMismatch(name, nameBack),
       { remedy: `read channel ${n}; rerun the write to fix the name` },
     );
   }
@@ -432,7 +479,7 @@ export async function eraseChannel(s: Session, n: number): Promise<void> {
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} did not take the erase`,
-      { wrote: hex(blank), read: hex(back) },
+      recordMismatch(blank, back),
       { remedy: `read channel ${n}, then rerun the erase` },
     );
   }
@@ -441,7 +488,7 @@ export async function eraseChannel(s: Session, n: number): Promise<void> {
     throw new DeviceStateError(
       'verification-failed',
       `channel ${n} record erased; name did not take the erase`,
-      { wrote: hex(blank), read: hex(nameBack) },
+      nameMismatch(blank, nameBack),
       { remedy: `read channel ${n}; rerun the erase to clear the name` },
     );
   }

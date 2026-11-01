@@ -406,6 +406,8 @@ describe('sweep', () => {
     expect(process.exitCode).toBe(3);
     expect(stdout).toEqual([]);
     expect(errJson()).toEqual({
+      type: 'error',
+      kind: 'transport',
       reason: 'audio-process-failed',
       message: 'ffmpeg exited 1 capturing from "AIOC Audio"',
       remedy: 'check that --input names the AIOC input and the terminal has microphone access',

@@ -173,8 +173,9 @@ Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. Piped, `hear`
 prints NDJSON, one object per line. JSON results give frequencies as integer Hz in `rxHz`,
 `txHz` and `requestedHz`. Text prints MHz. A failed command prints nothing on stdout. In JSON mode
-it prints one error object on stderr with `reason`, `message`, `remedy` and `retry`. On a
-terminal it prints the message and remedy as text.
+it prints one error object on stderr with `type: "error"`, `kind`, `reason`, `message`,
+`remedy` and `retry`. A `verification-failed` error adds `failed`, the fields that read back
+wrong. On a terminal it prints the message and remedy as text.
 
 Exit 0 is ok, 1 an unexpected error, 2 bad usage, 3 a transport or dependency failure, 4 a
 serial timeout, 5 a radio state problem and 6 a busy serial port. A signal exits 128 plus its

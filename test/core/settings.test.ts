@@ -80,7 +80,20 @@ describe('settings write', () => {
     const radio = new FakeRadio();
     const s = await startSession(radio);
     const block = await drive(writeSettings(s, { voice: 0 }));
-    await expect(drive(verifySettingsBlock(s, block))).rejects.toMatchObject({ kind: 'device-state' });
+    await expect(drive(verifySettingsBlock(s, block))).rejects.toMatchObject({
+      kind: 'device-state',
+      reason: 'verification-failed',
+      detail: { failed: ['voice'], settings: { voice: { desired: 'off', observed: DEFAULT_SETTINGS.voice } } },
+    });
+  });
+  it('names raw when only bytes outside the setting fields differ', async () => {
+    const radio = new FakeRadio();
+    const s = await startSession(radio);
+    const expected = Uint8Array.from(radio.eeprom.subarray(SETTINGS_BASE, SETTINGS_BASE + SETTINGS_SIZE));
+    const spare = [...Array(SETTINGS_SIZE).keys()].find((i) => !FIELD_OFFSETS.has(i))!;
+    expected[spare] = expected[spare]! ^ 0xff;
+    const err = await drive(verifySettingsBlock(s, expected)).catch((e: unknown) => e);
+    expect(err).toMatchObject({ reason: 'verification-failed', detail: { failed: ['raw'], settings: { raw: { desired: expect.any(String), observed: expect.any(String) } } } });
   });
   it('waits out the idle drop and verifies the write in one new handshake', async () => {
     const radio = new FakeRadio();

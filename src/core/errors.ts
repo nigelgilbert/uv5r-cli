@@ -232,8 +232,14 @@ export class BaofengError extends Error {
     return this;
   }
 
+  /**
+   * Return the error envelope: type, kind, reason, message, remedy and retry, then the detail
+   * fields. The canonical fields go first and are set again after the detail, so a detail key
+   * cannot replace them.
+   */
   toJSON(): Record<string, unknown> {
-    return { reason: this.reason, message: this.message, remedy: this.remedy, retry: this.retry, ...this.detail };
+    const canonical = { type: 'error', kind: this.kind, reason: this.reason, message: this.message, remedy: this.remedy, retry: this.retry };
+    return { ...canonical, ...this.detail, ...canonical };
   }
 }
 

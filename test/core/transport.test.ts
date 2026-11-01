@@ -72,6 +72,8 @@ describe('SerialTransport', () => {
     const err = await SerialTransport.open('/dev/uv5r-nonexistent').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     expect((err as TransportError).toJSON()).toEqual({
+      type: 'error',
+      kind: 'transport',
       reason: 'device-unavailable',
       message: 'no device at /dev/uv5r-nonexistent',
       remedy: 'reseat the cable or pass --target with an existing path',
@@ -171,6 +173,8 @@ describe('SerialTransport', () => {
     const err = await t.setBaud(115200).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TransportError);
     expect((err as TransportError).toJSON()).toEqual({
+      type: 'error',
+      kind: 'transport',
       reason: 'serial-io-failed',
       message: 'cannot set 115200 baud: EINVAL',
       remedy: 'ask the human to reseat the AIOC cable',
