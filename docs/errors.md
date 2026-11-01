@@ -39,8 +39,8 @@ sits at its top level after them and cannot replace them. Act on `reason`, `reme
 
 - A `verification-failed` error from `tune`, `load`, `erase` or `settings` adds `failed`, the
   fields that read back wrong, and `settings`, a map from each failed field to
-  `{desired, observed}`. `wrote` and `read` hold the bytes as hex. `raw` appears when every
-  compared field matches and the bytes differ.
+  `{desired, observed}`. `wrote` and `read` hold the bytes as hex. `failed` is empty when the
+  bytes differ outside the decoded fields.
 - `tune`, `load` and `erase` compare `rxHz`, `txHz`, `txTone`, `rxTone`, `bandwidth` and `power`
   on the record, then `name`. An erase desires `null` for each record field and `""` for the name.
 - `settings` compares the setting fields.

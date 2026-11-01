@@ -79,13 +79,11 @@ const RECORD_FIELDS = ['rxHz', 'txHz', 'txTone', 'rxTone', 'bandwidth', 'power']
 
 /**
  * List the fields whose values differ between `desired` and `observed`, decoded from the bytes
- * `wrote` and `read`. When no field differs, list `raw` with the bytes as hex, so the list names
- * a field whenever the bytes differ.
+ * `wrote` and `read`. The list is empty when the bytes differ outside the decoded fields.
  */
 function verificationDetail(desired: Record<string, unknown>, observed: Record<string, unknown>, wrote: Uint8Array, read: Uint8Array): VerificationDetail {
   const bytes = { wrote: hex(wrote), read: hex(read) };
   const failed = Object.keys(desired).filter((key) => JSON.stringify(desired[key]) !== JSON.stringify(observed[key] ?? null));
-  if (failed.length === 0) return { failed: ['raw'], settings: { raw: { desired: bytes.wrote, observed: bytes.read } }, ...bytes };
   return { failed, settings: Object.fromEntries(failed.map((key) => [key, { desired: desired[key], observed: observed[key] ?? null }])), ...bytes };
 }
 
@@ -101,7 +99,7 @@ function recordMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail
   return verificationDetail(recordFields(wrote), recordFields(read), wrote, read);
 }
 
-/** Compare a written name record with its read-back by decoded name, or as `raw` when the decoded names match and the bytes differ. */
+/** Compare a written name record with its read-back by decoded name. */
 function nameMismatch(wrote: Uint8Array, read: Uint8Array): VerificationDetail {
   return verificationDetail({ name: decodeName(wrote) }, { name: decodeName(read) }, wrote, read);
 }

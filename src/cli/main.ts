@@ -229,7 +229,7 @@ const CAPTURE_READY = ['--input names the AIOC input.', 'Squelch is above 0.'];
 const FFMPEG_FIRST = 'Check ffmpeg before the port opens; a failure exits 3 with nothing written.';
 const CHANNEL_PRECONDITION = 'Follow the channel rule in uv5r help.';
 /** The verification-failed detail of the verbs that write and read back. */
-const VERIFY_EXIT = { code: 5, when: 'verification-failed adds failed, the fields that read back wrong (raw when only other bytes differ), and settings, each with desired and observed' };
+const VERIFY_EXIT = { code: 5, when: 'verification-failed adds failed, the fields that read back wrong, and settings, each with desired and observed' };
 
 const TRANSMIT_READY = [
   RADIO_READY,

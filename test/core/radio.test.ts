@@ -81,7 +81,7 @@ describe('erase', () => {
       },
     });
   });
-  it('names raw when an ignored erase leaves a malformed record', async () => {
+  it('lists no field when an ignored erase leaves a malformed record', async () => {
     const radio = new FakeRadio();
     const mem = encodeChannel({ rxHz: 162_550_000 });
     mem.set([0xff, 0x00, 0x00, 0x00], 4);
@@ -89,10 +89,10 @@ describe('erase', () => {
     radio.writesIgnoredBelow = 127 * 16;
     radio.writesIgnoredAbove = 128 * 16;
     await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
-      detail: { failed: ['raw'], settings: { raw: { desired: expect.stringMatching(/^ff( ff){15}$/), observed: hex(mem) } } },
+      detail: { failed: [], settings: {}, wrote: expect.stringMatching(/^ff( ff){15}$/), read: hex(mem) },
     });
   });
-  it('names raw when an ignored name erase leaves bytes past the name', async () => {
+  it('lists no field when an ignored name erase leaves bytes past the name', async () => {
     const radio = new FakeRadio();
     const name = new Uint8Array(16).fill(0xff);
     name[15] = 0x00;
@@ -101,7 +101,7 @@ describe('erase', () => {
     radio.writesIgnoredAbove = 0x1000 + 128 * 16;
     await expect(withSession(radio, (s) => eraseChannel(s, 127))).rejects.toMatchObject({
       message: 'channel 127 record erased; name did not take the erase',
-      detail: { failed: ['raw'], settings: { raw: { desired: expect.stringMatching(/^ff( ff){15}$/), observed: hex(name) } } },
+      detail: { failed: [], settings: {}, wrote: expect.stringMatching(/^ff( ff){15}$/), read: hex(name) },
     });
   });
   it('throws the timeout unchanged when the name read-back times out after the record erase verified', async () => {
@@ -834,7 +834,7 @@ describe('channels', () => {
     expect((err as BaofengError).detail).not.toHaveProperty('recordWritten');
     expect(radio.writes).toEqual([5 * 16, 0x1000 + 5 * 16]);
   });
-  it('names raw when an ignored name write leaves the same name with different padding', async () => {
+  it('lists no field when an ignored name write leaves the same name with different padding', async () => {
     const radio = new FakeRadio();
     const name = encodeName('TEST');
     name[15] = 0x00;
@@ -845,7 +845,7 @@ describe('channels', () => {
     await s.start();
     await expect(writeChannel(s, 5, { rxHz: 154_680_000, name: 'TEST' })).rejects.toMatchObject({
       message: 'channel 5 record written; name did not take the write',
-      detail: { failed: ['raw'], settings: { raw: { desired: hex(encodeName('TEST')), observed: hex(name) } } },
+      detail: { failed: [], settings: {}, wrote: hex(encodeName('TEST')), read: hex(name) },
     });
   });
   it('throws the timeout unchanged when the name read-back times out after the record verified', async () => {
