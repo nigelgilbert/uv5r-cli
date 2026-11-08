@@ -90,7 +90,7 @@ session, the muted speaker, and slot 0 as the scratch slot that `check` and `swe
 
 ## Transmit
 
-You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. Each one ends with the uv5r.json callsign. Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.
+You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. `say` and `id` end with the uv5r.json callsign. `key` sends a carrier and no ID; send the callsign after it with `uv5r id` or by voice, at the end of the transmission and every ten minutes. Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.
 
 Run `cp uv5r.example.json uv5r.json` and put your callsign in it. The CLI reads `--config FILE`
 first, then `UV5R_CONFIG`, then `uv5r.json` at the repo root. `uv5r help say` lists the other
@@ -154,10 +154,14 @@ Run `uv5r help VERB` for flags, defaults, results and exit cases, with `--json` 
 ## Output and errors
 
 Output is JSON when stdout is a pipe or with `--json`, and text on a terminal. Piped, `hear`
-prints NDJSON, one object per line. JSON results give frequencies as integer Hz in `rxHz`,
-`txHz` and `requestedHz`. Text prints MHz. A failed command prints nothing on stdout and one
+prints NDJSON, one object per line. A failed command prints nothing on stdout and one
 error object on stderr, or the message and remedy as text on a terminal.
 [docs/errors.md](docs/errors.md) lists the error fields, exit codes and signal behaviour.
+
+A frequency is MHz when below 1000, else Hz. 144.684, 144684000 and 144.684e6 are the same value. Results are Hz integers.
+
+JSON results carry frequencies in `rxHz`, `txHz` and `requestedHz`. Text prints MHz. `--offset`
+takes the same rule with a sign: `-0.6`, `-600000` and `-600e3` are the same offset.
 
 ## Troubleshooting
 
@@ -199,7 +203,7 @@ and writes nothing for it. Plan frequencies are in MHz; `load` converts them to 
 |---|---|
 | `channel` | `--channel N` |
 | `rxMhz` | the `FREQ` argument |
-| `offsetMhz` | `--offset MHZ` |
+| `offsetMhz` | `--offset FREQ` |
 | `tone` | `--tone HZ` |
 | `rxTone` | `--rx-tone HZ` |
 | `narrow` | `--narrow` when true |

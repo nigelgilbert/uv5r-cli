@@ -235,10 +235,10 @@ describe('hear', () => {
     expect(text[2]).toBe('heard   1 transmission in 5 s on USB Input, 1 warning');
   });
 
-  it('documents the event lines and the summary result in help hear --json with schema version 3', async () => {
+  it('documents the event lines and the summary result in help hear --json with schema version 4', async () => {
     await cli(['help', 'hear', '--json']);
     const help = JSON.parse(stdout.join('')) as Record<string, any>;
-    expect(help.schemaVersion).toBe(3);
+    expect(help.schemaVersion).toBe(4);
     expect(help.lines.map((l: { type: string }) => l.type)).toEqual(['warning', 'transmission']);
     expect(help.result).toMatchObject({ type: 'summary', transmissions: 1, timedOut: false });
     expect(help.flags.map((f: { flag: string }) => f.flag)).toEqual(['--input', '--floor', '--hang', '--out-dir', '--once', '--timeout', '--config', '--json']);

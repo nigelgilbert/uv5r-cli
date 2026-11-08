@@ -359,6 +359,11 @@ describe('say', () => {
     stdout = [];
     await cli(['help', '--json']);
     expect(JSON.parse(stdout.join('')).rules.transmit).toBe(TRANSMIT_RULE);
+    expect(TRANSMIT_RULE).toBe(
+      'You are the control operator. Stay at the radio and stop a transmission with Ctrl-C. `say` and `id` end with the uv5r.json callsign. ' +
+        '`key` sends a carrier and no ID; send the callsign after it with `uv5r id` or by voice, at the end of the transmission and every ten minutes. ' +
+        'Transmit on amateur frequencies with a license; a stock UV-5R is not certified for GMRS or FRS.',
+    );
   });
 
   it('states the control-operator rule in README.md and lists say and id in its verb table', () => {

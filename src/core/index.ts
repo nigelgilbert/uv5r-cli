@@ -25,6 +25,8 @@ export {
   decodeTone,
   parseDecimal,
   parseFrequency,
+  parseOffset,
+  FREQUENCY_UNITS,
   checkTenHz,
   checkBand,
   formatMhz,

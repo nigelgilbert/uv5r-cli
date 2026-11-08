@@ -95,11 +95,20 @@ export function parseDecimal(text: string, what: string): number {
   return n;
 }
 
+/** The short form of the frequency rule, for flag help and usage errors. */
+export const FREQUENCY_UNITS = 'MHz below 1000, else Hz';
+
 /** Parse a frequency in MHz (`154.68`), Hz (`154680000`) or exponent form (`154.68e6`). */
 export function parseFrequency(text: string): number {
   const n = parseDecimal(text, 'frequency');
-  if (n <= 0) throw new UsageError(`bad frequency ${JSON.stringify(text)}`);
+  if (n <= 0) throw new UsageError(`bad frequency ${JSON.stringify(text)}; a frequency is MHz when below 1000, else Hz`);
   return checkTenHz(n < 1000 ? n * 1_000_000 : n, `frequency ${text}`);
+}
+
+/** Parse a signed `--offset` by the frequency rule on its magnitude, so the sign carries through. */
+export function parseOffset(text: string): number {
+  const n = parseDecimal(text, '--offset');
+  return checkTenHz(Math.abs(n) < 1000 ? n * 1_000_000 : n, `--offset ${text}`);
 }
 
 /** Return signed `hz` as a whole multiple of 10, and throw UsageError naming `what` when it has a finer part. */
