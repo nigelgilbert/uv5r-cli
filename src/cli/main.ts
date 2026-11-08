@@ -9,7 +9,6 @@ import {
   channelPayload,
   checkBand,
   checkChannelNumber,
-  checkTenHz,
   DEFAULT_MAGIC,
   dumpImage,
   encodeName,
@@ -24,7 +23,9 @@ import {
   isSettingName,
   magicByName,
   mhzText,
+  FREQUENCY_UNITS,
   parseFrequency,
+  parseOffset,
   parseSettingValue,
   parseTone,
   PROGRAM_MAGICS,
@@ -196,7 +197,7 @@ const TRANSMIT_FIELDS = {
   tailMs: `PTT hold after the player, 0..${MAX_PAD_MS}, default ${DEFAULT_TAIL_MS}`,
   maxSeconds: `WAV plus tail cap, 0 < S <= ${MAX_UTTERANCE_SECONDS}, default ${DEFAULT_MAX_SECONDS}`,
 };
-const FREQ_ARG: ArgDoc = { name: 'FREQ', help: 'MHz below 1000, else Hz; 136-174 or 400-520 MHz, 10 Hz steps' };
+const FREQ_ARG: ArgDoc = { name: 'FREQ', help: `${FREQUENCY_UNITS}; 136-174 or 400-520 MHz, 10 Hz steps` };
 const SLOT_ARG: ArgDoc = { name: 'N', help: 'memory slot, 0..127' };
 
 const RADIO_READY = 'The radio is on and the AIOC is plugged in.';
@@ -987,12 +988,6 @@ function print(args: ParsedArgs, json: object, text: () => string): void {
   else process.stdout.write(`${text()}\n`);
 }
 
-/** Parse a signed `--offset` by the frequency rule on its magnitude: below 1000 is MHz, else Hz. */
-function parseOffset(text: string): number {
-  const n = parseDecimal(text, '--offset');
-  return checkTenHz(Math.abs(n) < 1000 ? n * 1_000_000 : n, `--offset ${text}`);
-}
-
 function channelSpec(freqText: string, flags: Map<string, string | true>): ChannelSpec {
   const rxHz = parseFrequency(freqText);
   const rxOnly = Boolean(flags.get('rx-only'));
@@ -1081,7 +1076,7 @@ async function identifyVerb(args: Invocation): Promise<number> {
 async function tuneVerb(args: Invocation): Promise<number> {
   checkFlags('tune', args.flags, flagNames('tune'));
   const freq = args.positionals[0];
-  if (!freq) throw new UsageError('tune needs a frequency, MHz below 1000, else Hz, as in: tune 154.680 --channel 5');
+  if (!freq) throw new UsageError(`tune needs a frequency, ${FREQUENCY_UNITS}, as in: tune 154.680 --channel 5`);
   if (!args.flags.has('channel')) throw new UsageError('tune needs --channel N, the memory slot to write, as in: tune 154.680 --channel 0; run uv5r help tune for the channel rule');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);
@@ -1101,7 +1096,7 @@ async function checkVerb(args: Invocation): Promise<number> {
   }
   checkFlags('check', args.flags, flagNames('check'));
   const freq = args.positionals[0];
-  if (!freq) throw new UsageError('check needs a frequency, MHz below 1000, else Hz, as in: check 162.400 --channel 0');
+  if (!freq) throw new UsageError(`check needs a frequency, ${FREQUENCY_UNITS}, as in: check 162.400 --channel 0`);
   if (!args.flags.has('channel')) throw new UsageError('check needs --channel N, as in: check 162.400 --channel 0');
   const n = numberFlag(args.flags, 'channel')!;
   checkChannelNumber(n);

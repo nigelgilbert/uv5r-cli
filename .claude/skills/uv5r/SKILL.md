@@ -28,7 +28,7 @@ Read `uv5r help --json` once at the start of a session for the operating rules, 
 
 - `key`, `say` and `id` transmit on run. Run them only when the human asked and on a frequency they may use. Ask what the display shows first. The human stays at the radio.
 - Run `say --rehearse` before the first transmission of a session.
-- Stop a transmission with Ctrl-C and report it. After a failed transmission, report and wait for the human.
+- Stop a transmission with Ctrl-C and report it. After a failed or interrupted transmission, report and wait for the human.
 - `say` and `id` end with the uv5r.json callsign. `key` sends a carrier and no ID. After a `key`, send the callsign with `uv5r id` or ask the human to identify by voice. Do the same on `idOwed: true`.
 
 ## Receive speech
