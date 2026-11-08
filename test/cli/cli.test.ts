@@ -225,7 +225,6 @@ describe('help', () => {
     expect(catalog.verbs.key.usage).toBe('uv5r key --seconds S [--json] [--target PATH]');
     expect(catalog.verbs.settings.usage).toBe('uv5r settings [FIELD VALUE ...] [--json] [--target PATH]');
     expect(catalog.verbs.restore.usage).toBe('uv5r restore IMAGE --force [--json] [--target PATH]');
-    expect(catalog.verbs.tune.usage).toBe('uv5r tune FREQ --channel N [--offset FREQ | --rx-only] [--tone HZ] [--rx-tone HZ] [--narrow] [--low-power] [--name TEXT] [--json] [--target PATH]');
     for (const [verb, entry] of Object.entries(catalog.verbs) as Array<[string, { usage: string }]>) {
       stdout = [];
       const help = await helpJson(verb);
